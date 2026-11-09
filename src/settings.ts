@@ -10,7 +10,12 @@ import {
   listLinkedChats,
   removeLinkedChat,
 } from "./linked-chats.js";
-import { setUserTimeZone } from "./users.js";
+import { isTheme, setUserTheme, setUserTimeZone } from "./users.js";
+
+/** Only same-site paths, so the switch can't be turned into an open redirect. */
+function localPath(value: unknown): string {
+  return typeof value === "string" && /^\/(?![/\\])/.test(value) ? value : "/";
+}
 
 /** Every IANA time zone the runtime knows, plus `current` in case it's an alias missing from that list. */
 function timeZoneOptions(current: string): SafeHtml[] {
@@ -107,6 +112,24 @@ export function registerSettings(
         return reply.code(400).type("text/plain").send("Unknown time zone");
       }
       return reply.redirect("/settings", 303);
+    },
+  );
+
+  app.post(
+    "/settings/theme",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const body = req.body as Record<string, unknown> | undefined;
+      const theme = body?.theme;
+      if (!isTheme(theme)) {
+        return reply.code(400).type("text/plain").send("Unknown theme");
+      }
+      await setUserTheme(db, req.user!._id, theme);
+      // `assets/theme.js` asks for JSON and applies the theme without a reload.
+      if (req.headers.accept?.includes("application/json")) {
+        return reply.send({ theme });
+      }
+      return reply.redirect(localPath(body?.back), 303);
     },
   );
 

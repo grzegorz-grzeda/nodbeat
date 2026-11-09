@@ -494,6 +494,48 @@ ul.plain > li:last-child {
   margin: 0;
 }
 
+/* Three-way theme switch: a segmented control of submit buttons. */
+.theme-switch {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.theme-switch button,
+.theme-switch button:hover {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text);
+  background: var(--surface);
+  border: none;
+  border-radius: 0;
+  padding: var(--space-1) var(--space-2);
+}
+
+.theme-switch button + button {
+  border-left: 1px solid var(--border-strong);
+}
+
+.theme-switch button:hover {
+  background: var(--code-bg);
+}
+
+/* overflow: hidden would clip an outside focus ring. */
+.theme-switch button:focus-visible {
+  outline-offset: -3px;
+}
+
+.theme-switch button[aria-pressed="true"] {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+/* --focus equals --accent, so the pressed button needs its own ring color. */
+.theme-switch button[aria-pressed="true"]:focus-visible {
+  outline-color: var(--on-accent);
+}
+
 .nav-email {
   color: var(--text-muted);
   overflow-wrap: anywhere;

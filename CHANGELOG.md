@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Nav bar for logged-in Users (collapses on a phone) and a footer with the running version linking to its GitHub release.
 - `Content-Security-Policy: default-src 'self'` on every HTML page; assets served from `/assets/` with a long cache.
 - Release pipeline: pushing a tag `vX.Y.Z` tests, builds and publishes `ghcr.io/grzegorz-grzeda/nodbeat:X.Y.Z`, deploys it to the VPS and creates a GitHub Release from this file. A manual run redeploys an existing version.
+- Theme preference: a light / dark / system switch in the nav, stored on the User and applied from the first paint. Logged-out pages follow the OS theme.
 - CI runs typecheck, tests and lint on every push to `main`.
 - `/health` reports the running version and commit.
 

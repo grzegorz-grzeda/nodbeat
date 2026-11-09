@@ -4,12 +4,19 @@ import type { Clock } from "./clock.js";
 
 export const DEFAULT_TIME_ZONE = "Europe/Warsaw";
 
+export const THEMES = ["light", "dark", "system"] as const;
+export type Theme = (typeof THEMES)[number];
+/** Follows the OS; also what logged-out pages render. */
+export const DEFAULT_THEME: Theme = "system";
+
 export interface UserDoc {
   _id: ObjectId;
   email: string;
   passwordHash: string;
   isAdmin: boolean;
   timeZone: string;
+  /** Missing on Users created before themes existed: means `"system"`. */
+  theme?: Theme;
   createdAt: Date;
 }
 
@@ -124,4 +131,22 @@ export async function setUserTimeZone(
   if (!isValidTimeZone(timeZone)) return false;
   await users(db).updateOne({ _id: id }, { $set: { timeZone } });
   return true;
+}
+
+export function isTheme(value: unknown): value is Theme {
+  return (THEMES as readonly unknown[]).includes(value);
+}
+
+/** The User's theme; Users who never picked one get the default. */
+export function themeOf(user: UserDoc): Theme {
+  return user.theme ?? DEFAULT_THEME;
+}
+
+/** Sets the User's theme; callers check it with `isTheme` first. */
+export async function setUserTheme(
+  db: Db,
+  id: ObjectId,
+  theme: Theme,
+): Promise<void> {
+  await users(db).updateOne({ _id: id }, { $set: { theme } });
 }

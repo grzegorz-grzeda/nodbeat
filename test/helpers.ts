@@ -169,7 +169,7 @@ export class Browser {
     formPage: string,
     action: string,
     fields: Record<string, string> = {},
-    options: { csrf?: string | null } = {},
+    options: { csrf?: string | null; headers?: Record<string, string> } = {},
   ): Promise<InjectResponse> {
     if (options.csrf === undefined) await this.get(formPage);
     const csrf = options.csrf === undefined ? this.#csrf : options.csrf;
@@ -178,7 +178,10 @@ export class Browser {
     return this.#send({
       method: "POST",
       url: action,
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      headers: {
+        ...options.headers,
+        "content-type": "application/x-www-form-urlencoded",
+      },
       payload: form.toString(),
     });
   }

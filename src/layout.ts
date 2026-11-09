@@ -4,6 +4,7 @@ import type { Auth } from "./auth.js";
 import type { BuildInfo } from "./build-info.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
+import { DEFAULT_THEME, THEMES, themeOf, type Theme } from "./users.js";
 
 const REPO_URL = "https://github.com/grzegorz-grzeda/nodbeat";
 const CSP = "default-src 'self'";
@@ -17,8 +18,6 @@ const CONTENT_TYPES: Record<string, string> = {
   ".js": "text/javascript; charset=utf-8",
   ".svg": "image/svg+xml",
 };
-
-export type Theme = "light" | "dark" | "system";
 
 export interface PageOptions {
   title: string;
@@ -70,13 +69,52 @@ export function stateBadge(state: MonitorState): SafeHtml {
   return html`<span class="badge badge-${state}">${STATE_LABELS[state]}</span>`;
 }
 
-function nav(email: string, csrf: string): SafeHtml {
+const THEME_LABELS: Record<Theme, string> = {
+  light: "Light",
+  dark: "Dark",
+  system: "System",
+};
+
+/** Posts to `/settings/theme` and comes back to `back`; `assets/theme.js` saves it without a reload. */
+function themeSwitch(theme: Theme, csrf: string, back: string): SafeHtml {
+  return html`<form
+    method="post"
+    action="/settings/theme"
+    class="theme-switch"
+    aria-label="Theme"
+  >
+    ${csrfField(csrf)}
+    <input type="hidden" name="back" value="${back}" />
+    ${THEMES.map(
+      (t) =>
+        html`<button
+          type="submit"
+          name="theme"
+          value="${t}"
+          aria-pressed="${String(t === theme)}"
+        >
+          ${THEME_LABELS[t]}
+        </button>`,
+    )}
+  </form>`;
+}
+
+interface NavUser {
+  email: string;
+  csrf: string;
+  theme: Theme;
+  /** Where the theme switch returns to. */
+  back: string;
+}
+
+function nav({ email, csrf, theme, back }: NavUser): SafeHtml {
   return html`<input type="checkbox" id="nav-toggle" class="nav-toggle" />
     <label for="nav-toggle" class="nav-toggle-label">Menu</label>
     <nav class="nav-links" aria-label="Main">
       <a href="/">Dashboard</a>
       <a href="/monitors/new">New Monitor</a>
       <a href="/settings">Settings</a>
+      ${themeSwitch(theme, csrf, back)}
       <span class="nav-email">${email}</span>
       <form method="post" action="/logout">
         ${csrfField(csrf)}
@@ -88,30 +126,28 @@ function nav(email: string, csrf: string): SafeHtml {
 export function renderPage(
   options: PageOptions & {
     build: BuildInfo;
-    theme: Theme;
-    user?: { email: string; csrf: string } | undefined;
+    user?: NavUser | undefined;
   },
 ): string {
-  const { build } = options;
+  const { build, user } = options;
+  const scripts = [...(options.scripts ?? []), ...(user ? ["theme.js"] : [])];
   const asset = (name: string) =>
     `/assets/${name}?v=${encodeURIComponent(build.commit)}`;
   const shortCommit = build.commit.slice(0, 7);
   return html`<!doctype html>
-    <html lang="en" data-theme="${options.theme}">
+    <html lang="en" data-theme="${user?.theme ?? DEFAULT_THEME}">
       <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <title>${options.title} · nodbeat</title>
         <link rel="icon" href="${asset("favicon.svg")}" type="image/svg+xml" />
         <link rel="stylesheet" href="${asset("app.css")}" />
-        ${(options.scripts ?? []).map(
-          (s) => html`<script src="${asset(s)}" defer></script>`,
-        )}
+        ${scripts.map((s) => html`<script src="${asset(s)}" defer></script>`)}
       </head>
       <body>
         <header class="site-header">
           <a href="/" class="brand">${LOGO}<span>nodbeat</span></a>
-          ${options.user ? nav(options.user.email, options.user.csrf) : ""}
+          ${user ? nav(user) : ""}
         </header>
         <main>${options.body}</main>
         <footer class="site-footer">
@@ -144,10 +180,16 @@ export function registerLayout(
   app.decorateReply("page", function (this: FastifyReply, options) {
     const req = this.request;
     const user = req.user
-      ? { email: req.user.email, csrf: auth.csrfToken(req, this) }
+      ? {
+          email: req.user.email,
+          csrf: auth.csrfToken(req, this),
+          theme: themeOf(req.user),
+          // A page rendered for a POST (e.g. a form error) has no URL to come back to.
+          back: req.method === "GET" ? req.url : "/",
+        }
       : undefined;
     return this.type("text/html; charset=utf-8").send(
-      renderPage({ ...options, build, theme: "system", user }),
+      renderPage({ ...options, build, user }),
     );
   });
 

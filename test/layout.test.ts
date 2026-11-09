@@ -7,6 +7,7 @@ describe("static assets", () => {
   it.each([
     ["/assets/app.css", "text/css"],
     ["/assets/dashboard.js", "text/javascript"],
+    ["/assets/theme.js", "text/javascript"],
     ["/assets/favicon.svg", "image/svg+xml"],
   ])("serves %s as %s with a long cache", async (url, type) => {
     const { app } = await buildTestApp();
