@@ -2,6 +2,7 @@ import { MongoClient } from "mongodb";
 import { createApp } from "./app.js";
 import { systemClock } from "./clock.js";
 import { ConfigError, loadConfig } from "./config.js";
+import { startSelfHeartbeat } from "./self-heartbeat.js";
 import { createHttpTelegramClient } from "./telegram.js";
 
 const TICK_INTERVAL_MS = 10_000;
@@ -36,9 +37,14 @@ async function main(): Promise<void> {
       });
   }, TICK_INTERVAL_MS);
 
+  const stopSelfHeartbeat = config.selfHeartbeatUrl
+    ? startSelfHeartbeat({ url: config.selfHeartbeatUrl, log: app.log })
+    : () => {};
+
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, "shutting down");
     clearInterval(timer);
+    stopSelfHeartbeat();
     await app.close();
     await client.close();
     process.exit(0);

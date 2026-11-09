@@ -11,3 +11,7 @@ docker compose exec -it nodbeat node dist/cli-main.js create-user --email you@ex
 ```
 
 Only `MONGODB_URI` is needed by the CLI.
+
+## Deploying
+
+See [docs/deploy.md](docs/deploy.md).
