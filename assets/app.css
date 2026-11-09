@@ -592,6 +592,72 @@ ul.plain > li:last-child {
   }
 }
 
+/* Landing page */
+
+.hero {
+  text-align: center;
+  padding: var(--space-5) 0 var(--space-4);
+}
+
+.hero h1 {
+  font-size: 2.25rem;
+  line-height: 1.2;
+}
+
+.lead {
+  font-size: 1.125rem;
+  color: var(--text-muted);
+  max-width: 36rem;
+  margin: 0 auto var(--space-4);
+}
+
+.steps {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--space-3);
+  counter-reset: step;
+}
+
+.steps > li.card {
+  margin: 0;
+  min-width: 0;
+  counter-increment: step;
+}
+
+.steps h3::before {
+  content: counter(step) ". ";
+  color: var(--accent);
+}
+
+.steps pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.features {
+  padding-left: var(--space-4);
+}
+
+.features > li {
+  margin: var(--space-2) 0;
+}
+
+.features strong {
+  display: block;
+}
+
+@media (max-width: 40rem) {
+  .hero {
+    padding-top: var(--space-4);
+  }
+
+  .hero h1 {
+    font-size: 1.75rem;
+  }
+}
+
 /* Footer */
 
 .site-footer {

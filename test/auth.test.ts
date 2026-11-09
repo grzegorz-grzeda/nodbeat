@@ -58,7 +58,7 @@ describe("login", () => {
 
     expect(browser.lastResponse.statusCode).toBe(401);
     expect(browser.lastResponse.body).toContain("Wrong email or password");
-    expect((await browser.get("/")).headers.location).toBe("/login");
+    expect((await browser.get("/settings")).headers.location).toBe("/login");
   });
 
   it("rejects an unknown email the same way", async () => {
@@ -150,7 +150,7 @@ describe("Dashboard access", () => {
   it("sends anonymous visitors to the login page", async () => {
     const { app } = await appWithUser();
 
-    const res = await new Browser(app).get("/");
+    const res = await new Browser(app).get("/settings");
 
     expect(res.statusCode).toBe(303);
     expect(res.headers.location).toBe("/login");
@@ -173,7 +173,7 @@ describe("sessions", () => {
 
     clock.advance(30 * DAY + 1);
 
-    const res = await browser.get("/");
+    const res = await browser.get("/settings");
     expect(res.statusCode).toBe(303);
     expect(res.headers.location).toBe("/login");
   });
@@ -204,7 +204,7 @@ describe("logging in again", () => {
     expect(browser.cookies.get("nb_session")).not.toBe(firstSession);
     expect((await browser.get("/")).statusCode).toBe(200);
     browser.cookies.set("nb_session", firstSession!);
-    expect((await browser.get("/")).headers.location).toBe("/login");
+    expect((await browser.get("/settings")).headers.location).toBe("/login");
   });
 });
 
@@ -218,10 +218,10 @@ describe("logout", () => {
 
     expect(res.statusCode).toBe(303);
     expect(res.headers.location).toBe("/login");
-    expect((await browser.get("/")).headers.location).toBe("/login");
+    expect((await browser.get("/settings")).headers.location).toBe("/login");
     // Replaying the old cookie doesn't bring the session back.
     browser.cookies.set("nb_session", sessionCookie!);
-    expect((await browser.get("/")).headers.location).toBe("/login");
+    expect((await browser.get("/settings")).headers.location).toBe("/login");
   });
 
   it("requires a valid CSRF token", async () => {

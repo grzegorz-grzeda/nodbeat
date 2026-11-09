@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import type { Db, ObjectId } from "mongodb";
-import { requireUser } from "./auth.js";
 import type { Clock } from "./clock.js";
+import type { Config } from "./config.js";
 import { formatAgo, formatDateTime } from "./format.js";
 import { html, type SafeHtml } from "./html.js";
+import { landingBody } from "./landing.js";
 import { stateBadge } from "./layout.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
 import { listMonitors } from "./monitors.js";
@@ -69,12 +70,19 @@ const EMPTY_ROW = html`<tr>
 
 export function registerDashboard(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock },
+  deps: { db: Db; clock: Clock; config: Config },
 ): void {
-  const { db, clock } = deps;
+  const { db, clock, config } = deps;
 
-  app.get("/", { preHandler: requireUser }, async (req, reply) => {
-    const user = req.user!;
+  // A visitor without a session gets the landing page; a User's bookmark keeps working.
+  app.get("/", async (req, reply) => {
+    const user = req.user;
+    if (!user) {
+      return reply.page({
+        title: "Uptime monitoring",
+        body: landingBody(config.publicBaseUrl),
+      });
+    }
     const list = await dashboardMonitors(db, user, clock.now());
     return reply.page({
       title: "Dashboard",

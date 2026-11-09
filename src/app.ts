@@ -75,7 +75,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   await app.register(formbody);
   const auth = registerAuth(app, { db, clock, config });
   registerLayout(app, { auth, build: deps.build });
-  registerDashboard(app, { db, clock });
+  registerDashboard(app, { db, clock, config });
   registerMonitors(app, { db, clock, config, auth });
   registerMonitorManagement(app, { db, clock, auth, lock });
   await registerHeartbeatIntake(app, { db, clock, lock });
