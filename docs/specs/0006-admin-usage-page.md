@@ -1,6 +1,6 @@
 # Spec 0006: Admin usage page
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Problem Statement
 

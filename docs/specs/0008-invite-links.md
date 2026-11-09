@@ -1,6 +1,6 @@
 # Spec 0008: Invite links
 
-Status: needs-triage
+Status: ready-for-agent
 
 Blocked by: spec 0006 (Admin guard and Admin page)
 

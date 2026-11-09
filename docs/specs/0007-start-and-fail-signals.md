@@ -1,6 +1,6 @@
 # Spec 0007: Start and Fail signals
 
-Status: needs-triage
+Status: ready-for-agent
 
 ## Problem Statement
 
