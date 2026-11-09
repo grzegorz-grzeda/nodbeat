@@ -7,6 +7,7 @@ A heartbeat for every service and device.
 - Use [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html) for versioning.
 - Track specs in `docs/specs/` and issues in `docs/issues/`. Each has its own repo-wide counter (`0001-slug.md`, ...).
 - When a spec or issue is done, rename its file by putting `done-` in front of the name.
+- After work is done successfully (typecheck, tests and lint pass) and committed, push it to `origin`.
 
 ## Agent skills
 
