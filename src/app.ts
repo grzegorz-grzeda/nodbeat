@@ -12,9 +12,12 @@ import {
   registerHeartbeatIntake,
 } from "./heartbeats.js";
 import { ensureIncidentIndexes } from "./incidents.js";
+import { ensureLinkedChatIndexes } from "./linked-chats.js";
 import { MonitorLock } from "./monitor-lock.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
+import { registerSettings } from "./settings.js";
 import type { TelegramClient } from "./telegram.js";
+import { registerTelegramBot } from "./telegram-bot.js";
 import { ensureUserIndexes } from "./users.js";
 
 export interface AppDeps {
@@ -53,6 +56,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ensureMonitorIndexes(db),
     ensureHeartbeatIndexes(db),
     ensureIncidentIndexes(db),
+    ensureLinkedChatIndexes(db),
   ]);
 
   await app.register(cookie);
@@ -61,6 +65,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
   registerDashboard(app, { db, clock, auth });
   registerMonitors(app, { db, clock, config, auth });
   await registerHeartbeatIntake(app, { db, clock, lock });
+  registerSettings(app, { db, clock, auth });
+  registerTelegramBot(app, { db, clock, telegram: deps.telegram, config });
 
   app.get("/health", async (_req, reply) => {
     try {

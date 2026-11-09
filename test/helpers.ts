@@ -37,7 +37,11 @@ export class RecordingTelegram implements TelegramClient {
     this.sent.push({ chatId, text });
   }
 
-  async setWebhook(): Promise<void> {}
+  readonly webhooks: Array<{ url: string; secretToken: string }> = [];
+
+  async setWebhook(url: string, secretToken: string): Promise<void> {
+    this.webhooks.push({ url, secretToken });
+  }
 }
 
 export const testConfig: Config = {

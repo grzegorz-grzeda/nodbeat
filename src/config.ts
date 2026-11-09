@@ -60,6 +60,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
   const telegramBotToken = required("TELEGRAM_BOT_TOKEN");
   const telegramWebhookSecret = required("TELEGRAM_WEBHOOK_SECRET");
+  if (
+    telegramWebhookSecret &&
+    !/^[A-Za-z0-9_-]{1,256}$/.test(telegramWebhookSecret)
+  ) {
+    problems.push(
+      "TELEGRAM_WEBHOOK_SECRET must be 1-256 characters of A-Z, a-z, 0-9, _ and -",
+    );
+  }
 
   const selfHeartbeatUrl = env.SELF_HEARTBEAT_URL?.trim() || undefined;
   if (selfHeartbeatUrl) checkHttpUrl("SELF_HEARTBEAT_URL", selfHeartbeatUrl);

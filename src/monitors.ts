@@ -4,6 +4,7 @@ import { ObjectId, type Db } from "mongodb";
 import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
+import { parseObjectId } from "./ids.js";
 import { formatDateTime, formatDuration } from "./format.js";
 import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
 import { listIncidents, type IncidentDoc } from "./incidents.js";
@@ -60,8 +61,8 @@ async function findOwnMonitor(
   ownerId: ObjectId,
   id: string,
 ): Promise<MonitorDoc | null> {
-  if (!ObjectId.isValid(id) || String(new ObjectId(id)) !== id) return null;
-  return monitors(db).findOne({ _id: new ObjectId(id), ownerId });
+  const _id = parseObjectId(id);
+  return _id ? monitors(db).findOne({ _id, ownerId }) : null;
 }
 
 interface MonitorForm {
