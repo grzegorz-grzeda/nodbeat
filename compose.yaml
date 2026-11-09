@@ -1,6 +1,7 @@
 services:
   nodbeat:
-    build: .
+    # Prebuilt by the release workflow (ADR 0005). NODBEAT_VERSION is kept in .env by the deploy.
+    image: ghcr.io/grzegorz-grzeda/nodbeat:${NODBEAT_VERSION:?set NODBEAT_VERSION in .env, e.g. 0.10.0}
     restart: unless-stopped
     env_file: .env
     # No published ports: the shared edge Caddy reaches nodbeat:3000 over the edge network (ADR 0004).

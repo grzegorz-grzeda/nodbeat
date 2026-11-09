@@ -3,6 +3,7 @@ import { MongoClient, type Db } from "mongodb";
 import { afterEach, inject } from "vitest";
 import { createApp, type App } from "../src/app.js";
 import { runCli } from "../src/cli.js";
+import type { BuildInfo } from "../src/build-info.js";
 import type { Clock } from "../src/clock.js";
 import type { Config } from "../src/config.js";
 import type { TelegramClient } from "../src/telegram.js";
@@ -58,6 +59,9 @@ export const testConfig: Config = {
   selfHeartbeatUrl: undefined,
 };
 
+/** Fixed build info so tests can assert on it. */
+export const testBuild: BuildInfo = { version: "1.2.3", commit: "abc1234" };
+
 export interface TestContext {
   app: App;
   clock: FakeClock;
@@ -97,6 +101,7 @@ export async function buildTestApp(): Promise<TestContext> {
     clock,
     telegram,
     config: testConfig,
+    build: testBuild,
     logger: recordingLogger(logs),
   });
   cleanups.push(async () => {
@@ -114,6 +119,7 @@ export async function restartApp(ctx: TestContext): Promise<App> {
     clock: ctx.clock,
     telegram: ctx.telegram,
     config: testConfig,
+    build: testBuild,
     logger: recordingLogger(ctx.logs),
   });
   cleanups.push(() => app.close());

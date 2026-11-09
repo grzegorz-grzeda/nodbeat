@@ -16,7 +16,12 @@ RUN pnpm install --frozen-lockfile --prod --ignore-scripts
 
 FROM node:22-alpine AS runtime
 WORKDIR /app
-ENV NODE_ENV=production
+# Set by the release workflow; /health reports them. Unset → package.json version and "dev".
+ARG APP_VERSION=""
+ARG APP_COMMIT=""
+ENV NODE_ENV=production \
+    APP_VERSION=$APP_VERSION \
+    APP_COMMIT=$APP_COMMIT
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./

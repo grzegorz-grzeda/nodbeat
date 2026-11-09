@@ -1,5 +1,6 @@
 import { MongoClient } from "mongodb";
 import { createApp } from "./app.js";
+import { loadBuildInfo } from "./build-info.js";
 import { systemClock } from "./clock.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { startSelfHeartbeat } from "./self-heartbeat.js";
@@ -22,6 +23,7 @@ async function main(): Promise<void> {
     clock: systemClock,
     telegram: createHttpTelegramClient(config.telegramBotToken),
     config,
+    build: loadBuildInfo(),
     logger: true,
   });
 

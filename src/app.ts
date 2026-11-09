@@ -5,6 +5,7 @@ import Fastify, {
   type FastifyServerOptions,
 } from "fastify";
 import type { Db } from "mongodb";
+import type { BuildInfo } from "./build-info.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { createAlertDispatcher, ensureAlertIndexes } from "./alerts.js";
@@ -31,6 +32,8 @@ export interface AppDeps {
   clock: Clock;
   telegram: TelegramClient;
   config: Config;
+  /** Version and commit reported by `/health`. */
+  build: BuildInfo;
   /** Fastify's logger: true for the default one, or options. Off by default. */
   logger?: FastifyServerOptions["logger"];
 }
@@ -80,9 +83,11 @@ export async function createApp(deps: AppDeps): Promise<App> {
   app.get("/health", async (_req, reply) => {
     try {
       await db.command({ ping: 1 });
-      return reply.type("text/plain").send("ok");
+      return reply.send({ status: "ok", ...deps.build });
     } catch {
-      return reply.code(503).type("text/plain").send("mongo unavailable");
+      return reply
+        .code(503)
+        .send({ status: "mongo unavailable", ...deps.build });
     }
   });
 
