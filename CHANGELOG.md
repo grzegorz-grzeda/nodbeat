@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - `GET /openapi.yaml`: a public OpenAPI 3 document for the Heartbeat URL and `/health`, stamped with the running version and `PUBLIC_BASE_URL`.
+- `GET /docs`: public API docs in Swagger UI, with "Try it out" against `PUBLIC_BASE_URL`. Swagger UI is served by nodbeat itself (no CDN) and runs under the strict CSP.
 
 ### Changed
 

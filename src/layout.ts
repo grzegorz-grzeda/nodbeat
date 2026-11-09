@@ -14,6 +14,11 @@ const LONG_CACHE = "public, max-age=31536000, immutable";
 /** Local dev always has commit `dev`, so the URL never changes: revalidate instead. */
 const DEV_CACHE = "no-cache";
 
+/** Cache-Control for files whose URLs carry `?v=<commit>`. */
+export function assetCacheControl(build: BuildInfo): string {
+  return build.commit === "dev" ? DEV_CACHE : LONG_CACHE;
+}
+
 const CONTENT_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
@@ -176,7 +181,7 @@ export function registerLayout(
 ): void {
   const { auth, build } = deps;
   const assets = loadAssets();
-  const cacheControl = build.commit === "dev" ? DEV_CACHE : LONG_CACHE;
+  const cacheControl = assetCacheControl(build);
 
   app.get<{ Params: { name: string } }>("/assets/:name", async (req, reply) => {
     const asset = assets.get(req.params.name);

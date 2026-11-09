@@ -12,6 +12,7 @@ import type { Config } from "./config.js";
 import { createAlertDispatcher, ensureAlertIndexes } from "./alerts.js";
 import { ensureSessionIndexes, registerAuth } from "./auth.js";
 import { registerDashboard } from "./dashboard.js";
+import { registerDocs } from "./docs.js";
 import { createDownChecker } from "./down-checker.js";
 import {
   ensureHeartbeatIndexes,
@@ -92,6 +93,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     build: deps.build,
     publicBaseUrl: config.publicBaseUrl,
   });
+  registerDocs(app, { build: deps.build });
 
   app.get("/health", async (_req, reply) => {
     try {

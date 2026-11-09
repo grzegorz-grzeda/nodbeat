@@ -1,2 +1,4 @@
 allowBuilds:
   mongodb-memory-server: true
+  # Telemetry call from swagger-ui-dist; never run it.
+  "@scarf/scarf": false
