@@ -49,8 +49,12 @@ _Avoid_: Overview, home, status page
 ## Notifications
 
 **Alert**:
-A message sent to a User's Linked chats when one of their Monitors goes Down or comes back Up.
+A message sent to a Monitor's Alert chats when it goes Down or comes back Up.
 _Avoid_: Notification, ping
+
+**Alert chats**:
+The Linked chats a Monitor's Alerts go to: either all of its owner's Linked chats, including ones linked later, or a chosen few. A Monitor whose chosen chats were all removed has no Alert chats and alerts nowhere.
+_Avoid_: Recipients, routes, targets
 
 **Linked chat**:
 A Telegram chat (private or group) that a User has connected to their account to receive Alerts.
