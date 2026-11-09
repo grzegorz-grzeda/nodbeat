@@ -86,10 +86,14 @@ export async function registerHeartbeatIntake(
     }
 
     const message = readMessage(req);
-    await lock.run(String(monitor._id), async () => {
-      // Re-read under the lock: the Down checker may have changed the state since the lookup above.
-      const current = await monitors(db).findOne({ _id: monitor._id });
-      if (!current) return;
+    const accepted = await lock.run(String(monitor._id), async () => {
+      // Re-read under the lock: the Down checker may have changed the state since the lookup above, and the
+      // Monitor may have been deleted or had its Heartbeat URL regenerated.
+      const current = await monitors(db).findOne({
+        _id: monitor._id,
+        token: monitor.token,
+      });
+      if (!current) return false;
       const now = clock.now();
       const { fields, effects } = transition(
         current,
@@ -107,8 +111,9 @@ export async function registerHeartbeatIntake(
         }),
       ]);
       await applyEffects(db, current, effects, now);
+      return true;
     });
-    return text(200, "OK");
+    return accepted ? text(200, "OK") : text(404, "Not Found");
   };
 
   // Own scope so the catch-all body parser applies only here: devices often POST without a Content-Type.
@@ -138,4 +143,12 @@ export async function registerHeartbeatIntake(
       handler: handle,
     });
   });
+}
+
+/** Removes all of the Monitor's Heartbeats (when the Monitor is deleted). */
+export async function deleteHeartbeatsOf(
+  db: Db,
+  monitorId: ObjectId,
+): Promise<void> {
+  await heartbeats(db).deleteMany({ monitorId });
 }

@@ -27,7 +27,9 @@ export function createDownChecker(deps: {
             $lte: [
               {
                 $dateAdd: {
-                  startDate: { $max: ["$lastHeartbeatAt", startedAt] },
+                  startDate: {
+                    $max: ["$lastHeartbeatAt", "$watchedSince", startedAt],
+                  },
                   unit: "second",
                   amount: { $add: ["$intervalSec", "$graceSec"] },
                 },

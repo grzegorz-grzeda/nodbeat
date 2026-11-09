@@ -25,8 +25,11 @@ Extra time allowed after the Interval before a missing Heartbeat makes the Monit
 _Avoid_: Tolerance, timeout
 
 **Monitor state**:
-One of **New** (no Heartbeat received yet), **Up** (Heartbeats arriving on time), **Down** (Interval + Grace period passed with no Heartbeat) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
+One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval + Grace period passed with no Heartbeat) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
 _Avoid_: Status, health
+
+**Pause period**:
+A stretch of time a Monitor spent Paused, from pause to unpause. Kept so Uptime can leave it out.
 
 **Incident**:
 A period during which a Monitor was Down, from the moment it went Down to the Heartbeat that brought it back Up.

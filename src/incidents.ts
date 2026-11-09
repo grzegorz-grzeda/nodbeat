@@ -55,3 +55,11 @@ export function listIncidents(
     .limit(limit)
     .toArray();
 }
+
+/** Removes all of the Monitor's Incidents (when the Monitor is deleted). */
+export async function deleteIncidentsOf(
+  db: Db,
+  monitorId: ObjectId,
+): Promise<void> {
+  await incidents(db).deleteMany({ monitorId });
+}

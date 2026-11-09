@@ -14,7 +14,9 @@ import {
 import { ensureIncidentIndexes } from "./incidents.js";
 import { ensureLinkedChatIndexes } from "./linked-chats.js";
 import { MonitorLock } from "./monitor-lock.js";
+import { registerMonitorManagement } from "./monitor-management.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
+import { ensurePausePeriodIndexes } from "./pause-periods.js";
 import { registerSettings } from "./settings.js";
 import type { TelegramClient } from "./telegram.js";
 import { registerTelegramBot } from "./telegram-bot.js";
@@ -57,6 +59,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ensureHeartbeatIndexes(db),
     ensureIncidentIndexes(db),
     ensureLinkedChatIndexes(db),
+    ensurePausePeriodIndexes(db),
   ]);
 
   await app.register(cookie);
@@ -64,6 +67,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const auth = registerAuth(app, { db, clock, config });
   registerDashboard(app, { db, clock, auth });
   registerMonitors(app, { db, clock, config, auth });
+  registerMonitorManagement(app, { db, clock, auth, lock });
   await registerHeartbeatIntake(app, { db, clock, lock });
   registerSettings(app, { db, clock, auth });
   registerTelegramBot(app, { db, clock, telegram: deps.telegram, config });

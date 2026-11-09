@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { ObjectId, type Db } from "mongodb";
 import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
@@ -9,11 +9,11 @@ import { formatDateTime, formatDuration } from "./format.js";
 import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
 import { listIncidents, type IncidentDoc } from "./incidents.js";
 import { csrfField, html, page, userHeader, type SafeHtml } from "./html.js";
+import { monitorFormBody, readForm, validate } from "./monitor-form.js";
 import {
   instanceLimits,
   limitsFor,
   MAX_HEARTBEAT_MESSAGE_LENGTH,
-  type Limits,
 } from "./limits.js";
 import { STATE_LABELS, type MonitorStateFields } from "./monitor-state.js";
 
@@ -27,17 +27,12 @@ export interface MonitorDoc extends MonitorStateFields {
   /** Secret part of the Heartbeat URL. */
   token: string;
   alertsEnabled: boolean;
-  pausedAt: Date | null;
   createdAt: Date;
 }
 
-const MAX_NAME_LENGTH = 100;
-const MAX_NOTES_LENGTH = 2000;
 /** Rows shown on the Monitor page, capped so a chatty or flaky Monitor doesn't produce a huge page. */
 const HEARTBEAT_HISTORY_LIMIT = 500;
 const INCIDENT_HISTORY_LIMIT = 100;
-const UNIT_SEC = { s: 1, m: 60, h: 60 * 60, d: 24 * 60 * 60 } as const;
-type Unit = keyof typeof UNIT_SEC;
 
 export const monitors = (db: Db) => db.collection<MonitorDoc>("monitors");
 
@@ -49,14 +44,14 @@ export async function ensureMonitorIndexes(db: Db): Promise<void> {
 }
 
 /** 192 random bits: unguessable, URL-safe. */
-const newHeartbeatToken = () => randomBytes(24).toString("base64url");
+export const newHeartbeatToken = () => randomBytes(24).toString("base64url");
 
 export function listMonitors(db: Db, ownerId: ObjectId): Promise<MonitorDoc[]> {
   return monitors(db).find({ ownerId }).sort({ createdAt: 1 }).toArray();
 }
 
 /** The owner's Monitor with this id, or null (also for another User's Monitor or a malformed id). */
-async function findOwnMonitor(
+export async function findOwnMonitor(
   db: Db,
   ownerId: ObjectId,
   id: string,
@@ -65,89 +60,22 @@ async function findOwnMonitor(
   return _id ? monitors(db).findOne({ _id, ownerId }) : null;
 }
 
-interface MonitorForm {
-  name: string;
-  interval: string;
-  intervalUnit: string;
-  grace: string;
-  graceUnit: string;
-  notes: string;
-}
-
-interface MonitorSettings {
-  name: string;
-  notes: string;
-  intervalSec: number;
-  graceSec: number;
-}
-
-function readForm(body: unknown): MonitorForm {
-  const b = (body ?? {}) as Record<string, unknown>;
-  const field = (name: string) =>
-    typeof b[name] === "string" ? (b[name] as string) : "";
-  return {
-    name: field("name"),
-    interval: field("interval"),
-    intervalUnit: field("intervalUnit") || "s",
-    grace: field("grace"),
-    graceUnit: field("graceUnit") || "s",
-    notes: field("notes"),
-  };
-}
-
-function toSeconds(value: string, unit: string): number | null {
-  if (!/^\d+$/.test(value.trim()) || !(unit in UNIT_SEC)) return null;
-  return Number(value.trim()) * UNIT_SEC[unit as Unit];
-}
-
-function validate(
-  form: MonitorForm,
-  limits: Limits,
-): { settings: MonitorSettings } | { errors: string[] } {
-  const errors: string[] = [];
-  const name = form.name.trim();
-  const notes = form.notes.trim();
-  if (!name) errors.push("Name is required.");
-  if (name.length > MAX_NAME_LENGTH) {
-    errors.push(`Name can be at most ${MAX_NAME_LENGTH} characters.`);
-  }
-  if (notes.length > MAX_NOTES_LENGTH) {
-    errors.push(`Notes can be at most ${MAX_NOTES_LENGTH} characters.`);
-  }
-
-  const intervalSec = toSeconds(form.interval, form.intervalUnit);
-  if (
-    intervalSec === null ||
-    intervalSec < limits.minIntervalSec ||
-    intervalSec > limits.maxIntervalSec
-  ) {
-    errors.push(
-      `Interval must be between ${formatDuration(limits.minIntervalSec)} and ${formatDuration(limits.maxIntervalSec)}.`,
+export function sendMonitorNotFound(
+  req: FastifyRequest,
+  reply: FastifyReply,
+  auth: Auth,
+): FastifyReply {
+  return reply
+    .code(404)
+    .type("text/html")
+    .send(
+      page({
+        title: "Not found",
+        header: userHeader(req.user!.email, auth.csrfToken(req, reply)),
+        body: html`<p class="error">No such Monitor.</p>
+          <p><a href="/">Back to the Dashboard</a></p>`,
+      }),
     );
-  }
-
-  let graceSec: number | null;
-  if (form.grace.trim() === "") {
-    graceSec = intervalSec === null ? null : Math.floor(intervalSec / 2);
-    // Half of a long Interval can exceed the Grace bound (7 d → 3.5 d > 1 d); clamp rather than blame a field left blank.
-    if (graceSec !== null) graceSec = Math.min(graceSec, limits.maxGraceSec);
-  } else {
-    graceSec = toSeconds(form.grace, form.graceUnit);
-    if (
-      graceSec === null ||
-      graceSec < limits.minGraceSec ||
-      graceSec > limits.maxGraceSec
-    ) {
-      errors.push(
-        `Grace period must be between ${formatDuration(limits.minGraceSec)} and ${formatDuration(limits.maxGraceSec)}.`,
-      );
-    }
-  }
-
-  if (errors.length > 0 || intervalSec === null || graceSec === null) {
-    return { errors };
-  }
-  return { settings: { name, notes, intervalSec, graceSec } };
 }
 
 export function registerMonitors(
@@ -214,6 +142,7 @@ export function registerMonitors(
       lastHeartbeatAt: null,
       lastMessage: null,
       pausedAt: null,
+      watchedSince: null,
       createdAt: clock.now(),
     };
     await monitors(db).insertOne(monitor);
@@ -225,19 +154,7 @@ export function registerMonitors(
     { preHandler: requireUser },
     async (req, reply) => {
       const monitor = await findOwnMonitor(db, req.user!._id, req.params.id);
-      if (!monitor) {
-        return reply
-          .code(404)
-          .type("text/html")
-          .send(
-            page({
-              title: "Not found",
-              header: userHeader(req.user!.email, auth.csrfToken(req, reply)),
-              body: html`<p class="error">No such Monitor.</p>
-                <p><a href="/">Back to the Dashboard</a></p>`,
-            }),
-          );
-      }
+      if (!monitor) return sendMonitorNotFound(req, reply, auth);
       const url = heartbeatUrl(monitor);
       const now = clock.now();
       const [incidentList, heartbeatList] = await Promise.all([
@@ -252,13 +169,30 @@ export function registerMonitors(
         ),
       ]);
       const timeZone = req.user!.timeZone;
+      const csrf = auth.csrfToken(req, reply);
       return reply.type("text/html").send(
         page({
           title: monitor.name,
           header: userHeader(req.user!.email, auth.csrfToken(req, reply)),
           body: html`<p><a href="/">← Dashboard</a></p>
             <h1>${monitor.name}</h1>
+            ${actionsSection(monitor, csrf)}
             <p>State: <strong>${STATE_LABELS[monitor.state]}</strong></p>
+            <form
+              method="post"
+              action="/monitors/${String(monitor._id)}/alerts"
+            >
+              ${csrfField(csrf)} Alerts:
+              <strong>${monitor.alertsEnabled ? "on" : "off"}</strong>
+              <input
+                type="hidden"
+                name="alertsEnabled"
+                value="${monitor.alertsEnabled ? "false" : "true"}"
+              />
+              <button type="submit">
+                ${monitor.alertsEnabled ? "Turn Alerts off" : "Turn Alerts on"}
+              </button>
+            </form>
             <ul>
               <li>Interval: ${formatDuration(monitor.intervalSec)}</li>
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
@@ -278,6 +212,14 @@ export function registerMonitors(
               size="70"
               onfocus="this.select()"
             />
+            <form
+              method="post"
+              action="/monitors/${String(monitor._id)}/regenerate-url"
+            >
+              ${csrfField(csrf)}
+              <button type="submit">Regenerate URL</button>
+              (the current URL stops working)
+            </form>
             <h2>Examples</h2>
             <p>
               Send a GET or POST. An optional message (up to
@@ -310,6 +252,24 @@ void sendHeartbeat(const String&amp; message) {
   );
 }
 
+/** Edit and Delete links and the Pause/Unpause button. */
+function actionsSection(monitor: MonitorDoc, csrf: string): SafeHtml {
+  const base = `/monitors/${String(monitor._id)}`;
+  const paused = monitor.state === "paused";
+  return html`<div>
+    <a href="${base}/edit">Edit</a>
+    <a href="${base}/delete">Delete</a>
+    <form
+      class="inline"
+      method="post"
+      action="${base}/${paused ? "unpause" : "pause"}"
+    >
+      ${csrfField(csrf)}
+      <button type="submit">${paused ? "Unpause" : "Pause"}</button>
+    </form>
+  </div>`;
+}
+
 function incidentsSection(
   list: IncidentDoc[],
   now: Date,
@@ -340,6 +300,7 @@ function incidentsSection(
               <td>${formatDateTime(i.startedAt, timeZone)}</td>
               <td>
                 ${i.endedAt ? formatDateTime(i.endedAt, timeZone) : "ongoing"}
+                ${i.endReason === "paused" ? "(paused)" : ""}
               </td>
               <td>
                 ${formatDuration(
@@ -382,71 +343,4 @@ function heartbeatsSection(list: HeartbeatDoc[], timeZone: string): SafeHtml {
         )}
       </tbody>
     </table>`;
-}
-
-function monitorFormBody(options: {
-  csrf: string;
-  form: MonitorForm;
-  limits: Limits;
-  errors?: string[];
-}): SafeHtml {
-  const { csrf, form, limits, errors = [] } = options;
-  const unitSelect = (name: string, selected: string) =>
-    html`<select name="${name}">
-      ${(
-        [
-          ["s", "seconds"],
-          ["m", "minutes"],
-          ["h", "hours"],
-          ["d", "days"],
-        ] as const
-      ).map(
-        ([value, label]) =>
-          html`<option
-            value="${value}"
-            ${value === selected ? html`selected` : ""}
-          >
-            ${label}
-          </option>`,
-      )}
-    </select>`;
-  return html`<p><a href="/">← Dashboard</a></p>
-    <h1>New Monitor</h1>
-    ${errors.map((e) => html`<p class="error">${e}</p>`)}
-    <form method="post" action="/monitors">
-      ${csrfField(csrf)}
-      <label
-        >Name
-        <input
-          type="text"
-          name="name"
-          value="${form.name}"
-          maxlength="${MAX_NAME_LENGTH}"
-          required
-      /></label>
-      <label
-        >Interval (${formatDuration(limits.minIntervalSec)} to
-        ${formatDuration(limits.maxIntervalSec)})
-        <input
-          type="number"
-          name="interval"
-          value="${form.interval}"
-          min="1"
-          required
-        />
-        ${unitSelect("intervalUnit", form.intervalUnit)}</label
-      >
-      <label
-        >Grace period (up to ${formatDuration(limits.maxGraceSec)}; leave empty
-        for half the Interval)
-        <input type="number" name="grace" value="${form.grace}" min="0" />
-        ${unitSelect("graceUnit", form.graceUnit)}</label
-      >
-      <label
-        >Notes (optional)
-        <textarea name="notes" rows="3" maxlength="${MAX_NOTES_LENGTH}">
-${form.notes}</textarea>
-      </label>
-      <button type="submit">Create Monitor</button>
-    </form>`;
 }
