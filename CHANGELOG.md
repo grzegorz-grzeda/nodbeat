@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-09
+
 ### Added
 
 - `GET /openapi.yaml`: a public OpenAPI 3 document for the Heartbeat URL and `/health`, stamped with the running version and `PUBLIC_BASE_URL`.
@@ -84,7 +86,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.9.0...v0.10.0
