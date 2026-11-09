@@ -23,6 +23,7 @@ import { registerLayout } from "./layout.js";
 import { MonitorLock } from "./monitor-lock.js";
 import { registerMonitorManagement } from "./monitor-management.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
+import { registerOpenApi } from "./openapi.js";
 import { registerSettings } from "./settings.js";
 import { ensureStatePeriodIndexes } from "./state-periods.js";
 import type { TelegramClient } from "./telegram.js";
@@ -87,6 +88,10 @@ export async function createApp(deps: AppDeps): Promise<App> {
   await registerHeartbeatIntake(app, { db, clock, lock });
   registerSettings(app, { db, clock, auth });
   registerTelegramBot(app, { db, clock, telegram: deps.telegram, config });
+  registerOpenApi(app, {
+    build: deps.build,
+    publicBaseUrl: config.publicBaseUrl,
+  });
 
   app.get("/health", async (_req, reply) => {
     try {

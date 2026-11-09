@@ -1,0 +1,188 @@
+# Hand-written (spec 0003). Served at /openapi.yaml with info.version set to the
+# running version and servers set to PUBLIC_BASE_URL; the values below are placeholders.
+openapi: 3.0.3
+info:
+  title: nodbeat
+  version: 0.0.0
+  description: |
+    A heartbeat for every service and device.
+
+    Each Monitor has a secret **Heartbeat URL**, `/hb/{token}`. Send a
+    Heartbeat to it at least once per Interval; if none arrives within the
+    Interval plus the Grace period, the Monitor goes Down and you get an Alert.
+
+    Keep the Heartbeat URL secret: anyone who has it can send Heartbeats for
+    the Monitor. Copy it from the Monitor page.
+  license:
+    name: MIT
+servers:
+  - url: http://localhost:3000
+tags:
+  - name: Heartbeat
+    description: Send a Heartbeat to a Monitor's Heartbeat URL.
+  - name: Health
+    description: Whether this nodbeat instance is up.
+paths:
+  /hb/{token}:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+      - $ref: "#/components/parameters/Msg"
+    get:
+      tags: [Heartbeat]
+      summary: Send a Heartbeat
+      description: |
+        Records a Heartbeat for the Monitor that owns this Heartbeat URL. The
+        optional message comes from `?msg=`.
+
+        At most one Heartbeat per second per Monitor is accepted.
+      operationId: sendHeartbeat
+      responses:
+        "200":
+          $ref: "#/components/responses/Recorded"
+        "404":
+          $ref: "#/components/responses/UnknownToken"
+        "429":
+          $ref: "#/components/responses/TooManyHeartbeats"
+    post:
+      tags: [Heartbeat]
+      summary: Send a Heartbeat with a message
+      description: |
+        Records a Heartbeat for the Monitor that owns this Heartbeat URL, the
+        same as GET. The optional message is taken from, in order:
+
+        1. the `msg` query parameter (wins over any body);
+        2. the body: a `text/plain` body, or a body with any other or no
+           Content-Type, is the message itself; an `application/json` body's
+           `msg` string; an `application/x-www-form-urlencoded` body's `msg`
+           field.
+
+        A broken JSON body is kept as plain text and still counts as a
+        Heartbeat. The message is trimmed and cut to 200 characters; an
+        empty message means none.
+
+        The body may be at most 8 KiB. At most one Heartbeat per second per
+        Monitor is accepted.
+      operationId: sendHeartbeatWithBody
+      requestBody:
+        required: false
+        content:
+          text/plain:
+            schema:
+              type: string
+              description: The message. Any other or no Content-Type is read the same way.
+            example: backup finished in 42 s
+          application/json:
+            schema:
+              type: object
+              properties:
+                msg:
+                  type: string
+                  description: The message.
+            example:
+              msg: backup finished in 42 s
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                msg:
+                  type: string
+                  description: The message.
+            example:
+              msg: backup finished in 42 s
+      responses:
+        "200":
+          $ref: "#/components/responses/Recorded"
+        "404":
+          $ref: "#/components/responses/UnknownToken"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyHeartbeats"
+  /health:
+    get:
+      tags: [Health]
+      summary: Health of this nodbeat instance
+      description: Answers 200 when nodbeat can reach its database, 503 when it can't. Point external uptime tools here.
+      operationId: getHealth
+      responses:
+        "200":
+          description: nodbeat is up and its database answers.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: ok
+                version: 1.2.3
+                commit: abc1234
+        "503":
+          description: nodbeat is up but its database doesn't answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+              example:
+                status: mongo unavailable
+                version: 1.2.3
+                commit: abc1234
+components:
+  parameters:
+    Token:
+      name: token
+      in: path
+      required: true
+      description: The secret part of the Monitor's Heartbeat URL, from the Monitor page. Regenerating the Heartbeat URL changes it.
+      schema:
+        type: string
+      example: your-heartbeat-url-token
+    Msg:
+      name: msg
+      in: query
+      required: false
+      description: An optional message stored with the Heartbeat, trimmed and cut to 200 characters. Wins over a body message.
+      schema:
+        type: string
+      example: backup finished in 42 s
+  responses:
+    Recorded:
+      description: Heartbeat recorded.
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: OK
+    UnknownToken:
+      description: No Monitor has this Heartbeat URL, e.g. it was regenerated or the Monitor was deleted. Retrying won't help.
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: Not Found
+    TooManyHeartbeats:
+      description: More than one Heartbeat per second for this Monitor; this one wasn't recorded.
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: Too Many Requests
+    BodyTooLarge:
+      description: The body is over 8 KiB; the Heartbeat wasn't recorded.
+      content:
+        text/plain:
+          schema:
+            type: string
+          example: Payload Too Large
+  schemas:
+    Health:
+      type: object
+      required: [status, version, commit]
+      properties:
+        status:
+          type: string
+          enum: [ok, mongo unavailable]
+        version:
+          type: string
+          description: The running nodbeat version.
+        commit:
+          type: string
+          description: The commit it was built from, or `dev`.

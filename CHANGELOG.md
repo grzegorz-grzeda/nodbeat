@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- `GET /openapi.yaml`: a public OpenAPI 3 document for the Heartbeat URL and `/health`, stamped with the running version and `PUBLIC_BASE_URL`.
+
+### Changed
+
+- A Heartbeat URL body over 8 KiB now answers 413 in plain text, like every other Heartbeat URL answer.
+
 ## [0.11.0] - 2026-11-09
 
 ### Added

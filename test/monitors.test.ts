@@ -358,6 +358,28 @@ describe("Heartbeat intake", () => {
     expect(dashboard).toContain("later");
   });
 
+  it("answers 413 in plain text to a body over 8 KiB", async () => {
+    const { app } = await buildTestApp();
+
+    for (const contentType of [
+      "text/plain",
+      "application/json",
+      "application/x-www-form-urlencoded",
+      undefined,
+    ]) {
+      const res = await app.inject({
+        method: "POST",
+        url: "/hb/anything",
+        payload: "a".repeat(8 * 1024 + 1),
+        headers: contentType ? { "content-type": contentType } : {},
+      });
+
+      expect(res.statusCode).toBe(413);
+      expect(res.headers["content-type"]).toMatch(/^text\/plain/);
+      expect(res.body).toBe("Payload Too Large");
+    }
+  });
+
   it("keeps raw Heartbeats for 7 days via a TTL index", async () => {
     const { db } = await buildTestApp();
 

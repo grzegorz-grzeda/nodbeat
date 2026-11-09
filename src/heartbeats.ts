@@ -1,4 +1,9 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type {
+  FastifyError,
+  FastifyInstance,
+  FastifyReply,
+  FastifyRequest,
+} from "fastify";
 import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import { applyEffects } from "./effects.js";
@@ -135,6 +140,13 @@ export async function registerHeartbeatIntake(
         }
       },
     );
+    // Every Heartbeat URL answer is plain text, the oversized body too (Fastify's default is JSON).
+    scope.setErrorHandler<FastifyError>((error, _req, reply) => {
+      if (error.statusCode === 413) {
+        return reply.code(413).type("text/plain").send("Payload Too Large");
+      }
+      throw error;
+    });
     scope.route<{ Params: { token: string } }>({
       method: ["GET", "POST"],
       url: "/hb/:token",
