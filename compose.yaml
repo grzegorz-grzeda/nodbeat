@@ -1,0 +1,14 @@
+services:
+  nodbeat:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    # No published ports: the shared edge Caddy reaches nodbeat:3000 over the edge network (ADR 0004).
+    expose:
+      - "3000"
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true
