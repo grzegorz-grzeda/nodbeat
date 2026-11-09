@@ -40,6 +40,17 @@ export function csrfField(token: string): SafeHtml {
   return html`<input type="hidden" name="_csrf" value="${token}" />`;
 }
 
+/** Header for logged-in pages: the User's email and a logout button. */
+export function userHeader(email: string, csrf: string): SafeHtml {
+  return html`<span
+    >${email}
+    <form class="inline" method="post" action="/logout">
+      ${csrfField(csrf)}
+      <button type="submit">Log out</button>
+    </form></span
+  >`;
+}
+
 export function page(options: {
   title: string;
   body: SafeHtml;

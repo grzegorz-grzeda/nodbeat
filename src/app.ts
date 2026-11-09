@@ -6,6 +6,11 @@ import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { ensureSessionIndexes, registerAuth } from "./auth.js";
 import { registerDashboard } from "./dashboard.js";
+import {
+  ensureHeartbeatIndexes,
+  registerHeartbeatIntake,
+} from "./heartbeats.js";
+import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
 import type { TelegramClient } from "./telegram.js";
 import { ensureUserIndexes } from "./users.js";
 
@@ -36,12 +41,19 @@ export async function createApp(deps: AppDeps): Promise<App> {
     trustProxy: (_address, hop) => hop === 0,
   });
 
-  await Promise.all([ensureUserIndexes(db), ensureSessionIndexes(db)]);
+  await Promise.all([
+    ensureUserIndexes(db),
+    ensureSessionIndexes(db),
+    ensureMonitorIndexes(db),
+    ensureHeartbeatIndexes(db),
+  ]);
 
   await app.register(cookie);
   await app.register(formbody);
   const auth = registerAuth(app, { db, clock, config });
-  registerDashboard(app, auth);
+  registerDashboard(app, { db, clock, auth });
+  registerMonitors(app, { db, clock, config, auth });
+  await registerHeartbeatIntake(app, { db, clock });
 
   app.get("/health", async (_req, reply) => {
     try {
