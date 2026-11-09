@@ -66,6 +66,18 @@ export async function requireUser(
   return undefined;
 }
 
+/**
+ * Answers 404 to everyone but the Admin, visitors included: the page doesn't exist for them, and a login redirect
+ * would hint that it does. Use as a route's preHandler.
+ */
+export async function requireAdmin(
+  req: FastifyRequest,
+  reply: FastifyReply,
+): Promise<FastifyReply | undefined> {
+  if (!req.user?.isAdmin) return reply.errorPage(404);
+  return undefined;
+}
+
 export interface Auth {
   /** Returns the CSRF token for forms on the page being rendered, issuing its cookie if needed. */
   csrfToken(req: FastifyRequest, reply: FastifyReply): string;

@@ -461,6 +461,16 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
+/* Labelled numbers (Admin page): label left, number right. */
+table.stats tbody tr:last-child th {
+  border-bottom: none;
+}
+
+table.stats td {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Cards and lists */
 
 .card {

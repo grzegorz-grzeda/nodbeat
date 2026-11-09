@@ -9,6 +9,7 @@ import type { Db } from "mongodb";
 import type { BuildInfo } from "./build-info.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
+import { registerAdmin } from "./admin.js";
 import { createAlertDispatcher, ensureAlertIndexes } from "./alerts.js";
 import { ensureSessionIndexes, registerAuth } from "./auth.js";
 import { registerDashboard } from "./dashboard.js";
@@ -92,6 +93,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   registerMonitorLogs(app, { db, clock });
   await registerHeartbeatIntake(app, { db, clock, lock });
   registerSettings(app, { db, clock, auth });
+  registerAdmin(app, { db, clock });
   registerTelegramBot(app, { db, clock, telegram: deps.telegram, config });
   registerOpenApi(app, {
     build: deps.build,

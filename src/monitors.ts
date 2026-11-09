@@ -20,7 +20,7 @@ import { csrfField, html, type SafeHtml } from "./html.js";
 import { stateBadge } from "./layout.js";
 import { monitorFormBody, readForm, validate } from "./monitor-form.js";
 import { limitsFor, MAX_HEARTBEAT_MESSAGE_LENGTH } from "./limits.js";
-import type { MonitorStateFields } from "./monitor-state.js";
+import type { MonitorState, MonitorStateFields } from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
 
 export interface MonitorDoc extends MonitorStateFields {
@@ -50,6 +50,26 @@ export const newHeartbeatToken = () => randomBytes(24).toString("base64url");
 
 export function listMonitors(db: Db, ownerId: ObjectId): Promise<MonitorDoc[]> {
   return monitors(db).find({ ownerId }).sort({ createdAt: 1 }).toArray();
+}
+
+/** How many Monitors the whole instance has in each Monitor state (the Admin page). */
+export async function countMonitorsByState(
+  db: Db,
+): Promise<Record<MonitorState, number>> {
+  const counts: Record<MonitorState, number> = {
+    new: 0,
+    up: 0,
+    down: 0,
+    paused: 0,
+  };
+  const groups = await monitors(db)
+    .aggregate<{
+      _id: MonitorState;
+      count: number;
+    }>([{ $group: { _id: "$state", count: { $sum: 1 } } }])
+    .toArray();
+  for (const g of groups) counts[g._id] = g.count;
+  return counts;
 }
 
 /** The owner's Monitor with this id, or null (also for another User's Monitor or a malformed id). */

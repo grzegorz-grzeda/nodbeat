@@ -163,3 +163,8 @@ export async function removeLinkedChat(
   if (!_id) return null;
   return linkedChats(db).findOneAndDelete({ _id, ownerId });
 }
+
+/** How many Linked chats the instance has, across all Users (the Admin page). */
+export function countLinkedChats(db: Db): Promise<number> {
+  return linkedChats(db).countDocuments();
+}

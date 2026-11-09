@@ -111,15 +111,18 @@ interface NavUser {
   theme: Theme;
   /** Where the theme switch returns to. */
   back: string;
+  /** Shows the Admin link. */
+  isAdmin: boolean;
 }
 
-function nav({ email, csrf, theme, back }: NavUser): SafeHtml {
+function nav({ email, csrf, theme, back, isAdmin }: NavUser): SafeHtml {
   return html`<input type="checkbox" id="nav-toggle" class="nav-toggle" />
     <label for="nav-toggle" class="nav-toggle-label">Menu</label>
     <nav class="nav-links" aria-label="Main">
       <a href="/">Dashboard</a>
       <a href="/monitors/new">New Monitor</a>
       <a href="/settings">Settings</a>
+      ${isAdmin && html`<a href="/admin">Admin</a>`}
       ${themeSwitch(theme, csrf, back)}
       <span class="nav-email">${email}</span>
       <form method="post" action="/logout">
@@ -202,6 +205,7 @@ export function registerLayout(
           theme: themeOf(req.user),
           // A page rendered for a POST (e.g. a form error) has no URL to come back to.
           back: req.method === "GET" ? req.url : "/",
+          isAdmin: req.user.isAdmin,
         }
       : undefined;
     return this.type("text/html; charset=utf-8").send(

@@ -180,3 +180,8 @@ export async function deleteHeartbeatsOf(
 ): Promise<void> {
   await heartbeats(db).deleteMany({ monitorId });
 }
+
+/** How many Heartbeats the whole instance has received since `since` (the Admin page). */
+export function countAllHeartbeatsSince(db: Db, since: Date): Promise<number> {
+  return heartbeats(db).countDocuments({ receivedAt: { $gte: since } });
+}

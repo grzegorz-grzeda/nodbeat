@@ -17,6 +17,7 @@ Heartbeats are push-only (ADR 0001): nodbeat never connects to what it watches, 
 - **Monitor page**: settings, Heartbeat URL with copy buttons, curl / cron / ESP32 examples, the 20 newest Incidents and Heartbeats, and paged full logs.
 - **Telegram**: link private or group chats with a one-time Link code; `/status` and `/unlink` in the bot. Alerts go to every Linked chat of the Monitor's owner, in order per Monitor, retried with backoff for up to 1 hour.
 - **Time zone** per User for Alerts and the UI; light / dark / system theme.
+- **Admin page** at `/admin`: instance-wide counts only, never what Users watch.
 - **Public API docs** at `/docs` (Swagger UI) and `/openapi.yaml`.
 - **Startup grace**: after nodbeat restarts, no Monitor goes Down before it has had a full Interval + Grace period, so a deploy never floods you with false Alerts (ADR 0002).
 

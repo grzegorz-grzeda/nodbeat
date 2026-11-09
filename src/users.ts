@@ -150,3 +150,8 @@ export async function setUserTheme(
 ): Promise<void> {
   await users(db).updateOne({ _id: id }, { $set: { theme } });
 }
+
+/** How many Users the instance has (the Admin page). */
+export function countUsers(db: Db): Promise<number> {
+  return users(db).countDocuments();
+}

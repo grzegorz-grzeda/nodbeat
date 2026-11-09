@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Admin page at `/admin` (Admin only; 404 for everyone else) with instance totals: Users, Monitors by state, Linked chats, Heartbeats in the last 7 days and Incidents opened in the last 7 and 30 days. Linked from the nav for the Admin.
+
 ## [0.14.0] - 2026-11-10
 
 ### Changed

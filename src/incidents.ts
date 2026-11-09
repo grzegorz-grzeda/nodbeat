@@ -85,3 +85,8 @@ export function listIncidentsSince(
     .sort({ startedAt: 1 })
     .toArray();
 }
+
+/** How many Incidents opened since `since`, across the whole instance (the Admin page). */
+export function countIncidentsSince(db: Db, since: Date): Promise<number> {
+  return incidents(db).countDocuments({ startedAt: { $gte: since } });
+}
