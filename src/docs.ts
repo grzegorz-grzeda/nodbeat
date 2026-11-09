@@ -113,7 +113,7 @@ export function registerDocs(
 
   app.get<{ Params: { name: string } }>("/docs/:name", async (req, reply) => {
     const file = files.get(req.params.name);
-    if (!file) return reply.code(404).type("text/plain").send("Not Found");
+    if (!file) return reply.errorPage(404);
     return reply
       .type(file.type)
       .header("cache-control", cacheControl)

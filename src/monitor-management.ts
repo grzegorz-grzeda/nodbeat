@@ -169,7 +169,7 @@ export function registerMonitorManagement(
       const value = (req.body as Record<string, unknown> | undefined)
         ?.alertsEnabled;
       if (value !== "true" && value !== "false") {
-        return reply.code(400).type("text/plain").send("Bad Request");
+        return reply.errorPage(400);
       }
       await monitors(db).updateOne(
         { _id: monitor._id },

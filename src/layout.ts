@@ -186,7 +186,7 @@ export function registerLayout(
 
   app.get<{ Params: { name: string } }>("/assets/:name", async (req, reply) => {
     const asset = assets.get(req.params.name);
-    if (!asset) return reply.code(404).type("text/plain").send("Not Found");
+    if (!asset) return reply.errorPage(404);
     return reply
       .type(asset.type)
       .header("cache-control", cacheControl)

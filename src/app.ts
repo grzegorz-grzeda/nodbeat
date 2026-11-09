@@ -13,6 +13,7 @@ import { createAlertDispatcher, ensureAlertIndexes } from "./alerts.js";
 import { ensureSessionIndexes, registerAuth } from "./auth.js";
 import { registerDashboard } from "./dashboard.js";
 import { registerDocs } from "./docs.js";
+import { registerErrorPages } from "./error-page.js";
 import { createDownChecker } from "./down-checker.js";
 import {
   ensureHeartbeatIndexes,
@@ -83,6 +84,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   await app.register(formbody);
   const auth = registerAuth(app, { db, clock, config });
   registerLayout(app, { auth, build: deps.build });
+  registerErrorPages(app);
   registerDashboard(app, { db, clock, config });
   registerMonitors(app, { db, clock, config, auth });
   registerMonitorManagement(app, { db, clock, auth, lock });

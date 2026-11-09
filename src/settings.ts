@@ -109,7 +109,7 @@ export function registerSettings(
         typeof value === "string" &&
         (await setUserTimeZone(db, req.user!._id, value));
       if (!ok) {
-        return reply.code(400).type("text/plain").send("Unknown time zone");
+        return reply.errorPage(400, { message: "Unknown time zone." });
       }
       setFlash(reply, "Time zone saved.");
       return reply.redirect("/settings", 303);
@@ -123,7 +123,7 @@ export function registerSettings(
       const body = req.body as Record<string, unknown> | undefined;
       const theme = body?.theme;
       if (!isTheme(theme)) {
-        return reply.code(400).type("text/plain").send("Unknown theme");
+        return reply.errorPage(400, { message: "Unknown theme." });
       }
       await setUserTheme(db, req.user!._id, theme);
       // `assets/theme.js` asks for JSON and applies the theme without a reload.

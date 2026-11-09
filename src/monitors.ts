@@ -64,12 +64,7 @@ export async function findOwnMonitor(
 }
 
 export function sendMonitorNotFound(reply: FastifyReply): FastifyReply {
-  return reply.code(404).page({
-    title: "Not found",
-    body: html`<h1>Not found</h1>
-      <p class="error">No such Monitor.</p>
-      <p><a href="/">Back to the Dashboard</a></p>`,
-  });
+  return reply.errorPage(404, { message: "No such Monitor." });
 }
 
 export function registerMonitors(

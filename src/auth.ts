@@ -149,13 +149,13 @@ export function registerAuth(
   app.addHook("preHandler", async (req, reply) => {
     if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return;
     if (req.routeOptions.config.csrf === false) return;
+    // No route matched: the 404 answer changes nothing, so it needs no token.
+    if (req.is404) return;
     if (!csrfValid(req)) {
-      return reply.code(403).page({
+      return reply.errorPage(403, {
         title: "Expired form",
-        body: html`<h1>Expired form</h1>
-          <p class="error">
-            This form has expired. Go back, reload the page and try again.
-          </p>`,
+        message:
+          "This form has expired. Go back, reload the page and try again.",
       });
     }
     return undefined;
