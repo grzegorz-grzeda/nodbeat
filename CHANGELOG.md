@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Changed
 
 - A Heartbeat URL body over 8 KiB now answers 413 in plain text, like every other Heartbeat URL answer.
+- HEAD on a Heartbeat URL answers 404 and records no Heartbeat, so a link preview can't keep a Monitor Up.
 
 ## [0.11.0] - 2026-11-09
 

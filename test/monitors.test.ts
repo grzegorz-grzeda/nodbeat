@@ -313,6 +313,26 @@ describe("Heartbeat intake", () => {
     expect(post.statusCode).toBe(404);
   });
 
+  it("records no Heartbeat for HEAD, so a link preview can't fake one", async () => {
+    const { app, browser, db } = await loggedIn();
+    const url = heartbeatUrl(
+      (
+        await browser.get(
+          await createMonitor(browser, {
+            name: "previewed",
+            interval: "60",
+            intervalUnit: "s",
+          }),
+        )
+      ).body,
+    );
+
+    const res = await app.inject({ method: "HEAD", url: `${url}?msg=preview` });
+
+    expect(res.statusCode).toBe(404);
+    expect(await db.collection("heartbeats").countDocuments()).toBe(0);
+  });
+
   it("answers 429 to more than 1 Heartbeat per second per token", async () => {
     const { app, browser, clock } = await loggedIn();
     const one = heartbeatUrl(

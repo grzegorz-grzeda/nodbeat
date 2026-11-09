@@ -150,6 +150,8 @@ export async function registerHeartbeatIntake(
     scope.route<{ Params: { token: string } }>({
       method: ["GET", "POST"],
       url: "/hb/:token",
+      // GET and POST only: link previewers send HEAD on their own, which must not count as a Heartbeat.
+      exposeHeadRoute: false,
       bodyLimit: BODY_LIMIT_BYTES,
       config: { csrf: false },
       handler: handle,
