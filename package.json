@@ -1,6 +1,6 @@
 {
   "name": "nodbeat",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "A heartbeat for every service and device",
   "license": "MIT",
@@ -11,12 +11,16 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
+    "cli": "node dist/cli-main.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write ."
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.5",
+    "@fastify/formbody": "^9.0.1",
+    "@node-rs/argon2": "^2.2.2",
     "fastify": "^5.12.8",
     "mongodb": "^7.8.0"
   },

@@ -1,0 +1,116 @@
+import { hash, verify } from "@node-rs/argon2";
+import { MongoServerError, ObjectId, type Db } from "mongodb";
+import type { Clock } from "./clock.js";
+
+export const DEFAULT_TIME_ZONE = "Europe/Warsaw";
+
+export interface UserDoc {
+  _id: ObjectId;
+  email: string;
+  passwordHash: string;
+  isAdmin: boolean;
+  timeZone: string;
+  createdAt: Date;
+}
+
+export interface NewUser {
+  email: string;
+  password: string;
+  isAdmin: boolean;
+  timeZone?: string;
+}
+
+export class UserError extends Error {
+  override name = "UserError";
+}
+
+/** @node-rs/argon2 exports Algorithm as a const enum, which isolated modules can't reference; 2 = Argon2id. */
+const ARGON2ID = 2;
+const MIN_PASSWORD_LENGTH = 8;
+
+const users = (db: Db) => db.collection<UserDoc>("users");
+
+export async function ensureUserIndexes(db: Db): Promise<void> {
+  await users(db).createIndex({ email: 1 }, { unique: true });
+}
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function isValidTimeZone(timeZone: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function createUser(
+  db: Db,
+  clock: Clock,
+  input: NewUser,
+): Promise<UserDoc> {
+  const email = normalizeEmail(input.email);
+  if (!/^[^\s@]+@[^\s@]+$/.test(email)) {
+    throw new UserError(`Invalid email: ${input.email}`);
+  }
+  if (input.password.length < MIN_PASSWORD_LENGTH) {
+    throw new UserError(
+      `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+    );
+  }
+  const timeZone = input.timeZone ?? DEFAULT_TIME_ZONE;
+  if (!isValidTimeZone(timeZone)) {
+    throw new UserError(`Unknown time zone: ${timeZone}`);
+  }
+
+  const doc: UserDoc = {
+    _id: new ObjectId(),
+    email,
+    passwordHash: await hashPassword(input.password),
+    isAdmin: input.isAdmin,
+    timeZone,
+    createdAt: clock.now(),
+  };
+  try {
+    await users(db).insertOne(doc);
+    return doc;
+  } catch (err) {
+    if (err instanceof MongoServerError && err.code === 11000) {
+      throw new UserError(`A User with email ${email} already exists`);
+    }
+    throw err;
+  }
+}
+
+export async function findUserById(
+  db: Db,
+  id: ObjectId,
+): Promise<UserDoc | null> {
+  return users(db).findOne({ _id: id });
+}
+
+/** Returns the User when the email and password match, null otherwise. */
+export async function authenticate(
+  db: Db,
+  email: string,
+  password: string,
+): Promise<UserDoc | null> {
+  const user = await users(db).findOne({ email: normalizeEmail(email) });
+  // Verify against a dummy hash for unknown emails so timing doesn't reveal which emails exist.
+  const passwordHash = user?.passwordHash ?? (await dummyHash());
+  const ok = await verify(passwordHash, password).catch(() => false);
+  return ok && user ? user : null;
+}
+
+function hashPassword(password: string): Promise<string> {
+  return hash(password, { algorithm: ARGON2ID });
+}
+
+let dummy: Promise<string> | undefined;
+function dummyHash(): Promise<string> {
+  dummy ??= hashPassword("nodbeat-dummy-password");
+  return dummy;
+}
