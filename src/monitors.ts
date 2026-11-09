@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import { ObjectId, type Db } from "mongodb";
 import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
@@ -8,14 +8,15 @@ import { parseObjectId } from "./ids.js";
 import { formatDateTime, formatDuration } from "./format.js";
 import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
 import { listIncidents, type IncidentDoc } from "./incidents.js";
-import { csrfField, html, page, userHeader, type SafeHtml } from "./html.js";
+import { csrfField, html, type SafeHtml } from "./html.js";
+import { stateBadge } from "./layout.js";
 import { monitorFormBody, readForm, validate } from "./monitor-form.js";
 import {
   instanceLimits,
   limitsFor,
   MAX_HEARTBEAT_MESSAGE_LENGTH,
 } from "./limits.js";
-import { STATE_LABELS, type MonitorStateFields } from "./monitor-state.js";
+import type { MonitorStateFields } from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
 
 export interface MonitorDoc extends MonitorStateFields {
@@ -61,22 +62,13 @@ export async function findOwnMonitor(
   return _id ? monitors(db).findOne({ _id, ownerId }) : null;
 }
 
-export function sendMonitorNotFound(
-  req: FastifyRequest,
-  reply: FastifyReply,
-  auth: Auth,
-): FastifyReply {
-  return reply
-    .code(404)
-    .type("text/html")
-    .send(
-      page({
-        title: "Not found",
-        header: userHeader(req.user!.email, auth.csrfToken(req, reply)),
-        body: html`<p class="error">No such Monitor.</p>
-          <p><a href="/">Back to the Dashboard</a></p>`,
-      }),
-    );
+export function sendMonitorNotFound(reply: FastifyReply): FastifyReply {
+  return reply.code(404).page({
+    title: "Not found",
+    body: html`<h1>Not found</h1>
+      <p class="error">No such Monitor.</p>
+      <p><a href="/">Back to the Dashboard</a></p>`,
+  });
 }
 
 export function registerMonitors(
@@ -89,17 +81,14 @@ export function registerMonitors(
     `${config.publicBaseUrl}/hb/${monitor.token}`;
 
   app.get("/monitors/new", { preHandler: requireUser }, async (req, reply) =>
-    reply.type("text/html").send(
-      page({
-        title: "New Monitor",
-        header: userHeader(req.user!.email, auth.csrfToken(req, reply)),
-        body: monitorFormBody({
-          csrf: auth.csrfToken(req, reply),
-          form: readForm({}),
-          limits: limitsFor(req.user!),
-        }),
+    reply.page({
+      title: "New Monitor",
+      body: monitorFormBody({
+        csrf: auth.csrfToken(req, reply),
+        form: readForm({}),
+        limits: limitsFor(req.user!),
       }),
-    ),
+    }),
   );
 
   app.post("/monitors", { preHandler: requireUser }, async (req, reply) => {
@@ -116,21 +105,15 @@ export function registerMonitors(
       errors.push(`You can have at most ${limits.maxMonitors} Monitors.`);
     }
     if (errors.length > 0 || !("settings" in result)) {
-      return reply
-        .code(400)
-        .type("text/html")
-        .send(
-          page({
-            title: "New Monitor",
-            header: userHeader(user.email, auth.csrfToken(req, reply)),
-            body: monitorFormBody({
-              csrf: auth.csrfToken(req, reply),
-              form,
-              limits,
-              errors,
-            }),
-          }),
-        );
+      return reply.code(400).page({
+        title: "New Monitor",
+        body: monitorFormBody({
+          csrf: auth.csrfToken(req, reply),
+          form,
+          limits,
+          errors,
+        }),
+      });
     }
 
     const monitor: MonitorDoc = {
@@ -156,7 +139,7 @@ export function registerMonitors(
     { preHandler: requireUser },
     async (req, reply) => {
       const monitor = await findOwnMonitor(db, req.user!._id, req.params.id);
-      if (!monitor) return sendMonitorNotFound(req, reply, auth);
+      if (!monitor) return sendMonitorNotFound(reply);
       const url = heartbeatUrl(monitor);
       const now = clock.now();
       const [incidentList, heartbeatList] = await Promise.all([
@@ -172,70 +155,76 @@ export function registerMonitors(
       ]);
       const timeZone = req.user!.timeZone;
       const csrf = auth.csrfToken(req, reply);
-      return reply.type("text/html").send(
-        page({
-          title: monitor.name,
-          header: userHeader(req.user!.email, auth.csrfToken(req, reply)),
-          body: html`<p><a href="/">← Dashboard</a></p>
+      return reply.page({
+        title: monitor.name,
+        body: html`<p><a href="/">← Dashboard</a></p>
+          <div class="title-row">
             <h1>${monitor.name}</h1>
-            ${actionsSection(monitor, csrf)}
-            <p>State: <strong>${STATE_LABELS[monitor.state]}</strong></p>
+            ${stateBadge(monitor.state)}
+          </div>
+          ${actionsSection(monitor, csrf)}
+          <div class="card">
             <form
+              class="actions"
               method="post"
               action="/monitors/${String(monitor._id)}/alerts"
             >
-              ${csrfField(csrf)} Alerts:
-              <strong>${monitor.alertsEnabled ? "on" : "off"}</strong>
+              ${csrfField(csrf)}
+              <span
+                >Alerts:
+                <strong>${monitor.alertsEnabled ? "on" : "off"}</strong></span
+              >
               <input
                 type="hidden"
                 name="alertsEnabled"
                 value="${monitor.alertsEnabled ? "false" : "true"}"
               />
-              <button type="submit">
+              <button type="submit" class="secondary">
                 ${monitor.alertsEnabled ? "Turn Alerts off" : "Turn Alerts on"}
               </button>
             </form>
-            <ul>
+            <ul class="plain">
               <li>Interval: ${formatDuration(monitor.intervalSec)}</li>
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
             </ul>
             ${monitor.notes ? html`<p class="notes">${monitor.notes}</p>` : ""}
-            ${incidentsSection(incidentList, now, timeZone)}
-            ${heartbeatsSection(heartbeatList, timeZone)}
-            <h2>Heartbeat URL</h2>
-            <p>
-              Anyone who knows this URL can send Heartbeats for this Monitor.
-              Keep it secret.
-            </p>
-            <input
-              type="text"
-              readonly
-              value="${url}"
-              size="70"
-              onfocus="this.select()"
-            />
-            <form
-              method="post"
-              action="/monitors/${String(monitor._id)}/regenerate-url"
-            >
-              ${csrfField(csrf)}
-              <button type="submit">Regenerate URL</button>
-              (the current URL stops working)
-            </form>
-            <h2>Examples</h2>
-            <p>
-              Send a GET or POST. An optional message (up to
-              ${MAX_HEARTBEAT_MESSAGE_LENGTH} characters) goes in the
-              <code>msg</code> query parameter or the request body.
-            </p>
-            <h3>curl</h3>
-            <pre><code>curl -fsS -m 10 --retry 3 ${url}
+          </div>
+          ${incidentsSection(incidentList, now, timeZone)}
+          ${heartbeatsSection(heartbeatList, timeZone)}
+          <h2>Heartbeat URL</h2>
+          <p>
+            Anyone who knows this URL can send Heartbeats for this Monitor. Keep
+            it secret.
+          </p>
+          <input
+            type="text"
+            readonly
+            value="${url}"
+            aria-label="Heartbeat URL"
+          />
+          <form
+            class="actions"
+            method="post"
+            action="/monitors/${String(monitor._id)}/regenerate-url"
+          >
+            ${csrfField(csrf)}
+            <button type="submit" class="secondary">Regenerate URL</button>
+            <small>The current URL stops working.</small>
+          </form>
+          <h2>Examples</h2>
+          <p>
+            Send a GET or POST. An optional message (up to
+            ${MAX_HEARTBEAT_MESSAGE_LENGTH} characters) goes in the
+            <code>msg</code> query parameter or the request body.
+          </p>
+          <h3>curl</h3>
+          <pre><code>curl -fsS -m 10 --retry 3 ${url}
 curl -fsS -m 10 --retry 3 --data-raw "battery 3.7V" ${url}</code></pre>
-            <h3>cron</h3>
-            <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded
+          <h3>cron</h3>
+          <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded
 */5 * * * * /path/to/job.sh &amp;&amp; curl -fsS -m 10 --retry 3 ${url} &gt; /dev/null</code></pre>
-            <h3>ESP32 / Arduino</h3>
-            <pre><code>#include &lt;WiFi.h&gt;
+          <h3>ESP32 / Arduino</h3>
+          <pre><code>#include &lt;WiFi.h&gt;
 #include &lt;WiFiClientSecure.h&gt;
 #include &lt;HTTPClient.h&gt;
 
@@ -248,8 +237,7 @@ void sendHeartbeat(const String&amp; message) {
   int code = http.POST(message); // 200 = accepted
   http.end();
 }</code></pre>`,
-        }),
-      );
+      });
     },
   );
 }
@@ -258,16 +246,14 @@ void sendHeartbeat(const String&amp; message) {
 function actionsSection(monitor: MonitorDoc, csrf: string): SafeHtml {
   const base = `/monitors/${String(monitor._id)}`;
   const paused = monitor.state === "paused";
-  return html`<div>
+  return html`<div class="actions">
     <a href="${base}/edit">Edit</a>
     <a href="${base}/delete">Delete</a>
-    <form
-      class="inline"
-      method="post"
-      action="${base}/${paused ? "unpause" : "pause"}"
-    >
+    <form method="post" action="${base}/${paused ? "unpause" : "pause"}">
       ${csrfField(csrf)}
-      <button type="submit">${paused ? "Unpause" : "Pause"}</button>
+      <button type="submit" class="secondary">
+        ${paused ? "Unpause" : "Pause"}
+      </button>
     </form>
   </div>`;
 }
@@ -287,32 +273,35 @@ function incidentsSection(
         ? html`<p>Showing the latest ${INCIDENT_HISTORY_LIMIT}.</p>`
         : ""
     }
-    <table>
-      <thead>
-        <tr>
-          <th>Start</th>
-          <th>End</th>
-          <th>Duration</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${list.map(
-          (i) =>
-            html`<tr>
-              <td>${formatDateTime(i.startedAt, timeZone)}</td>
-              <td>
-                ${i.endedAt ? formatDateTime(i.endedAt, timeZone) : "ongoing"}
-                ${i.endReason === "paused" ? "(paused)" : ""}
-              </td>
-              <td>
-                ${formatDuration(
-                  ((i.endedAt ?? now).getTime() - i.startedAt.getTime()) / 1000,
-                )}
-              </td>
-            </tr>`,
-        )}
-      </tbody>
-    </table>`;
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Start</th>
+            <th>End</th>
+            <th>Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map(
+            (i) =>
+              html`<tr>
+                <td>${formatDateTime(i.startedAt, timeZone)}</td>
+                <td>
+                  ${i.endedAt ? formatDateTime(i.endedAt, timeZone) : "ongoing"}
+                  ${i.endReason === "paused" ? "(paused)" : ""}
+                </td>
+                <td>
+                  ${formatDuration(
+                    ((i.endedAt ?? now).getTime() - i.startedAt.getTime()) /
+                      1000,
+                  )}
+                </td>
+              </tr>`,
+          )}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 function heartbeatsSection(list: HeartbeatDoc[], timeZone: string): SafeHtml {
@@ -328,21 +317,23 @@ function heartbeatsSection(list: HeartbeatDoc[], timeZone: string): SafeHtml {
         ? html`<p>Showing the latest ${HEARTBEAT_HISTORY_LIMIT}.</p>`
         : ""
     }
-    <table>
-      <thead>
-        <tr>
-          <th>Received</th>
-          <th>Message</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${list.map(
-          (h) =>
-            html`<tr>
-              <td>${formatDateTime(h.receivedAt, timeZone)}</td>
-              <td>${h.message ?? ""}</td>
-            </tr>`,
-        )}
-      </tbody>
-    </table>`;
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Received</th>
+            <th>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map(
+            (h) =>
+              html`<tr>
+                <td>${formatDateTime(h.receivedAt, timeZone)}</td>
+                <td>${h.message ?? ""}</td>
+              </tr>`,
+          )}
+        </tbody>
+      </table>
+    </div>`;
 }

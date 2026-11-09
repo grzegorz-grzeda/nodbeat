@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import type { Db, ObjectId } from "mongodb";
-import { requireUser, type Auth } from "./auth.js";
+import { requireUser } from "./auth.js";
 import type { Clock } from "./clock.js";
 import { formatAgo, formatDateTime } from "./format.js";
-import { html, page, SafeHtml, userHeader } from "./html.js";
+import { html, type SafeHtml } from "./html.js";
+import { stateBadge } from "./layout.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
 import { listMonitors } from "./monitors.js";
 import { formatUptime, sevenDayUptime } from "./uptime.js";
@@ -24,8 +25,6 @@ export interface DashboardMonitor {
   uptime7d: number | null;
   uptime7dText: string;
 }
-
-const POLL_INTERVAL_MS = 5000;
 
 async function dashboardMonitors(
   db: Db,
@@ -57,7 +56,7 @@ async function dashboardMonitors(
 function row(m: DashboardMonitor): SafeHtml {
   return html`<tr>
     <td><a href="/monitors/${m.id}">${m.name}</a></td>
-    <td class="state-${m.state}">${m.stateText}</td>
+    <td>${stateBadge(m.state)}</td>
     <td title="${m.lastHeartbeatTitle}">${m.lastHeartbeatText}</td>
     <td>${m.lastMessage ?? ""}</td>
     <td>${m.uptime7dText}</td>
@@ -68,72 +67,24 @@ const EMPTY_ROW = html`<tr>
   <td colspan="5">No Monitors yet.</td>
 </tr>`;
 
-/**
- * Polls the Dashboard JSON and rebuilds the table body with the same cells `row` renders. Text goes in through
- * textContent, so it never needs escaping. On 401 (logged out elsewhere) it reloads, landing on the login page.
- */
-const POLL_SCRIPT = new SafeHtml(`<script>
-(() => {
-  const body = document.getElementById("monitors");
-  const cell = (text, attrs = {}) => {
-    const td = document.createElement("td");
-    td.textContent = text;
-    for (const [k, v] of Object.entries(attrs)) td.setAttribute(k, v);
-    return td;
-  };
-  const render = (monitors) => {
-    if (monitors.length === 0) {
-      const tr = document.createElement("tr");
-      tr.append(cell("No Monitors yet.", { colspan: "5" }));
-      body.replaceChildren(tr);
-      return;
-    }
-    body.replaceChildren(...monitors.map((m) => {
-      const tr = document.createElement("tr");
-      const name = document.createElement("td");
-      const link = document.createElement("a");
-      link.href = "/monitors/" + encodeURIComponent(m.id);
-      link.textContent = m.name;
-      name.append(link);
-      tr.append(
-        name,
-        cell(m.stateText, { class: "state-" + m.state }),
-        cell(m.lastHeartbeatText, { title: m.lastHeartbeatTitle }),
-        cell(m.lastMessage ?? ""),
-        cell(m.uptime7dText),
-      );
-      return tr;
-    }));
-  };
-  const poll = async () => {
-    try {
-      const res = await fetch("/dashboard.json", { headers: { accept: "application/json" } });
-      if (res.status === 401) return location.reload();
-      if (res.ok) render((await res.json()).monitors);
-    } catch {
-      // Offline or nodbeat restarting: keep the last data and try again.
-    }
-    setTimeout(poll, ${POLL_INTERVAL_MS});
-  };
-  setTimeout(poll, ${POLL_INTERVAL_MS});
-})();
-</script>`);
-
 export function registerDashboard(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; auth: Auth },
+  deps: { db: Db; clock: Clock },
 ): void {
-  const { db, clock, auth } = deps;
+  const { db, clock } = deps;
 
   app.get("/", { preHandler: requireUser }, async (req, reply) => {
     const user = req.user!;
     const list = await dashboardMonitors(db, user, clock.now());
-    return reply.type("text/html").send(
-      page({
-        title: "Dashboard",
-        header: userHeader(user.email, auth.csrfToken(req, reply)),
-        body: html`<h1>Dashboard</h1>
-          <p><a href="/monitors/new">New Monitor</a></p>
+    return reply.page({
+      title: "Dashboard",
+      // Polls /dashboard.json and rebuilds the table body with the same cells `row` renders.
+      scripts: ["dashboard.js"],
+      body: html`<div class="page-head">
+          <h1>Dashboard</h1>
+          <a href="/monitors/new" class="button">New Monitor</a>
+        </div>
+        <div class="table-wrap">
           <table>
             <thead>
               <tr>
@@ -148,9 +99,8 @@ export function registerDashboard(
               ${list.length === 0 ? EMPTY_ROW : list.map(row)}
             </tbody>
           </table>
-          ${POLL_SCRIPT}`,
-      }),
-    );
+        </div>`,
+    });
   });
 
   app.get("/dashboard.json", async (req, reply) => {

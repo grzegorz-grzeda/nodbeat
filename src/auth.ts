@@ -8,7 +8,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
-import { csrfField, html, page } from "./html.js";
+import { csrfField, html } from "./html.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
 import { authenticate, findUserById, type UserDoc } from "./users.js";
 
@@ -150,17 +150,13 @@ export function registerAuth(
     if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return;
     if (req.routeOptions.config.csrf === false) return;
     if (!csrfValid(req)) {
-      return reply
-        .code(403)
-        .type("text/html")
-        .send(
-          page({
-            title: "Expired form",
-            body: html`<p class="error">
-              This form has expired. Go back, reload the page and try again.
-            </p>`,
-          }),
-        );
+      return reply.code(403).page({
+        title: "Expired form",
+        body: html`<h1>Expired form</h1>
+          <p class="error">
+            This form has expired. Go back, reload the page and try again.
+          </p>`,
+      });
     }
     return undefined;
   });
@@ -170,34 +166,34 @@ export function registerAuth(
     reply: FastifyReply,
     options: { error?: string; email?: string } = {},
   ) =>
-    reply.type("text/html").send(
-      page({
-        title: "Log in",
-        body: html`<h1>Log in</h1>
-          ${options.error ? html`<p class="error">${options.error}</p>` : ""}
-          <form method="post" action="/login">
-            ${csrfField(csrfToken(req, reply))}
-            <label
-              >Email
-              <input
-                type="email"
-                name="email"
-                value="${options.email ?? ""}"
-                autocomplete="username"
-                required
-            /></label>
-            <label
-              >Password
-              <input
-                type="password"
-                name="password"
-                autocomplete="current-password"
-                required
-            /></label>
-            <button type="submit">Log in</button>
-          </form>`,
-      }),
-    );
+    reply.page({
+      title: "Log in",
+      body: html`<div class="card narrow">
+        <h1>Log in</h1>
+        ${options.error ? html`<p class="error">${options.error}</p>` : ""}
+        <form method="post" action="/login">
+          ${csrfField(csrfToken(req, reply))}
+          <label
+            >Email
+            <input
+              type="email"
+              name="email"
+              value="${options.email ?? ""}"
+              autocomplete="username"
+              required
+          /></label>
+          <label
+            >Password
+            <input
+              type="password"
+              name="password"
+              autocomplete="current-password"
+              required
+          /></label>
+          <button type="submit">Log in</button>
+        </form>
+      </div>`,
+    });
 
   app.get("/login", async (req, reply) => {
     if (req.user) return reply.redirect("/", 303);

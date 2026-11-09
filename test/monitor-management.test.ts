@@ -3,7 +3,13 @@ import { describe, expect, it } from "vitest";
 import { listHeartbeatsSince } from "../src/heartbeats.js";
 import { listIncidents } from "../src/incidents.js";
 import { listPeriodsSince } from "../src/state-periods.js";
-import { buildTestApp, createUser, login, type Browser } from "./helpers.js";
+import {
+  buildTestApp,
+  createUser,
+  login,
+  stateOf,
+  type Browser,
+} from "./helpers.js";
 
 const SEC = 1000;
 
@@ -33,9 +39,6 @@ async function createMonitor(
 
 const heartbeatPath = (body: string) =>
   /https:\/\/nodbeat\.test(\/hb\/[A-Za-z0-9_-]+)/.exec(body)![1]!;
-
-const stateOf = async (browser: Browser, page: string) =>
-  /State: <strong>(\w+)<\/strong>/.exec((await browser.get(page)).body)?.[1];
 
 describe("editing a Monitor", () => {
   it("shows the current settings and saves new ones", async () => {
@@ -121,7 +124,7 @@ describe("editing a Monitor", () => {
     await app.tick();
     // Edited at 01:01:20 (Europe/Warsaw); Down 30 s later.
     expect((await browser.get(m.page)).body).toMatch(
-      /State: <strong>Down<\/strong>[\s\S]*2026-01-01 01:01:50[\s\S]*ongoing/,
+      /class="badge badge-down">Down<\/span>[\s\S]*2026-01-01 01:01:50[\s\S]*ongoing/,
     );
   });
 
@@ -160,7 +163,7 @@ describe("editing a Monitor", () => {
     }
     const body = (await browser.get(m.page)).body;
     expect(body).toContain("Garden sensor");
-    expect(body).toContain("State: <strong>New</strong>");
+    expect(body).toContain('class="badge badge-new">New</span>');
   });
 });
 
@@ -205,7 +208,7 @@ describe("pausing a Monitor", () => {
     clock.advance(24 * 60 * 60 * SEC);
     await app.tick();
     const body = (await browser.get(m.page)).body;
-    expect(body).toContain("State: <strong>Paused</strong>");
+    expect(body).toContain('class="badge badge-paused">Paused</span>');
     expect(body).toContain("still here");
   });
 

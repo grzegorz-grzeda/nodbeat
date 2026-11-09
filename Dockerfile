@@ -24,6 +24,7 @@ ENV NODE_ENV=production \
     APP_COMMIT=$APP_COMMIT
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+COPY assets ./assets
 COPY package.json ./
 USER node
 EXPOSE 3000

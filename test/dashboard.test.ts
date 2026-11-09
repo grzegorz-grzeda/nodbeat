@@ -211,7 +211,7 @@ describe("Dashboard page", () => {
     const body = (await browser.get("/")).body;
     expect(body).toContain("7-day Uptime");
     expect(body).toContain("100.00%");
-    expect(body).toContain("/dashboard.json");
+    expect(body).toContain("/assets/dashboard.js");
   });
 });
 

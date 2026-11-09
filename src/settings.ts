@@ -3,7 +3,7 @@ import type { Db } from "mongodb";
 import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import { formatDateTime } from "./format.js";
-import { csrfField, html, page, SafeHtml, userHeader } from "./html.js";
+import { csrfField, html, type SafeHtml } from "./html.js";
 import {
   createLinkCode,
   findActiveLinkCode,
@@ -37,65 +37,62 @@ export function registerSettings(
       findActiveLinkCode(db, user._id, clock.now()),
       listLinkedChats(db, user._id),
     ]);
-    return reply.type("text/html").send(
-      page({
-        title: "Settings",
-        header: userHeader(user.email, csrf),
-        body: html`<h1>Settings</h1>
-          <h2>Time zone</h2>
-          <form method="post" action="/settings/time-zone">
-            ${csrfField(csrf)}
-            <label
-              >Times are shown in
-              <select name="timeZone">
-                ${timeZoneOptions(user.timeZone)}
-              </select></label
-            >
-            <button type="submit">Save time zone</button>
-          </form>
-          <h2>Linked chats</h2>
-          ${
-            chats.length === 0
-              ? html`<p>No Linked chats yet.</p>`
-              : html`<ul>
-                  ${chats.map(
-                    (c) =>
-                      html`<li>
-                        ${c.title}
-                        <small
-                          >linked
-                          ${formatDateTime(c.linkedAt, user.timeZone)}</small
-                        >
-                        <form
-                          class="inline"
-                          method="post"
-                          action="/settings/linked-chats/${String(c._id)}/delete"
-                        >
-                          ${csrfField(csrf)}
-                          <button type="submit">Remove</button>
-                        </form>
-                      </li>`,
-                  )}
-                </ul>`
-          }
-          <h2>Link a Telegram chat</h2>
-          ${
-            code
-              ? html`<p>
-                  Send
-                  <code>/start <code class="link-code">${code._id}</code></code>
-                  to the nodbeat bot in the chat you want to link (private or
-                  group). The code works once and expires at
-                  ${formatDateTime(code.expiresAt, user.timeZone)}.
-                </p>`
-              : ""
-          }
-          <form method="post" action="/settings/link-code">
-            ${csrfField(csrf)}
-            <button type="submit">Generate Link code</button>
-          </form>`,
-      }),
-    );
+    return reply.page({
+      title: "Settings",
+      body: html`<h1>Settings</h1>
+        <h2>Time zone</h2>
+        <form method="post" action="/settings/time-zone">
+          ${csrfField(csrf)}
+          <label
+            >Times are shown in
+            <select name="timeZone">
+              ${timeZoneOptions(user.timeZone)}
+            </select></label
+          >
+          <button type="submit">Save time zone</button>
+        </form>
+        <h2>Linked chats</h2>
+        ${
+          chats.length === 0
+            ? html`<p>No Linked chats yet.</p>`
+            : html`<ul class="plain">
+                ${chats.map(
+                  (c) =>
+                    html`<li>
+                      ${c.title}
+                      <small
+                        >linked
+                        ${formatDateTime(c.linkedAt, user.timeZone)}</small
+                      >
+                      <form
+                        class="inline"
+                        method="post"
+                        action="/settings/linked-chats/${String(c._id)}/delete"
+                      >
+                        ${csrfField(csrf)}
+                        <button type="submit" class="secondary">Remove</button>
+                      </form>
+                    </li>`,
+                )}
+              </ul>`
+        }
+        <h2>Link a Telegram chat</h2>
+        ${
+          code
+            ? html`<p>
+                Send
+                <code>/start <code class="link-code">${code._id}</code></code>
+                to the nodbeat bot in the chat you want to link (private or
+                group). The code works once and expires at
+                ${formatDateTime(code.expiresAt, user.timeZone)}.
+              </p>`
+            : ""
+        }
+        <form method="post" action="/settings/link-code">
+          ${csrfField(csrf)}
+          <button type="submit">Generate Link code</button>
+        </form>`,
+    });
   });
 
   app.post(

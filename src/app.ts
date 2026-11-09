@@ -18,6 +18,7 @@ import {
 } from "./heartbeats.js";
 import { ensureIncidentIndexes } from "./incidents.js";
 import { ensureLinkedChatIndexes } from "./linked-chats.js";
+import { registerLayout } from "./layout.js";
 import { MonitorLock } from "./monitor-lock.js";
 import { registerMonitorManagement } from "./monitor-management.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
@@ -73,7 +74,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
   await app.register(cookie);
   await app.register(formbody);
   const auth = registerAuth(app, { db, clock, config });
-  registerDashboard(app, { db, clock, auth });
+  registerLayout(app, { auth, build: deps.build });
+  registerDashboard(app, { db, clock });
   registerMonitors(app, { db, clock, config, auth });
   registerMonitorManagement(app, { db, clock, auth, lock });
   await registerHeartbeatIntake(app, { db, clock, lock });

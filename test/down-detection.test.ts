@@ -4,6 +4,7 @@ import {
   createUser,
   login,
   restartApp,
+  stateOf,
   type Browser,
 } from "./helpers.js";
 
@@ -38,9 +39,6 @@ async function createMonitor(
   return { page, hb };
 }
 
-const stateOf = async (browser: Browser, page: string) =>
-  /State: <strong>(\w+)<\/strong>/.exec((await browser.get(page)).body)?.[1];
-
 describe("Down detection", () => {
   it("goes Down after Interval + Grace period and back Up on the next Heartbeat", async () => {
     const { app, browser, clock } = await loggedIn();
@@ -69,7 +67,7 @@ describe("Down detection", () => {
       clock.advance(91 * SEC);
       await Promise.all([app.tick(), app.inject({ method: "GET", url: m.hb })]);
       const body = (await browser.get(m.page)).body;
-      expect(body).toContain("State: <strong>Up</strong>");
+      expect(body).toContain('class="badge badge-up">Up</span>');
       expect(body).not.toContain("ongoing");
     }
   });

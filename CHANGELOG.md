@@ -8,12 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Design system: one static, token-based stylesheet with light and dark sets, state badges for Up/Down/New/Paused, an ECG-line logo and favicon.
+- Nav bar for logged-in Users (collapses on a phone) and a footer with the running version linking to its GitHub release.
+- `Content-Security-Policy: default-src 'self'` on every HTML page; assets served from `/assets/` with a long cache.
 - Release pipeline: pushing a tag `vX.Y.Z` tests, builds and publishes `ghcr.io/grzegorz-grzeda/nodbeat:X.Y.Z`, deploys it to the VPS and creates a GitHub Release from this file. A manual run redeploys an existing version.
 - CI runs typecheck, tests and lint on every push to `main`.
 - `/health` reports the running version and commit.
 
 ### Changed
 
+- All pages restyled on the new shell; the Dashboard poll script moved to `/assets/dashboard.js`.
 - `/health` answers JSON `{"status","version","commit"}` instead of plain text.
 - `compose.yaml` runs the prebuilt image named by `NODBEAT_VERSION` instead of building on the VPS.
 

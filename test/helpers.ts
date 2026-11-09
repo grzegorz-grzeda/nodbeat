@@ -212,6 +212,15 @@ export class Browser {
   }
 }
 
+/** The state badge's label (`Up`, `Down`, ...) on a Monitor page. */
+export const stateOf = async (
+  browser: Browser,
+  page: string,
+): Promise<string | undefined> =>
+  /class="badge badge-\w+">(\w+)<\/span>/.exec(
+    (await browser.get(page)).body,
+  )?.[1];
+
 export async function login(
   app: App,
   email: string,

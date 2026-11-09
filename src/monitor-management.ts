@@ -3,7 +3,7 @@ import type { Db } from "mongodb";
 import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import { deleteHeartbeatsOf } from "./heartbeats.js";
-import { csrfField, html, page, userHeader } from "./html.js";
+import { csrfField, html } from "./html.js";
 import { deleteIncidentsOf } from "./incidents.js";
 import { limitsFor } from "./limits.js";
 import { applyEffects } from "./effects.js";
@@ -65,20 +65,19 @@ export function registerMonitorManagement(
     preHandler: requireUser,
     handler: async (req: IdRequest, reply: FastifyReply) => {
       const monitor = await findOwnMonitor(db, req.user!._id, req.params.id);
-      if (!monitor) return sendMonitorNotFound(req, reply, auth);
+      if (!monitor) return sendMonitorNotFound(reply);
       return handler(monitor, req, reply);
     },
   });
 
-  const editPage = (
+  const sendEditPage = (
     req: IdRequest,
     reply: FastifyReply,
     options: { form: MonitorForm; errors?: string[] },
   ) => {
     const csrf = auth.csrfToken(req, reply);
-    return page({
+    return reply.page({
       title: "Edit Monitor",
-      header: userHeader(req.user!.email, csrf),
       body: monitorFormBody({
         csrf,
         limits: limitsFor(req.user!),
@@ -91,9 +90,7 @@ export function registerMonitorManagement(
   app.get<{ Params: { id: string } }>(
     "/monitors/:id/edit",
     ownMonitorRoute(async (monitor, req, reply) =>
-      reply
-        .type("text/html")
-        .send(editPage(req, reply, { form: formFor(monitor) })),
+      sendEditPage(req, reply, { form: formFor(monitor) }),
     ),
   );
 
@@ -103,10 +100,8 @@ export function registerMonitorManagement(
       const form = readForm(req.body);
       const result = validate(form, limitsFor(req.user!));
       if ("errors" in result) {
-        return reply
-          .code(400)
-          .type("text/html")
-          .send(editPage(req, reply, { form, errors: result.errors }));
+        reply.code(400);
+        return sendEditPage(req, reply, { form, errors: result.errors });
       }
       const { intervalSec, graceSec } = result.settings;
       await runTransition(
@@ -162,25 +157,25 @@ export function registerMonitorManagement(
     "/monitors/:id/delete",
     ownMonitorRoute(async (monitor, req, reply) => {
       const csrf = auth.csrfToken(req, reply);
-      return reply.type("text/html").send(
-        page({
-          title: "Delete Monitor",
-          header: userHeader(req.user!.email, csrf),
-          body: html`<h1>Delete ${monitor.name}?</h1>
-            <p>
-              This removes the Monitor with all its Heartbeats and Incidents. It
-              can't be undone.
-            </p>
-            <form
-              method="post"
-              action="/monitors/${String(monitor._id)}/delete"
-            >
-              ${csrfField(csrf)}
-              <button type="submit">Delete Monitor</button>
-              <a href="/monitors/${String(monitor._id)}">Cancel</a>
-            </form>`,
-        }),
-      );
+      return reply.page({
+        title: "Delete Monitor",
+        body: html`<div class="card narrow">
+          <h1>Delete ${monitor.name}?</h1>
+          <p>
+            This removes the Monitor with all its Heartbeats and Incidents. It
+            can't be undone.
+          </p>
+          <form
+            class="actions"
+            method="post"
+            action="/monitors/${String(monitor._id)}/delete"
+          >
+            ${csrfField(csrf)}
+            <button type="submit" class="danger">Delete Monitor</button>
+            <a href="/monitors/${String(monitor._id)}">Cancel</a>
+          </form>
+        </div>`,
+      });
     }),
   );
 

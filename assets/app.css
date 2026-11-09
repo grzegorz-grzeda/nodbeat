@@ -1,0 +1,564 @@
+/* nodbeat design system: tokens first, then elements, then components. */
+
+:root {
+  color-scheme: light;
+  --font-sans:
+    system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+
+  --bg: #f6f7f9;
+  --surface: #ffffff;
+  --text: #1a1d23;
+  --text-muted: #5b6270;
+  --border: #d9dde3;
+  /* Outlines of form controls: 3:1 against the background (WCAG 1.4.11). */
+  --border-strong: #7b8390;
+  --accent: #0b6bcb;
+  --accent-hover: #0957a5;
+  --on-accent: #ffffff;
+  --danger: #b42318;
+  --danger-bg: #b42318;
+  --on-danger: #ffffff;
+  --focus: #0b6bcb;
+  --code-bg: #eef1f5;
+
+  --up-fg: #11622f;
+  --up-bg: #dcf3e3;
+  --down-fg: #9b1c1c;
+  --down-bg: #fde2e2;
+  --new-fg: #3d4a5c;
+  --new-bg: #e6ebf2;
+  --paused-fg: #7a4b00;
+  --paused-bg: #fbecc9;
+
+  --radius: 8px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 1rem;
+  --space-4: 1.5rem;
+  --space-5: 2.5rem;
+  --max-width: 60rem;
+}
+
+/* Dark tokens, twice: an explicit choice, and "system" when the OS prefers dark. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1217;
+  --surface: #171b22;
+  --text: #e6e8eb;
+  --text-muted: #9aa3b2;
+  --border: #2c333e;
+  --border-strong: #6f7a8a;
+  --accent: #6cb2ff;
+  --accent-hover: #92c6ff;
+  --on-accent: #0b1220;
+  --danger: #ff8a80;
+  --danger-bg: #ff8a80;
+  --on-danger: #1a0505;
+  --focus: #6cb2ff;
+  --code-bg: #1f252e;
+
+  --up-fg: #7ee2a0;
+  --up-bg: #0f2e1b;
+  --down-fg: #ff9c9c;
+  --down-bg: #3a1414;
+  --new-fg: #c3ccd9;
+  --new-bg: #232a35;
+  --paused-fg: #f3c76b;
+  --paused-bg: #3a2a0a;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] {
+    color-scheme: dark;
+    --bg: #0f1217;
+    --surface: #171b22;
+    --text: #e6e8eb;
+    --text-muted: #9aa3b2;
+    --border: #2c333e;
+    --border-strong: #6f7a8a;
+    --accent: #6cb2ff;
+    --accent-hover: #92c6ff;
+    --on-accent: #0b1220;
+    --danger: #ff8a80;
+    --danger-bg: #ff8a80;
+    --on-danger: #1a0505;
+    --focus: #6cb2ff;
+    --code-bg: #1f252e;
+
+    --up-fg: #7ee2a0;
+    --up-bg: #0f2e1b;
+    --down-fg: #ff9c9c;
+    --down-bg: #3a1414;
+    --new-fg: #c3ccd9;
+    --new-bg: #232a35;
+    --paused-fg: #f3c76b;
+    --paused-bg: #3a2a0a;
+  }
+}
+
+/* Elements */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+}
+
+main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--max-width);
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-3);
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: 1.75rem;
+  margin: 0 0 var(--space-3);
+}
+
+h2 {
+  font-size: 1.25rem;
+  margin: var(--space-5) 0 var(--space-2);
+}
+
+h3 {
+  font-size: 1rem;
+  margin: var(--space-4) 0 var(--space-2);
+}
+
+a {
+  color: var(--accent);
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+code,
+pre {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+}
+
+code {
+  background: var(--code-bg);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+pre {
+  background: var(--code-bg);
+  padding: var(--space-3);
+  border-radius: var(--radius);
+  overflow-x: auto;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+}
+
+small {
+  color: var(--text-muted);
+}
+
+/* Forms */
+
+label {
+  display: block;
+  margin: var(--space-3) 0;
+  font-weight: 500;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  max-width: 100%;
+}
+
+label > input:not([type="checkbox"]),
+label > textarea {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-1);
+}
+
+label > input[type="number"] {
+  display: inline-block;
+  width: 8rem;
+}
+
+label > select {
+  margin-top: var(--space-1);
+}
+
+input[readonly] {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  width: 100%;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+a.button {
+  display: inline-block;
+  font-weight: 600;
+  text-decoration: none;
+  color: var(--on-accent);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+}
+
+a.button:hover,
+button:hover {
+  color: var(--on-accent);
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+button.secondary,
+button.secondary:hover {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--border-strong);
+}
+
+button.secondary:hover {
+  border-color: var(--text);
+}
+
+button.danger,
+button.danger:hover {
+  color: var(--on-danger);
+  background: var(--danger-bg);
+  border-color: var(--danger-bg);
+}
+
+button.button-link,
+button.button-link:hover {
+  font-weight: inherit;
+  color: var(--accent);
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+}
+
+.page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.title-row h1,
+.page-head h1 {
+  margin: 0;
+}
+
+.narrow,
+.card.narrow {
+  max-width: 28rem;
+  margin: var(--space-4) auto;
+}
+
+form.inline {
+  display: inline;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.actions form {
+  margin: 0;
+}
+
+.error {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+/* Tables */
+
+.table-wrap {
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  text-align: left;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Cards and lists */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  margin: var(--space-3) 0;
+}
+
+.card > :first-child {
+  margin-top: 0;
+}
+
+.card > :last-child {
+  margin-bottom: 0;
+}
+
+ul.plain {
+  list-style: none;
+  padding: 0;
+}
+
+ul.plain > li {
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+ul.plain > li:last-child {
+  border-bottom: none;
+}
+
+.notes {
+  white-space: pre-wrap;
+}
+
+/* State badges: Up, Down, New, Paused */
+
+.badge {
+  display: inline-block;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 0.3em 0.6em;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge-up {
+  color: var(--up-fg);
+  background: var(--up-bg);
+}
+
+.badge-down {
+  color: var(--down-fg);
+  background: var(--down-bg);
+}
+
+.badge-new {
+  color: var(--new-fg);
+  background: var(--new-bg);
+}
+
+.badge-paused {
+  color: var(--paused-fg);
+  background: var(--paused-bg);
+}
+
+/* Header and nav */
+
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 700;
+  font-size: 1.125rem;
+  color: var(--text);
+  text-decoration: none;
+}
+
+.brand:hover {
+  color: var(--text);
+}
+
+.logo {
+  color: var(--accent);
+}
+
+.nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-4);
+}
+
+.nav-links a {
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.nav-links form {
+  margin: 0;
+}
+
+.nav-email {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+/* The checkbox drives the phone menu without JS. Hidden on wider screens; on a phone it stays focusable but invisible. */
+.nav-toggle {
+  display: none;
+}
+
+.nav-toggle-label {
+  display: none;
+  margin: 0;
+  cursor: pointer;
+  font-weight: 600;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+}
+
+.nav-toggle:focus-visible + .nav-toggle-label {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 40rem) {
+  .nav-toggle {
+    display: block;
+    position: absolute;
+    opacity: 0;
+    width: 1px;
+    height: 1px;
+  }
+
+  .nav-toggle-label {
+    display: inline-block;
+  }
+
+  .nav-links {
+    display: none;
+    flex-basis: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+  }
+
+  .nav-toggle:checked ~ .nav-links {
+    display: flex;
+  }
+
+  h1 {
+    font-size: 1.5rem;
+  }
+}
+
+/* Footer */
+
+.site-footer {
+  padding: var(--space-3);
+  text-align: center;
+  font-size: 0.875rem;
+  border-top: 1px solid var(--border);
+}
+
+.site-footer a {
+  color: var(--text-muted);
+}
