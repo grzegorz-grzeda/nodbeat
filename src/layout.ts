@@ -169,6 +169,7 @@ export function renderPage(
           <a href="${REPO_URL}/releases/tag/v${build.version}"
             >v${build.version} · ${shortCommit}</a
           >
+          · <a href="/docs">API docs</a>
         </footer>
       </body>
     </html> `.value;

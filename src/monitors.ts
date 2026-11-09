@@ -224,7 +224,8 @@ export function registerMonitors(
               <p>
                 Send a GET or POST. An optional message (up to
                 ${MAX_HEARTBEAT_MESSAGE_LENGTH} characters) goes in the
-                <code>msg</code> query parameter or the request body.
+                <code>msg</code> query parameter or the request body. Full
+                reference: <a href="/docs">API docs</a>.
               </p>
               <h3>curl GET</h3>
               <div class="code-block">

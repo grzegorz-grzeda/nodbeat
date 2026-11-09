@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTestApp } from "./helpers.js";
+import { buildTestApp, createUser, login } from "./helpers.js";
 
 /** Inline `<script>` (without src), `<style>`, `style="…"` and `on…="…"` handlers: all blocked by the CSP. */
 function inlineCode(body: string): string[] {
@@ -96,5 +96,41 @@ describe("GET /docs", () => {
     const res = await app.inject({ method: "GET", url: "/docs/index.html" });
 
     expect(res.statusCode).toBe(404);
+  });
+});
+
+/** Every `<a href>` that points at the API docs. */
+function docsLinks(body: string): string[] {
+  return [...body.matchAll(/<a [^>]*href="([^"]*\/docs[^"]*)"[^>]*>/g)].map(
+    (m) => m[1] as string,
+  );
+}
+
+describe("links to the API docs", () => {
+  it("the Monitor page links to /docs next to the curl examples, with no token", async () => {
+    const ctx = await buildTestApp();
+    await createUser(ctx.db, {
+      email: "me@example.com",
+      password: "pw-123456",
+    });
+    const browser = await login(ctx.app, "me@example.com", "pw-123456");
+    const created = await browser.submit("/monitors/new", "/monitors", {
+      name: "Garden sensor",
+      interval: "60",
+      intervalUnit: "s",
+    });
+
+    const res = await browser.get(created.headers.location as string);
+    const token = /\/hb\/([A-Za-z0-9_-]+)/.exec(res.body)?.[1];
+    const wiring = /<section class="monitor-wiring">[\s\S]*?<\/section>/.exec(
+      res.body,
+    )?.[0];
+
+    expect(token).toBeDefined();
+    expect(wiring).toMatch(/<a [^>]*href="\/docs"[^>]*>API docs<\/a>/);
+    expect(docsLinks(res.body).length).toBeGreaterThan(0);
+    for (const link of docsLinks(res.body)) {
+      expect(link).not.toContain(token!);
+    }
   });
 });

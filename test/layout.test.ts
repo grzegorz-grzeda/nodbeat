@@ -114,6 +114,21 @@ describe("HTML pages", () => {
     expect(res.body).toContain("v1.2.3 · abc1234");
   });
 
+  it("link to the API docs in the footer, logged in or not", async () => {
+    const { app, browser, monitor } = await loggedInWithMonitor();
+    const footer = (body: string) =>
+      /<footer class="site-footer">[\s\S]*?<\/footer>/.exec(body)?.[0];
+
+    const anonymous = await app.inject({ method: "GET", url: "/login" });
+    const loggedIn = await browser.get(monitor);
+
+    for (const res of [anonymous, loggedIn]) {
+      expect(footer(res.body)).toMatch(
+        /<a [^>]*href="\/docs"[^>]*>API docs<\/a>/,
+      );
+    }
+  });
+
   it("show the nav with the User's email only when logged in", async () => {
     const { app, browser } = await loggedInWithMonitor();
 
