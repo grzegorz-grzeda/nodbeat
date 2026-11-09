@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The Monitor page shows the 20 newest Incidents and Heartbeats (was 100 and 500), with a "See all" link when there are more.
+
+### Added
+
+- Full logs at `/monitors/:id/incidents` and `/monitors/:id/heartbeats`: newest first, 100 rows a page, with Newer/Older links.
+
 ## [0.13.0] - 2026-11-09
 
 ### Added

@@ -5,18 +5,21 @@ import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { parseObjectId } from "./ids.js";
-import { formatDateTime, formatDuration } from "./format.js";
+import { formatDuration } from "./format.js";
 import { setFlash } from "./flash.js";
 import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
 import { listIncidents, type IncidentDoc } from "./incidents.js";
+import {
+  heartbeatRetentionText,
+  heartbeatsTable,
+  heartbeatWindowStart,
+  incidentsTable,
+  MONITOR_PAGE_LOG_ROWS,
+} from "./log-tables.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
 import { stateBadge } from "./layout.js";
 import { monitorFormBody, readForm, validate } from "./monitor-form.js";
-import {
-  instanceLimits,
-  limitsFor,
-  MAX_HEARTBEAT_MESSAGE_LENGTH,
-} from "./limits.js";
+import { limitsFor, MAX_HEARTBEAT_MESSAGE_LENGTH } from "./limits.js";
 import type { MonitorStateFields } from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
 
@@ -32,10 +35,6 @@ export interface MonitorDoc extends MonitorStateFields {
   alertsEnabled: boolean;
   createdAt: Date;
 }
-
-/** Rows shown on the Monitor page, capped so a chatty or flaky Monitor doesn't produce a huge page. */
-const HEARTBEAT_HISTORY_LIMIT = 500;
-const INCIDENT_HISTORY_LIMIT = 100;
 
 export const monitors = (db: Db) => db.collection<MonitorDoc>("monitors");
 
@@ -139,15 +138,14 @@ export function registerMonitors(
       if (!monitor) return sendMonitorNotFound(reply);
       const url = heartbeatUrl(monitor);
       const now = clock.now();
+      // One extra row tells whether there is more than fits, i.e. whether to link the full log.
       const [incidentList, heartbeatList] = await Promise.all([
-        listIncidents(db, monitor._id, INCIDENT_HISTORY_LIMIT),
+        listIncidents(db, monitor._id, MONITOR_PAGE_LOG_ROWS + 1),
         listHeartbeatsSince(
           db,
           monitor._id,
-          new Date(
-            now.getTime() - instanceLimits().heartbeatRetentionSec * 1000,
-          ),
-          HEARTBEAT_HISTORY_LIMIT,
+          heartbeatWindowStart(now),
+          MONITOR_PAGE_LOG_ROWS + 1,
         ),
       ]);
       const timeZone = req.user!.timeZone;
@@ -251,8 +249,8 @@ void sendHeartbeat(const String&amp; message) {
 }</code></pre>
             </section>
             <section class="monitor-logs">
-              ${incidentsSection(incidentList, now, timeZone)}
-              ${heartbeatsSection(heartbeatList, timeZone)}
+              ${incidentsSection(monitor, incidentList, now, timeZone)}
+              ${heartbeatsSection(monitor, heartbeatList, timeZone)}
             </section>
           </div>`,
       });
@@ -288,7 +286,13 @@ function actionsSection(monitor: MonitorDoc, csrf: string): SafeHtml {
   </div>`;
 }
 
+/** "See all" under a log on the Monitor page when it holds more rows than the page shows. */
+function seeAll(href: string, label: string, more: boolean): SafeHtml {
+  return more ? html`<p><a href="${href}">${label} →</a></p>` : html``;
+}
+
 function incidentsSection(
+  monitor: MonitorDoc,
   list: IncidentDoc[],
   now: Date,
   timeZone: string,
@@ -298,72 +302,30 @@ function incidentsSection(
       <p>No Incidents yet.</p>`;
   }
   return html`<h2>Incidents</h2>
-    ${
-      list.length === INCIDENT_HISTORY_LIMIT
-        ? html`<p>Showing the latest ${INCIDENT_HISTORY_LIMIT}.</p>`
-        : ""
-    }
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Start</th>
-            <th>End</th>
-            <th>Duration</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${list.map(
-            (i) =>
-              html`<tr>
-                <td>${formatDateTime(i.startedAt, timeZone)}</td>
-                <td>
-                  ${i.endedAt ? formatDateTime(i.endedAt, timeZone) : "ongoing"}
-                  ${i.endReason === "paused" ? "(paused)" : ""}
-                </td>
-                <td>
-                  ${formatDuration(
-                    ((i.endedAt ?? now).getTime() - i.startedAt.getTime()) /
-                      1000,
-                  )}
-                </td>
-              </tr>`,
-          )}
-        </tbody>
-      </table>
-    </div>`;
+    ${incidentsTable(list.slice(0, MONITOR_PAGE_LOG_ROWS), now, timeZone)}
+    ${seeAll(
+      `/monitors/${String(monitor._id)}/incidents`,
+      "See all Incidents",
+      list.length > MONITOR_PAGE_LOG_ROWS,
+    )}`;
 }
 
-function heartbeatsSection(list: HeartbeatDoc[], timeZone: string): SafeHtml {
-  const days = formatDuration(instanceLimits().heartbeatRetentionSec);
+function heartbeatsSection(
+  monitor: MonitorDoc,
+  list: HeartbeatDoc[],
+  timeZone: string,
+): SafeHtml {
+  const days = heartbeatRetentionText();
   const heading = html`<h2>Heartbeats (last ${days})</h2>`;
   if (list.length === 0) {
     return html`${heading}
       <p>No Heartbeats in the last ${days}.</p>`;
   }
   return html`${heading}
-    ${
-      list.length === HEARTBEAT_HISTORY_LIMIT
-        ? html`<p>Showing the latest ${HEARTBEAT_HISTORY_LIMIT}.</p>`
-        : ""
-    }
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>Received</th>
-            <th>Message</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${list.map(
-            (h) =>
-              html`<tr>
-                <td>${formatDateTime(h.receivedAt, timeZone)}</td>
-                <td>${h.message ?? ""}</td>
-              </tr>`,
-          )}
-        </tbody>
-      </table>
-    </div>`;
+  ${heartbeatsTable(list.slice(0, MONITOR_PAGE_LOG_ROWS), timeZone)}
+  ${seeAll(
+    `/monitors/${String(monitor._id)}/heartbeats`,
+    "See all Heartbeats",
+    list.length > MONITOR_PAGE_LOG_ROWS,
+  )}`;
 }

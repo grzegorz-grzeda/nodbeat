@@ -36,18 +36,32 @@ export async function ensureHeartbeatIndexes(db: Db): Promise<void> {
   ]);
 }
 
-/** The Monitor's Heartbeats received since `since`, newest first, at most `limit`. */
+/** The Monitor's Heartbeats received since `since`, newest first: at most `limit`, after skipping the newest `skip`. */
 export function listHeartbeatsSince(
   db: Db,
   monitorId: ObjectId,
   since: Date,
   limit: number,
+  skip = 0,
 ): Promise<HeartbeatDoc[]> {
   return heartbeats(db)
     .find({ monitorId, receivedAt: { $gte: since } })
-    .sort({ receivedAt: -1 })
+    .sort({ receivedAt: -1, _id: -1 })
+    .skip(skip)
     .limit(limit)
     .toArray();
+}
+
+/** How many Heartbeats the Monitor has received since `since`. */
+export function countHeartbeatsSince(
+  db: Db,
+  monitorId: ObjectId,
+  since: Date,
+): Promise<number> {
+  return heartbeats(db).countDocuments({
+    monitorId,
+    receivedAt: { $gte: since },
+  });
 }
 
 /** The message from `?msg=`, a JSON or form field `msg`, or a plain-text body; capped at 200 characters. */

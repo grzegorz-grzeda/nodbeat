@@ -46,17 +46,24 @@ export function closeOpenIncident(
   );
 }
 
-/** The Monitor's Incidents, newest first. */
+/** The Monitor's Incidents, newest first: at most `limit`, after skipping the newest `skip`. */
 export function listIncidents(
   db: Db,
   monitorId: ObjectId,
   limit: number,
+  skip = 0,
 ): Promise<IncidentDoc[]> {
   return incidents(db)
     .find({ monitorId })
-    .sort({ startedAt: -1 })
+    .sort({ startedAt: -1, _id: -1 })
+    .skip(skip)
     .limit(limit)
     .toArray();
+}
+
+/** How many Incidents the Monitor has. */
+export function countIncidents(db: Db, monitorId: ObjectId): Promise<number> {
+  return incidents(db).countDocuments({ monitorId });
 }
 
 /** Removes all of the Monitor's Incidents (when the Monitor is deleted). */

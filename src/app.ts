@@ -23,6 +23,7 @@ import { ensureIncidentIndexes } from "./incidents.js";
 import { ensureLinkedChatIndexes } from "./linked-chats.js";
 import { registerLayout } from "./layout.js";
 import { MonitorLock } from "./monitor-lock.js";
+import { registerMonitorLogs } from "./monitor-logs.js";
 import { registerMonitorManagement } from "./monitor-management.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
 import { registerOpenApi } from "./openapi.js";
@@ -88,6 +89,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   registerDashboard(app, { db, clock, config });
   registerMonitors(app, { db, clock, config, auth });
   registerMonitorManagement(app, { db, clock, auth, lock });
+  registerMonitorLogs(app, { db, clock });
   await registerHeartbeatIntake(app, { db, clock, lock });
   registerSettings(app, { db, clock, auth });
   registerTelegramBot(app, { db, clock, telegram: deps.telegram, config });
