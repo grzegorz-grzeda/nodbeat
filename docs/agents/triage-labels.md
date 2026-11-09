@@ -12,4 +12,4 @@ The skills speak in terms of five canonical triage roles. This file maps those r
 
 When a skill mentions a role (e.g. "apply the AFK-ready triage label"), use the corresponding label string from this table.
 
-Labels are recorded as the `Status:` line in each `.scratch/` issue file. Edit the "Label in our tracker" column to change vocabulary.
+Labels are recorded as the `Status:` line in each `docs/issues/` file. Edit the "Label in our tracker" column to change vocabulary.
