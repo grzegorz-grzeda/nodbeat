@@ -1,6 +1,7 @@
 import type { Db } from "mongodb";
 import type { Clock } from "./clock.js";
 import { applyEffects } from "./effects.js";
+import type { LogPruner } from "./log-pruner.js";
 import type { MonitorLock } from "./monitor-lock.js";
 import { transition } from "./monitor-state.js";
 import { monitors } from "./monitors.js";
@@ -14,8 +15,9 @@ export function createDownChecker(deps: {
   clock: Clock;
   startedAt: Date;
   lock: MonitorLock;
+  pruner: LogPruner;
 }): () => Promise<void> {
-  const { db, clock, startedAt, lock } = deps;
+  const { db, clock, startedAt, lock, pruner } = deps;
   return async () => {
     const now = clock.now();
     // Pre-filter with the same rule as downDeadline(), so only overdue Monitors are loaded; transition() decides.
@@ -55,6 +57,7 @@ export function createDownChecker(deps: {
         if (effects.length === 0) return;
         await monitors(db).updateOne({ _id }, { $set: fields });
         await applyEffects(db, monitor, effects, now);
+        pruner.mark(_id);
       });
     }
   };

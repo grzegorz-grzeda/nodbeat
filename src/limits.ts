@@ -8,6 +8,8 @@ export interface Limits {
   minGraceSec: number;
   maxGraceSec: number;
   heartbeatRetentionSec: number;
+  /** Heartbeats and Incidents kept per Monitor; older ones are dropped. */
+  maxLogRowsPerMonitor: number;
 }
 
 /** Longest Heartbeat message kept, in characters. Instance-wide. */
@@ -22,6 +24,7 @@ const DEFAULT_LIMITS: Limits = {
   minGraceSec: 0,
   maxGraceSec: DAY_SEC,
   heartbeatRetentionSec: 7 * DAY_SEC,
+  maxLogRowsPerMonitor: 100,
 };
 
 export function limitsFor(user: UserDoc): Limits {
@@ -29,7 +32,7 @@ export function limitsFor(user: UserDoc): Limits {
   return DEFAULT_LIMITS;
 }
 
-/** Limits that apply instance-wide (e.g. the Heartbeat TTL index, which can't vary per User). */
+/** Limits that apply instance-wide (e.g. the Heartbeat TTL index and log pruning, which don't vary per User yet). */
 export function instanceLimits(): Limits {
   return DEFAULT_LIMITS;
 }

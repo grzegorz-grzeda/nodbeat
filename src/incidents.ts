@@ -61,11 +61,6 @@ export function listIncidents(
     .toArray();
 }
 
-/** How many Incidents the Monitor has. */
-export function countIncidents(db: Db, monitorId: ObjectId): Promise<number> {
-  return incidents(db).countDocuments({ monitorId });
-}
-
 /** Removes all of the Monitor's Incidents (when the Monitor is deleted). */
 export async function deleteIncidentsOf(
   db: Db,
@@ -89,4 +84,31 @@ export function listIncidentsSince(
 /** How many Incidents opened since `since`, across the whole instance (the Admin page). */
 export function countIncidentsSince(db: Db, since: Date): Promise<number> {
   return incidents(db).countDocuments({ startedAt: { $gte: since } });
+}
+
+/**
+ * Drops the Monitor's Incidents beyond its newest `keep`, except ones that ended after `stillNeededSince` (or are
+ * open): Uptime reads those.
+ */
+export async function pruneIncidents(
+  db: Db,
+  monitorId: ObjectId,
+  keep: number,
+  stillNeededSince: Date,
+): Promise<void> {
+  const [oldestKept] = await incidents(db)
+    .find({ monitorId }, { projection: { startedAt: 1 } })
+    .sort({ startedAt: -1, _id: -1 })
+    .skip(keep - 1)
+    .limit(1)
+    .toArray();
+  if (!oldestKept) return;
+  await incidents(db).deleteMany({
+    monitorId,
+    endedAt: { $ne: null, $lte: stillNeededSince },
+    $or: [
+      { startedAt: { $lt: oldestKept.startedAt } },
+      { startedAt: oldestKept.startedAt, _id: { $lt: oldestKept._id } },
+    ],
+  });
 }

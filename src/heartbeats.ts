@@ -9,6 +9,7 @@ import type { Clock } from "./clock.js";
 import { applyEffects } from "./effects.js";
 import { instanceLimits, MAX_HEARTBEAT_MESSAGE_LENGTH } from "./limits.js";
 import { transition } from "./monitor-state.js";
+import type { LogPruner } from "./log-pruner.js";
 import type { MonitorLock } from "./monitor-lock.js";
 import { monitors } from "./monitors.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
@@ -52,18 +53,6 @@ export function listHeartbeatsSince(
     .toArray();
 }
 
-/** How many Heartbeats the Monitor has received since `since`. */
-export function countHeartbeatsSince(
-  db: Db,
-  monitorId: ObjectId,
-  since: Date,
-): Promise<number> {
-  return heartbeats(db).countDocuments({
-    monitorId,
-    receivedAt: { $gte: since },
-  });
-}
-
 /** The message from `?msg=`, a JSON or form field `msg`, or a plain-text body; capped at 200 characters. */
 function readMessage(req: FastifyRequest): string | null {
   const query = req.query as Record<string, unknown>;
@@ -86,9 +75,9 @@ function readMessage(req: FastifyRequest): string | null {
 
 export async function registerHeartbeatIntake(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; lock: MonitorLock },
+  deps: { db: Db; clock: Clock; lock: MonitorLock; pruner: LogPruner },
 ): Promise<void> {
-  const { db, clock, lock } = deps;
+  const { db, clock, lock, pruner } = deps;
   const limiter = new SlidingWindowLimiter(clock, 1, 1000);
 
   const handle = async (
@@ -130,6 +119,7 @@ export async function registerHeartbeatIntake(
         }),
       ]);
       await applyEffects(db, current, effects, now);
+      pruner.mark(current._id);
       return true;
     });
     return accepted ? text(200, "OK") : text(404, "Not Found");
@@ -184,4 +174,26 @@ export async function deleteHeartbeatsOf(
 /** How many Heartbeats the whole instance has received since `since` (the Admin page). */
 export function countAllHeartbeatsSince(db: Db, since: Date): Promise<number> {
   return heartbeats(db).countDocuments({ receivedAt: { $gte: since } });
+}
+
+/** Drops the Monitor's Heartbeats beyond its newest `keep`. */
+export async function pruneHeartbeats(
+  db: Db,
+  monitorId: ObjectId,
+  keep: number,
+): Promise<void> {
+  const [oldestKept] = await heartbeats(db)
+    .find({ monitorId }, { projection: { receivedAt: 1 } })
+    .sort({ receivedAt: -1, _id: -1 })
+    .skip(keep - 1)
+    .limit(1)
+    .toArray();
+  if (!oldestKept) return;
+  await heartbeats(db).deleteMany({
+    monitorId,
+    $or: [
+      { receivedAt: { $lt: oldestKept.receivedAt } },
+      { receivedAt: oldestKept.receivedAt, _id: { $lt: oldestKept._id } },
+    ],
+  });
 }

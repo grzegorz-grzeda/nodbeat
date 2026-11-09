@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Each Monitor keeps only its 100 newest Heartbeats and 100 newest Incidents; older ones are deleted. Incidents the 7-day Uptime still needs are kept until they leave its window. Heartbeats still also expire after 7 days.
+- The full Incident and Heartbeat logs are a single page of up to 100 rows (no more Newer/Older paging; `?page=` is ignored).
+
 ## [0.15.0] - 2026-11-10
 
 ### Added

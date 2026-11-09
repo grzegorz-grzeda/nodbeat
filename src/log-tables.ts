@@ -6,8 +6,6 @@ import { instanceLimits } from "./limits.js";
 
 /** Rows of each log shown on the Monitor page; the rest is on the log pages. */
 export const MONITOR_PAGE_LOG_ROWS = 20;
-/** Rows per page on the full log pages. */
-export const LOG_PAGE_ROWS = 100;
 
 /** The oldest Heartbeat still kept; older ones are gone (TTL index). */
 export function heartbeatWindowStart(now: Date): Date {

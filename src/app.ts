@@ -23,6 +23,7 @@ import {
 import { ensureIncidentIndexes } from "./incidents.js";
 import { ensureLinkedChatIndexes } from "./linked-chats.js";
 import { registerLayout } from "./layout.js";
+import { createLogPruner } from "./log-pruner.js";
 import { MonitorLock } from "./monitor-lock.js";
 import { registerMonitorLogs } from "./monitor-logs.js";
 import { registerMonitorManagement } from "./monitor-management.js";
@@ -47,7 +48,7 @@ export interface AppDeps {
 
 declare module "fastify" {
   interface FastifyInstance {
-    /** Runs one round of background work (Down checker, Alert dispatcher). Called every 10 s by main. */
+    /** Runs one round of background work (Down checker, Alert dispatcher, log pruning). Called every 10 s by main. */
     tick(): Promise<void>;
   }
 }
@@ -60,6 +61,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   // Startup grace: no Monitor goes Down before this + its Interval + Grace period.
   const startedAt = clock.now();
   const lock = new MonitorLock();
+  const pruner = createLogPruner({ db, clock });
   const app = Fastify({
     logger: deps.logger ?? false,
     // Exactly one proxy (the edge Caddy, ADR 0004) sits in front; the client IP is the last X-Forwarded-For hop it adds.
@@ -91,7 +93,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   registerMonitors(app, { db, clock, config, auth });
   registerMonitorManagement(app, { db, clock, auth, lock });
   registerMonitorLogs(app, { db, clock });
-  await registerHeartbeatIntake(app, { db, clock, lock });
+  await registerHeartbeatIntake(app, { db, clock, lock, pruner });
   registerSettings(app, { db, clock, auth });
   registerAdmin(app, { db, clock });
   registerTelegramBot(app, { db, clock, telegram: deps.telegram, config });
@@ -112,7 +114,13 @@ export async function createApp(deps: AppDeps): Promise<App> {
     }
   });
 
-  const checkDeadlines = createDownChecker({ db, clock, startedAt, lock });
+  const checkDeadlines = createDownChecker({
+    db,
+    clock,
+    startedAt,
+    lock,
+    pruner,
+  });
   const dispatchAlerts = createAlertDispatcher({
     db,
     clock,
@@ -122,6 +130,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const tick = async (): Promise<void> => {
     await checkDeadlines();
     await dispatchAlerts();
+    await pruner.prune();
   };
 
   app.decorate("tick", tick);

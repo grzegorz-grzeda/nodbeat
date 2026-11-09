@@ -8,12 +8,26 @@ import {
 } from "./helpers.js";
 
 const SEC = 1000;
+const DAY = 24 * 60 * 60 * SEC;
+
+/** A total from the Admin page, e.g. "Heartbeats (7 days)". */
+async function adminTotal(browser: Browser, label: string): Promise<number> {
+  const body = (await browser.get("/admin")).body;
+  const escaped = label.replace(/[()]/g, "\\$&");
+  return Number(
+    new RegExp(
+      `<th scope="row">\\s*${escaped}\\s*</th>\\s*<td>\\s*(\\d+)`,
+    ).exec(body)![1],
+  );
+}
 
 async function loggedIn() {
   const ctx = await buildTestApp();
   await createUser(ctx.db, {
     email: "me@example.com",
     password: "correct horse",
+    // Admin, so the Admin page's totals show how many Heartbeats and Incidents are kept.
+    admin: true,
   });
   const browser = await login(ctx.app, "me@example.com", "correct horse");
   return { ...ctx, browser };
@@ -71,24 +85,46 @@ describe("Monitor logs", () => {
     expect(body).toContain(`href="${m.page}/heartbeats"`);
   });
 
-  it("pages through every kept Heartbeat, 100 a page, newest first", async () => {
+  it("keeps only the 100 newest Heartbeats of a Monitor", async () => {
     const ctx = await loggedIn();
     const m = await createMonitor(ctx.browser);
     await sendHeartbeats(ctx, m.hb, 105);
 
-    const first = (await ctx.browser.get(`${m.page}/heartbeats`)).body;
-    const second = (await ctx.browser.get(`${m.page}/heartbeats?page=2`)).body;
+    const before = (await ctx.browser.get(`${m.page}/heartbeats`)).body;
+    expect(messages(before)).toHaveLength(100);
 
-    expect(messages(first)).toHaveLength(100);
-    expect(messages(first)[0]).toBe("hb-105");
-    expect(first).toContain("Page 1 of 2");
-    expect(first).toContain(`href="${m.page}/heartbeats?page=2"`);
-    expect(messages(second)).toEqual(["hb-5", "hb-4", "hb-3", "hb-2", "hb-1"]);
-    expect(second).toContain(`href="${m.page}/heartbeats?page=1"`);
-    expect(second).toContain(`href="${m.page}"`);
-    expect(
-      (await ctx.browser.get(`${m.page}/heartbeats?page=3`)).statusCode,
-    ).toBe(404);
+    await ctx.app.tick();
+
+    const log = (await ctx.browser.get(`${m.page}/heartbeats`)).body;
+    expect(messages(log)).toHaveLength(100);
+    expect(messages(log)[0]).toBe("hb-105");
+    expect(messages(log)[99]).toBe("hb-6");
+    expect(log).not.toContain("Page 1 of");
+    expect(await adminTotal(ctx.browser, "Heartbeats (7 days)")).toBe(100);
+  });
+
+  it("keeps only the 100 newest Incidents, but none Uptime still needs", async () => {
+    const ctx = await loggedIn();
+    const m = await createMonitor(ctx.browser, 30, 0);
+    for (let i = 0; i < 105; i++) {
+      await ctx.app.inject({ method: "GET", url: m.hb });
+      ctx.clock.advance(31 * SEC);
+      await ctx.app.tick();
+    }
+
+    // All 105 ended inside the 7-day Uptime window: none is dropped yet, the log shows the newest 100.
+    await ctx.app.inject({ method: "GET", url: m.hb });
+    await ctx.app.tick();
+    expect(await adminTotal(ctx.browser, "Incidents (30 days)")).toBe(105);
+    const log = (await ctx.browser.get(`${m.page}/incidents`)).body;
+    expect(incidentRows(log)).toBe(100);
+    expect(log).not.toContain("Page 1 of");
+
+    // A week later the oldest 5 are past the window and beyond the newest 100.
+    ctx.clock.advance(8 * DAY);
+    await ctx.app.inject({ method: "GET", url: m.hb });
+    await ctx.app.tick();
+    expect(await adminTotal(ctx.browser, "Incidents (30 days)")).toBe(100);
   });
 
   it("doesn't link the full log while everything fits on the Monitor page", async () => {

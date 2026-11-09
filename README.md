@@ -14,7 +14,7 @@ Heartbeats are push-only (ADR 0001): nodbeat never connects to what it watches, 
 - **Alerts on/off per Monitor**: state and Incidents are still tracked when off.
 - **Regenerate the Heartbeat URL** to revoke a leaked one.
 - **Dashboard** refreshing every 5 s: state, time since last Heartbeat, last message, 7-day Uptime (New and Paused time left out).
-- **Monitor page**: settings, Heartbeat URL with copy buttons, curl / cron / ESP32 examples, the 20 newest Incidents and Heartbeats, and paged full logs.
+- **Monitor page**: settings, Heartbeat URL with copy buttons, curl / cron / ESP32 examples, the 20 newest Incidents and Heartbeats, and full logs of everything kept.
 - **Telegram**: link private or group chats with a one-time Link code; `/status` and `/unlink` in the bot. Alerts go to every Linked chat of the Monitor's owner, in order per Monitor, retried with backoff for up to 1 hour.
 - **Time zone** per User for Alerts and the UI; light / dark / system theme.
 - **Admin page** at `/admin`: instance-wide counts only, never what Users watch.
@@ -39,7 +39,7 @@ An optional message (up to 200 characters) comes from, in this order: the `msg` 
 | `413`  | body over 8 KiB                                     |
 | `429`  | more than one Heartbeat per second for this Monitor |
 
-All answers are plain text. Raw Heartbeats are kept for 7 days.
+All answers are plain text. Each Monitor keeps its 100 newest Heartbeats from the last 7 days, and its 100 newest Incidents (older ones are kept only while 7-day Uptime still needs them).
 
 A cron job that reports only on success:
 
