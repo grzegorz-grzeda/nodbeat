@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-10
+
 ### Added
 
 - Admin page at `/admin` (Admin only; 404 for everyone else) with instance totals: Users, Monitors by state, Linked chats, Heartbeats in the last 7 days and Incidents opened in the last 7 and 30 days. Linked from the nav for the Admin.
@@ -111,7 +113,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.11.0...v0.12.0
