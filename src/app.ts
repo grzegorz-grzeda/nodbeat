@@ -1,9 +1,13 @@
 import cookie from "@fastify/cookie";
 import formbody from "@fastify/formbody";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyServerOptions,
+} from "fastify";
 import type { Db } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
+import { createAlertDispatcher, ensureAlertIndexes } from "./alerts.js";
 import { ensureSessionIndexes, registerAuth } from "./auth.js";
 import { registerDashboard } from "./dashboard.js";
 import { createDownChecker } from "./down-checker.js";
@@ -27,8 +31,8 @@ export interface AppDeps {
   clock: Clock;
   telegram: TelegramClient;
   config: Config;
-  /** Enables Fastify's request logger. Off by default (tests). */
-  logger?: boolean;
+  /** Fastify's logger: true for the default one, or options. Off by default. */
+  logger?: FastifyServerOptions["logger"];
 }
 
 declare module "fastify" {
@@ -60,6 +64,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ensureIncidentIndexes(db),
     ensureLinkedChatIndexes(db),
     ensurePausePeriodIndexes(db),
+    ensureAlertIndexes(db),
   ]);
 
   await app.register(cookie);
@@ -82,8 +87,15 @@ export async function createApp(deps: AppDeps): Promise<App> {
   });
 
   const checkDeadlines = createDownChecker({ db, clock, startedAt, lock });
+  const dispatchAlerts = createAlertDispatcher({
+    db,
+    clock,
+    telegram: deps.telegram,
+    log: app.log,
+  });
   const tick = async (): Promise<void> => {
     await checkDeadlines();
+    await dispatchAlerts();
   };
 
   app.decorate("tick", tick);

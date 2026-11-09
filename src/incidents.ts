@@ -19,27 +19,30 @@ export async function openIncident(
   db: Db,
   monitor: { _id: ObjectId; ownerId: ObjectId },
   startedAt: Date,
-): Promise<void> {
-  await incidents(db).insertOne({
+): Promise<IncidentDoc> {
+  const incident: IncidentDoc = {
     _id: new ObjectId(),
     monitorId: monitor._id,
     ownerId: monitor.ownerId,
     startedAt,
     endedAt: null,
     endReason: null,
-  });
+  };
+  await incidents(db).insertOne(incident);
+  return incident;
 }
 
-/** Ends the Monitor's open Incident, if it has one. */
-export async function closeOpenIncident(
+/** Ends the Monitor's open Incident, if it has one, and returns it as closed. */
+export function closeOpenIncident(
   db: Db,
   monitorId: ObjectId,
   endedAt: Date,
   endReason: "heartbeat" | "paused",
-): Promise<void> {
-  await incidents(db).updateOne(
+): Promise<IncidentDoc | null> {
+  return incidents(db).findOneAndUpdate(
     { monitorId, endedAt: null },
     { $set: { endedAt, endReason } },
+    { returnDocument: "after" },
   );
 }
 

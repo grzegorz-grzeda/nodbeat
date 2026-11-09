@@ -1,0 +1,209 @@
+import { ObjectId, type Db } from "mongodb";
+import type { Clock } from "./clock.js";
+import { formatDateTime, formatDuration } from "./format.js";
+import type { IncidentDoc } from "./incidents.js";
+import { listLinkedChats } from "./linked-chats.js";
+import type { TelegramClient } from "./telegram.js";
+import { DEFAULT_TIME_ZONE, findUserById } from "./users.js";
+
+/** An Alert waiting in the outbox. Removed once every Linked chat has it, or when it is given up on. */
+export interface AlertDoc {
+  _id: ObjectId;
+  monitorId: ObjectId;
+  ownerId: ObjectId;
+  kind: AlertKind;
+  incidentId: ObjectId;
+  /** The message, formatted when the Alert was enqueued. */
+  text: string;
+  /** Linked chats that still have to receive it. */
+  chatIds: number[];
+  attempts: number;
+  createdAt: Date;
+  /** Starts the retry window; null until a send fails. */
+  firstFailedAt: Date | null;
+  nextAttemptAt: Date;
+}
+
+export type AlertKind = "down" | "up";
+
+/** The slice of a logger the dispatcher needs (Fastify's logger fits). */
+export interface AlertLog {
+  warn(obj: object, msg: string): void;
+}
+
+/** A failed send is retried for this long after the first failure, then dropped. */
+export const ALERT_RETRY_WINDOW_MS = 60 * 60 * 1000;
+const FIRST_RETRY_DELAY_MS = 30 * 1000;
+
+const outbox = (db: Db) => db.collection<AlertDoc>("alertOutbox");
+
+export async function ensureAlertIndexes(db: Db): Promise<void> {
+  await Promise.all([
+    outbox(db).createIndex({ monitorId: 1, createdAt: 1, _id: 1 }),
+    outbox(db).createIndex({ incidentId: 1 }),
+  ]);
+}
+
+/** The part of a Monitor an Alert is built from. */
+export interface AlertedMonitor {
+  _id: ObjectId;
+  ownerId: ObjectId;
+  name: string;
+}
+
+/** Puts an Alert about `incident` in the outbox, addressed to the owner's Linked chats at this moment. */
+export async function enqueueAlert(
+  db: Db,
+  monitor: AlertedMonitor,
+  kind: AlertKind,
+  incident: IncidentDoc,
+  now: Date,
+): Promise<void> {
+  const [owner, chats] = await Promise.all([
+    findUserById(db, monitor.ownerId),
+    listLinkedChats(db, monitor.ownerId),
+  ]);
+  if (chats.length === 0) return;
+  const timeZone = owner?.timeZone ?? DEFAULT_TIME_ZONE;
+  await outbox(db).insertOne({
+    _id: new ObjectId(),
+    monitorId: monitor._id,
+    ownerId: monitor.ownerId,
+    kind,
+    incidentId: incident._id,
+    text: alertText(monitor.name, kind, incident, timeZone),
+    chatIds: chats.map((c) => c.chatId),
+    attempts: 0,
+    createdAt: now,
+    firstFailedAt: null,
+    nextAttemptAt: now,
+  });
+}
+
+function alertText(
+  name: string,
+  kind: AlertKind,
+  incident: IncidentDoc,
+  timeZone: string,
+): string {
+  const at = (date: Date) => `${formatDateTime(date, timeZone)} (${timeZone})`;
+  if (kind === "down") {
+    return `🔴 ${name} is Down\nSince ${at(incident.startedAt)}`;
+  }
+  const endedAt = incident.endedAt ?? incident.startedAt;
+  const duration = formatDuration(
+    (endedAt.getTime() - incident.startedAt.getTime()) / 1000,
+  );
+  return `🟢 ${name} is Up again\nAt ${at(endedAt)}, after ${duration} Down`;
+}
+
+/** A Down Alert not yet delivered when its Incident closes is stale: the Up Alert says it all. */
+export async function dropPendingDownAlert(
+  db: Db,
+  incidentId: ObjectId,
+): Promise<void> {
+  await outbox(db).deleteMany({ incidentId, kind: "down" });
+}
+
+/** Removes all of the Monitor's pending Alerts (when the Monitor is deleted). */
+export async function deleteAlertsOf(
+  db: Db,
+  monitorId: ObjectId,
+): Promise<void> {
+  await outbox(db).deleteMany({ monitorId });
+}
+
+/**
+ * Sends due Alerts. Per Monitor, Alerts go out strictly in order: one that is still being retried holds back
+ * the ones after it. A failed send is retried with exponential backoff until ALERT_RETRY_WINDOW_MS after the first
+ * failure, then the Alert is dropped with a log entry.
+ */
+export function createAlertDispatcher(deps: {
+  db: Db;
+  clock: Clock;
+  telegram: TelegramClient;
+  log: AlertLog;
+}): () => Promise<void> {
+  const { db, clock, telegram, log } = deps;
+  let running: Promise<void> | null = null;
+
+  const dispatch = async (): Promise<void> => {
+    const now = clock.now();
+    const pending = await outbox(db)
+      .find({})
+      .sort({ monitorId: 1, createdAt: 1, _id: 1 })
+      .toArray();
+    const byMonitor = new Map<string, AlertDoc[]>();
+    for (const alert of pending) {
+      const key = String(alert.monitorId);
+      const alerts = byMonitor.get(key);
+      if (alerts) alerts.push(alert);
+      else byMonitor.set(key, [alert]);
+    }
+    for (const alerts of byMonitor.values()) {
+      for (const alert of alerts) {
+        if (alert.nextAttemptAt > now) break;
+        if (!(await deliver(alert, now))) break;
+      }
+    }
+  };
+
+  /** Sends to the chats still missing the Alert; true once it is done with (delivered or given up on). */
+  const deliver = async (loaded: AlertDoc, now: Date): Promise<boolean> => {
+    // Re-read: the Alert may have been dropped (its Incident closed, its Monitor deleted) since the outbox was loaded.
+    const alert = await outbox(db).findOne({ _id: loaded._id });
+    if (!alert) return true;
+    // A chat unlinked since the Alert was enqueued no longer gets it.
+    const linked = new Set(
+      (await listLinkedChats(db, alert.ownerId)).map((c) => c.chatId),
+    );
+    const failed: number[] = [];
+    for (const chatId of alert.chatIds.filter((id) => linked.has(id))) {
+      try {
+        await telegram.sendMessage(chatId, alert.text);
+      } catch {
+        failed.push(chatId);
+      }
+    }
+    const attempts = alert.attempts + 1;
+    const firstFailedAt = alert.firstFailedAt ?? now;
+    const giveUpAt = firstFailedAt.getTime() + ALERT_RETRY_WINDOW_MS;
+    const givingUp = failed.length > 0 && now.getTime() >= giveUpAt;
+    if (failed.length === 0 || givingUp) {
+      await outbox(db).deleteOne({ _id: alert._id });
+      if (givingUp) {
+        log.warn(
+          {
+            monitorId: String(alert.monitorId),
+            kind: alert.kind,
+            chatIds: failed,
+            attempts,
+          },
+          `Alert dropped: Telegram send kept failing for ${ALERT_RETRY_WINDOW_MS / 60_000} min`,
+        );
+      }
+      return true;
+    }
+    const delay = FIRST_RETRY_DELAY_MS * 2 ** (attempts - 1);
+    await outbox(db).updateOne(
+      { _id: alert._id },
+      {
+        $set: {
+          chatIds: failed,
+          attempts,
+          firstFailedAt,
+          nextAttemptAt: new Date(Math.min(now.getTime() + delay, giveUpAt)),
+        },
+      },
+    );
+    return false;
+  };
+
+  return () => {
+    // One dispatch at a time, so an Alert is never sent twice by overlapping ticks.
+    running ??= dispatch().finally(() => {
+      running = null;
+    });
+    return running;
+  };
+}

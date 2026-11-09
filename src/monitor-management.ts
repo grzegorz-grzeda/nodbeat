@@ -7,6 +7,7 @@ import { csrfField, html, page, userHeader } from "./html.js";
 import { deleteIncidentsOf } from "./incidents.js";
 import { limitsFor } from "./limits.js";
 import { applyEffects } from "./effects.js";
+import { deleteAlertsOf } from "./alerts.js";
 import type { MonitorLock } from "./monitor-lock.js";
 import { transition, type MonitorEvent } from "./monitor-state.js";
 import {
@@ -193,6 +194,7 @@ export function registerMonitorManagement(
           deleteHeartbeatsOf(db, monitor._id),
           deleteIncidentsOf(db, monitor._id),
           deletePausePeriodsOf(db, monitor._id),
+          deleteAlertsOf(db, monitor._id),
         ]);
       });
       return reply.redirect("/", 303);

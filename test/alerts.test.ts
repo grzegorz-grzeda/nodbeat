@@ -1,0 +1,368 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildTestApp,
+  createUser,
+  login,
+  restartApp,
+  testConfig,
+  type Browser,
+  type TestContext,
+} from "./helpers.js";
+
+const SEC = 1000;
+const MIN = 60 * SEC;
+const PRIVATE_CHAT = { id: 1001, type: "private", first_name: "Grzegorz" };
+const GROUP_CHAT = { id: -2002, type: "group", title: "Garden project" };
+
+type Chat = { id: number; type: string; title?: string; first_name?: string };
+
+let updateId = 0;
+
+async function loggedIn(
+  options: { email?: string; timeZone?: string } = {},
+  ctx?: TestContext,
+) {
+  const base = ctx ?? (await buildTestApp());
+  const email = options.email ?? "me@example.com";
+  await createUser(base.db, {
+    email,
+    password: "correct horse",
+    ...(options.timeZone ? { timeZone: options.timeZone } : {}),
+  });
+  const browser = await login(base.app, email, "correct horse");
+  return { ...base, browser };
+}
+
+/** Links a Telegram chat to the logged-in User the way a User does: Link code + `/start <code>`. */
+async function linkChat(ctx: TestContext, browser: Browser, chat: Chat) {
+  const res = await browser.submit("/settings", "/settings/link-code");
+  const settings = await browser.get(res.headers.location as string);
+  const code = /<code class="link-code">([A-Z0-9]{8})<\/code>/.exec(
+    settings.body,
+  )![1]!;
+  await ctx.app.inject({
+    method: "POST",
+    url: "/telegram/webhook",
+    headers: {
+      "x-telegram-bot-api-secret-token": testConfig.telegramWebhookSecret,
+    },
+    payload: {
+      update_id: ++updateId,
+      message: { message_id: updateId, chat, date: 0, text: `/start ${code}` },
+    },
+  });
+  ctx.telegram.sent.length = 0;
+}
+
+/** Creates a Monitor and returns its page path and Heartbeat path. */
+async function createMonitor(
+  browser: Browser,
+  name = "Garden sensor",
+  intervalSec = 60,
+  graceSec = 30,
+): Promise<{ page: string; hb: string }> {
+  const res = await browser.submit("/monitors/new", "/monitors", {
+    name,
+    interval: String(intervalSec),
+    intervalUnit: "s",
+    grace: String(graceSec),
+    graceUnit: "s",
+  });
+  const page = res.headers.location as string;
+  const body = (await browser.get(page)).body;
+  const hb = /https:\/\/nodbeat\.test(\/hb\/[A-Za-z0-9_-]+)/.exec(body)![1]!;
+  return { page, hb };
+}
+
+const sendHeartbeat = (ctx: TestContext, hb: string) =>
+  ctx.app.inject({ method: "GET", url: hb });
+
+/** Sends the first Heartbeat, then lets the Monitor go Down (deadline at +90 s). */
+async function goDown(ctx: TestContext, hb: string) {
+  await sendHeartbeat(ctx, hb);
+  ctx.clock.advance(91 * SEC);
+  await ctx.app.tick();
+}
+
+const firstLines = (ctx: TestContext) =>
+  ctx.telegram.sent.map((s) => s.text.split("\n")[0]);
+
+describe("Alerts", () => {
+  it("sends a Down Alert to every Linked chat, then an Up Alert with the Incident duration", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+
+    // 2026-01-01T00:00:00Z; the deadline is 00:01:30 UTC = 01:01:30 in Europe/Warsaw.
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent.map((s) => s.chatId).sort()).toEqual([
+      GROUP_CHAT.id,
+      PRIVATE_CHAT.id,
+    ]);
+    for (const s of ctx.telegram.sent) {
+      expect(s.text).toContain("Garden sensor is Down");
+      expect(s.text).toContain("2026-01-01 01:01:30");
+    }
+    ctx.telegram.sent.length = 0;
+
+    ctx.clock.advance(30 * SEC);
+    await sendHeartbeat(ctx, m.hb);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent).toHaveLength(2);
+    for (const s of ctx.telegram.sent) {
+      expect(s.text).toContain("Garden sensor is Up");
+      expect(s.text).toContain("31 s");
+      expect(s.text).toContain("2026-01-01 01:02:01");
+    }
+  });
+
+  it("shows times in the owner's time zone", async () => {
+    const ctx = await loggedIn({ timeZone: "America/New_York" });
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+
+    await goDown(ctx, m.hb);
+
+    expect(ctx.telegram.sent).toHaveLength(1);
+    expect(ctx.telegram.sent[0]!.text).toContain("2025-12-31 19:01:30");
+  });
+
+  it("sends only to the owner's Linked chats", async () => {
+    const ctx = await loggedIn();
+    const other = await loggedIn({ email: "other@example.com" }, ctx);
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    await linkChat(ctx, other.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+
+    await goDown(ctx, m.hb);
+
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([PRIVATE_CHAT.id]);
+  });
+
+  it("sends no Alert when a New Monitor gets its first Heartbeat", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+
+    await sendHeartbeat(ctx, m.hb);
+    await ctx.app.tick();
+
+    expect(ctx.telegram.sent).toEqual([]);
+  });
+
+  it("sends no Alerts for a Monitor with Alerts off", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    await ctx.browser.submit(m.page, `${m.page}/alerts`, {
+      alertsEnabled: "false",
+    });
+
+    await goDown(ctx, m.hb);
+    ctx.clock.advance(30 * SEC);
+    await sendHeartbeat(ctx, m.hb);
+    await ctx.app.tick();
+
+    expect(ctx.telegram.sent).toEqual([]);
+  });
+
+  it("sends no Up Alert when pausing closes the Incident", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    await goDown(ctx, m.hb);
+    ctx.telegram.sent.length = 0;
+
+    await ctx.browser.submit(m.page, `${m.page}/pause`);
+    await ctx.app.tick();
+
+    expect(ctx.telegram.sent).toEqual([]);
+  });
+
+  it("retries a failed send with exponential backoff", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failing = true;
+    await goDown(ctx, m.hb); // first attempt fails; next one 30 s later
+    ctx.telegram.failing = false;
+
+    ctx.clock.advance(20 * SEC);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent).toEqual([]);
+
+    ctx.clock.advance(10 * SEC);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent).toHaveLength(1);
+    expect(ctx.telegram.sent[0]!.text).toContain("is Down");
+
+    ctx.clock.advance(10 * MIN);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent).toHaveLength(1);
+  });
+
+  it("backs off further after each failure", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failing = true;
+    await goDown(ctx, m.hb); // fails at 0; retries due at +30 s, +90 s, +210 s
+    ctx.clock.advance(30 * SEC);
+    await ctx.app.tick(); // fails at +30 s
+    ctx.telegram.failing = false;
+
+    ctx.clock.advance(50 * SEC);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent).toEqual([]);
+
+    ctx.clock.advance(10 * SEC);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent).toHaveLength(1);
+  });
+
+  it("gives up after 1 hour of failures and logs the dropped Alert", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failing = true;
+    await goDown(ctx, m.hb);
+
+    for (let elapsed = 0; elapsed < 60 * MIN; elapsed += 10 * SEC) {
+      ctx.clock.advance(10 * SEC);
+      await ctx.app.tick();
+    }
+    expect(ctx.logs).toContainEqual(
+      expect.objectContaining({
+        msg: expect.stringContaining("Alert dropped"),
+      }),
+    );
+
+    ctx.telegram.failing = false;
+    ctx.clock.advance(10 * MIN);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent).toEqual([]);
+  });
+
+  it("retries only the chats that failed", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failingChats.add(GROUP_CHAT.id);
+
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([PRIVATE_CHAT.id]);
+
+    ctx.telegram.failingChats.clear();
+    ctx.clock.advance(30 * SEC);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([
+      PRIVATE_CHAT.id,
+      GROUP_CHAT.id,
+    ]);
+  });
+
+  it("delivers a Monitor's Alerts in order", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    await goDown(ctx, m.hb); // t=91 s: first Down delivered
+
+    ctx.telegram.failing = true;
+    ctx.clock.advance(9 * SEC); // t=100 s
+    await sendHeartbeat(ctx, m.hb);
+    await ctx.app.tick(); // Up fails; retry due at 130 s
+    ctx.clock.advance(30 * SEC); // t=130 s
+    await ctx.app.tick(); // Up fails; retry due at 190 s
+    ctx.clock.advance(60 * SEC); // t=190 s
+    await ctx.app.tick(); // second Down enqueued; Up fails, retry due at 310 s
+
+    ctx.telegram.failing = false;
+    ctx.clock.advance(40 * SEC); // t=230 s: the second Down waits behind the Up
+    await ctx.app.tick();
+    expect(firstLines(ctx)).toEqual(["🔴 Garden sensor is Down"]);
+
+    ctx.clock.advance(80 * SEC); // t=310 s
+    await ctx.app.tick();
+    expect(firstLines(ctx)).toEqual([
+      "🔴 Garden sensor is Down",
+      "🟢 Garden sensor is Up again",
+      "🔴 Garden sensor is Down",
+    ]);
+  });
+
+  it("does not hold back another Monitor's Alerts while one is being retried", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const garden = await createMonitor(ctx.browser);
+    const other = await createMonitor(ctx.browser, "Other");
+    await sendHeartbeat(ctx, garden.hb); // t=0: Down at 90 s
+    ctx.clock.advance(5 * SEC);
+    await sendHeartbeat(ctx, other.hb); // t=5 s: Down at 95 s
+
+    ctx.telegram.failing = true;
+    ctx.clock.advance(86 * SEC); // t=91 s
+    await ctx.app.tick(); // Garden's Down fails; retry due at 121 s
+    ctx.telegram.failing = false;
+
+    ctx.clock.advance(5 * SEC); // t=96 s
+    await ctx.app.tick();
+    expect(firstLines(ctx)).toEqual(["🔴 Other is Down"]);
+
+    ctx.clock.advance(25 * SEC); // t=121 s
+    await ctx.app.tick();
+    expect(firstLines(ctx)).toEqual([
+      "🔴 Other is Down",
+      "🔴 Garden sensor is Down",
+    ]);
+  });
+
+  it("drops a Down Alert still pending when its Incident closes and sends only the Up Alert", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failing = true;
+    await goDown(ctx, m.hb);
+    ctx.telegram.failing = false;
+
+    ctx.clock.advance(10 * SEC);
+    await sendHeartbeat(ctx, m.hb);
+    await ctx.app.tick();
+
+    expect(ctx.telegram.sent).toHaveLength(1);
+    expect(ctx.telegram.sent[0]!.text).toContain("Garden sensor is Up again");
+    expect(ctx.telegram.sent[0]!.text).toContain("11 s Down");
+  });
+
+  it("keeps pending Alerts across a restart", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failing = true;
+    await goDown(ctx, m.hb);
+    ctx.telegram.failing = false;
+
+    const app = await restartApp(ctx);
+    ctx.clock.advance(30 * SEC);
+    await app.tick();
+
+    expect(ctx.telegram.sent).toHaveLength(1);
+    expect(ctx.telegram.sent[0]!.text).toContain("Garden sensor is Down");
+  });
+
+  it("drops a deleted Monitor's pending Alerts", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failing = true;
+    await goDown(ctx, m.hb);
+    ctx.telegram.failing = false;
+
+    await ctx.browser.submit(`${m.page}/delete`, `${m.page}/delete`);
+    ctx.clock.advance(30 * SEC);
+    await ctx.app.tick();
+
+    expect(ctx.telegram.sent).toEqual([]);
+  });
+});

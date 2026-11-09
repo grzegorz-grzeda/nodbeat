@@ -30,10 +30,15 @@ export interface SentMessage {
 
 export class RecordingTelegram implements TelegramClient {
   readonly sent: SentMessage[] = [];
+  /** Every send fails. */
   failing = false;
+  /** Sends to these chats fail, e.g. a group the bot was removed from. */
+  readonly failingChats = new Set<number>();
 
   async sendMessage(chatId: number, text: string): Promise<void> {
-    if (this.failing) throw new Error("telegram unavailable");
+    if (this.failing || this.failingChats.has(chatId)) {
+      throw new Error("telegram unavailable");
+    }
     this.sent.push({ chatId, text });
   }
 
@@ -59,7 +64,19 @@ export interface TestContext {
   telegram: RecordingTelegram;
   client: MongoClient;
   db: Db;
+  /** Warnings and errors the app logged, parsed. */
+  logs: Array<Record<string, unknown>>;
 }
+
+/** Fastify logger options that collect warnings and errors into `logs`. */
+const recordingLogger = (logs: TestContext["logs"]) => ({
+  level: "warn",
+  stream: {
+    write: (line: string) => {
+      logs.push(JSON.parse(line) as Record<string, unknown>);
+    },
+  },
+});
 
 const cleanups: Array<() => Promise<void>> = [];
 
@@ -74,12 +91,19 @@ export async function buildTestApp(): Promise<TestContext> {
   const db = client.db(`test_${randomUUID().replaceAll("-", "")}`);
   const clock = new FakeClock();
   const telegram = new RecordingTelegram();
-  const app = await createApp({ db, clock, telegram, config: testConfig });
+  const logs: TestContext["logs"] = [];
+  const app = await createApp({
+    db,
+    clock,
+    telegram,
+    config: testConfig,
+    logger: recordingLogger(logs),
+  });
   cleanups.push(async () => {
     await app.close();
     await client.close();
   });
-  return { app, clock, telegram, client, db };
+  return { app, clock, telegram, client, db, logs };
 }
 
 /** Simulates a nodbeat restart: a fresh `createApp` on the same database and clock. */
@@ -90,6 +114,7 @@ export async function restartApp(ctx: TestContext): Promise<App> {
     clock: ctx.clock,
     telegram: ctx.telegram,
     config: testConfig,
+    logger: recordingLogger(ctx.logs),
   });
   cleanups.push(() => app.close());
   return app;

@@ -121,7 +121,7 @@ nodbeat is a self-hosted web app at `nodbeat.g2labs.pl`. I create a **Monitor** 
   - `incidents`: monitorId, ownerId, startedAt, endedAt, endReason (`heartbeat|paused`).
   - `linkedChats`: ownerId, telegram chatId, title, linkedAt. Unique on (ownerId, chatId).
   - `linkCodes`: code, ownerId, expiresAt (TTL index), used.
-  - `alertOutbox`: monitorId, ownerId, kind (`down|up`), incidentId, payload, attempts, nextAttemptAt, status.
+  - `alertOutbox`: monitorId, ownerId, kind (`down|up`), incidentId, text, chatIds (Linked chats still to receive it), attempts, createdAt, firstFailedAt, nextAttemptAt. An Alert is removed once delivered or given up on.
 - **HTTP contract**:
   - Heartbeat: `GET|POST /hb/:token`. The message comes from the `msg` query parameter or a plain-text/JSON body field `msg`. Returns `200 OK`, `404` or `429`.
   - Telegram webhook: `POST /telegram/webhook`.

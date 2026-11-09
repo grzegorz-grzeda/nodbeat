@@ -1,3 +1,5 @@
+import type { AlertKind } from "./alerts.js";
+
 export type MonitorState = "new" | "up" | "down" | "paused";
 
 /** The part of a Monitor the state machine reads and changes. */
@@ -14,10 +16,16 @@ export interface MonitorStateFields {
   watchedSince?: Date | null;
 }
 
-/** What the state machine reads besides the state fields. */
+/** A Monitor's Interval and Grace period. */
 export interface MonitorTiming {
   intervalSec: number;
   graceSec: number;
+}
+
+/** What the state machine reads besides the state fields. */
+export interface MonitorSettings extends MonitorTiming {
+  /** Off: state and Incidents are still tracked, but no Alerts are enqueued. */
+  alertsEnabled: boolean;
 }
 
 export type MonitorEvent =
@@ -35,7 +43,9 @@ export type Effect =
   | { kind: "close-incident"; reason: "heartbeat" | "paused" }
   /** Pause periods are left out of Uptime. */
   | { kind: "start-pause-period" }
-  | { kind: "end-pause-period" };
+  | { kind: "end-pause-period" }
+  /** Down: about the Incident just opened. Up: about the Incident just closed. */
+  | { kind: "enqueue-alert"; alert: AlertKind };
 
 export const STATE_LABELS: Record<MonitorState, string> = {
   new: "New",
@@ -70,7 +80,7 @@ export function downDeadline(
 
 /** The single place Monitor state changes are decided. Pure: no I/O, time comes in as `now`. */
 export function transition(
-  current: MonitorStateFields & MonitorTiming,
+  current: MonitorStateFields & MonitorSettings,
   event: MonitorEvent,
   now: Date,
 ): Transition {
@@ -88,6 +98,10 @@ export function transition(
   }
 }
 
+function alertEffects(current: MonitorSettings, kind: AlertKind): Effect[] {
+  return current.alertsEnabled ? [{ kind: "enqueue-alert", alert: kind }] : [];
+}
+
 function stateFields(current: MonitorStateFields): MonitorStateFields {
   const { state, lastHeartbeatAt, lastMessage, pausedAt, watchedSince } =
     current;
@@ -101,7 +115,7 @@ function stateFields(current: MonitorStateFields): MonitorStateFields {
 }
 
 function onHeartbeat(
-  current: MonitorStateFields,
+  current: MonitorStateFields & MonitorSettings,
   message: string | null,
   now: Date,
 ): Transition {
@@ -118,7 +132,10 @@ function onHeartbeat(
     case "down":
       return {
         fields: { ...seen, state: "up" },
-        effects: [{ kind: "close-incident", reason: "heartbeat" }],
+        effects: [
+          { kind: "close-incident", reason: "heartbeat" },
+          ...alertEffects(current, "up"),
+        ],
       };
     case "paused":
       return { fields: { ...seen, state: "paused" }, effects: [] };
@@ -126,7 +143,7 @@ function onHeartbeat(
 }
 
 function onDeadlineCheck(
-  current: MonitorStateFields & MonitorTiming,
+  current: MonitorStateFields & MonitorSettings,
   startedAt: Date,
   now: Date,
 ): Transition {
@@ -136,7 +153,10 @@ function onDeadlineCheck(
   if (!deadline || now < deadline) return { fields, effects: [] };
   return {
     fields: { ...fields, state: "down" },
-    effects: [{ kind: "open-incident", startedAt: deadline }],
+    effects: [
+      { kind: "open-incident", startedAt: deadline },
+      ...alertEffects(current, "down"),
+    ],
   };
 }
 
