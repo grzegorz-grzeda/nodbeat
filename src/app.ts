@@ -6,10 +6,13 @@ import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { ensureSessionIndexes, registerAuth } from "./auth.js";
 import { registerDashboard } from "./dashboard.js";
+import { createDownChecker } from "./down-checker.js";
 import {
   ensureHeartbeatIndexes,
   registerHeartbeatIntake,
 } from "./heartbeats.js";
+import { ensureIncidentIndexes } from "./incidents.js";
+import { MonitorLock } from "./monitor-lock.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
 import type { TelegramClient } from "./telegram.js";
 import { ensureUserIndexes } from "./users.js";
@@ -35,6 +38,9 @@ export type App = FastifyInstance;
 /** Composition root: builds the Fastify instance and every module. */
 export async function createApp(deps: AppDeps): Promise<App> {
   const { db, clock, config } = deps;
+  // Startup grace: no Monitor goes Down before this + its Interval + Grace period.
+  const startedAt = clock.now();
+  const lock = new MonitorLock();
   const app = Fastify({
     logger: deps.logger ?? false,
     // Exactly one proxy (the edge Caddy, ADR 0004) sits in front; the client IP is the last X-Forwarded-For hop it adds.
@@ -46,6 +52,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ensureSessionIndexes(db),
     ensureMonitorIndexes(db),
     ensureHeartbeatIndexes(db),
+    ensureIncidentIndexes(db),
   ]);
 
   await app.register(cookie);
@@ -53,7 +60,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const auth = registerAuth(app, { db, clock, config });
   registerDashboard(app, { db, clock, auth });
   registerMonitors(app, { db, clock, config, auth });
-  await registerHeartbeatIntake(app, { db, clock });
+  await registerHeartbeatIntake(app, { db, clock, lock });
 
   app.get("/health", async (_req, reply) => {
     try {
@@ -64,7 +71,10 @@ export async function createApp(deps: AppDeps): Promise<App> {
     }
   });
 
-  const tick = async (): Promise<void> => {};
+  const checkDeadlines = createDownChecker({ db, clock, startedAt, lock });
+  const tick = async (): Promise<void> => {
+    await checkDeadlines();
+  };
 
   app.decorate("tick", tick);
   return app;

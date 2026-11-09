@@ -4,9 +4,12 @@ import { ObjectId, type Db } from "mongodb";
 import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
-import { formatDuration } from "./format.js";
+import { formatDateTime, formatDuration } from "./format.js";
+import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
+import { listIncidents, type IncidentDoc } from "./incidents.js";
 import { csrfField, html, page, userHeader, type SafeHtml } from "./html.js";
 import {
+  instanceLimits,
   limitsFor,
   MAX_HEARTBEAT_MESSAGE_LENGTH,
   type Limits,
@@ -29,6 +32,9 @@ export interface MonitorDoc extends MonitorStateFields {
 
 const MAX_NAME_LENGTH = 100;
 const MAX_NOTES_LENGTH = 2000;
+/** Rows shown on the Monitor page, capped so a chatty or flaky Monitor doesn't produce a huge page. */
+const HEARTBEAT_HISTORY_LIMIT = 500;
+const INCIDENT_HISTORY_LIMIT = 100;
 const UNIT_SEC = { s: 1, m: 60, h: 60 * 60, d: 24 * 60 * 60 } as const;
 type Unit = keyof typeof UNIT_SEC;
 
@@ -232,6 +238,19 @@ export function registerMonitors(
           );
       }
       const url = heartbeatUrl(monitor);
+      const now = clock.now();
+      const [incidentList, heartbeatList] = await Promise.all([
+        listIncidents(db, monitor._id, INCIDENT_HISTORY_LIMIT),
+        listHeartbeatsSince(
+          db,
+          monitor._id,
+          new Date(
+            now.getTime() - instanceLimits().heartbeatRetentionSec * 1000,
+          ),
+          HEARTBEAT_HISTORY_LIMIT,
+        ),
+      ]);
+      const timeZone = req.user!.timeZone;
       return reply.type("text/html").send(
         page({
           title: monitor.name,
@@ -244,6 +263,8 @@ export function registerMonitors(
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
             </ul>
             ${monitor.notes ? html`<p class="notes">${monitor.notes}</p>` : ""}
+            ${incidentsSection(incidentList, now, timeZone)}
+            ${heartbeatsSection(heartbeatList, timeZone)}
             <h2>Heartbeat URL</h2>
             <p>
               Anyone who knows this URL can send Heartbeats for this Monitor.
@@ -286,6 +307,80 @@ void sendHeartbeat(const String&amp; message) {
       );
     },
   );
+}
+
+function incidentsSection(
+  list: IncidentDoc[],
+  now: Date,
+  timeZone: string,
+): SafeHtml {
+  if (list.length === 0) {
+    return html`<h2>Incidents</h2>
+      <p>No Incidents yet.</p>`;
+  }
+  return html`<h2>Incidents</h2>
+    ${
+      list.length === INCIDENT_HISTORY_LIMIT
+        ? html`<p>Showing the latest ${INCIDENT_HISTORY_LIMIT}.</p>`
+        : ""
+    }
+    <table>
+      <thead>
+        <tr>
+          <th>Start</th>
+          <th>End</th>
+          <th>Duration</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${list.map(
+          (i) =>
+            html`<tr>
+              <td>${formatDateTime(i.startedAt, timeZone)}</td>
+              <td>
+                ${i.endedAt ? formatDateTime(i.endedAt, timeZone) : "ongoing"}
+              </td>
+              <td>
+                ${formatDuration(
+                  ((i.endedAt ?? now).getTime() - i.startedAt.getTime()) / 1000,
+                )}
+              </td>
+            </tr>`,
+        )}
+      </tbody>
+    </table>`;
+}
+
+function heartbeatsSection(list: HeartbeatDoc[], timeZone: string): SafeHtml {
+  const days = formatDuration(instanceLimits().heartbeatRetentionSec);
+  const heading = html`<h2>Heartbeats (last ${days})</h2>`;
+  if (list.length === 0) {
+    return html`${heading}
+      <p>No Heartbeats in the last ${days}.</p>`;
+  }
+  return html`${heading}
+    ${
+      list.length === HEARTBEAT_HISTORY_LIMIT
+        ? html`<p>Showing the latest ${HEARTBEAT_HISTORY_LIMIT}.</p>`
+        : ""
+    }
+    <table>
+      <thead>
+        <tr>
+          <th>Received</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${list.map(
+          (h) =>
+            html`<tr>
+              <td>${formatDateTime(h.receivedAt, timeZone)}</td>
+              <td>${h.message ?? ""}</td>
+            </tr>`,
+        )}
+      </tbody>
+    </table>`;
 }
 
 function monitorFormBody(options: {

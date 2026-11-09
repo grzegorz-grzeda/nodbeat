@@ -78,6 +78,19 @@ export async function buildTestApp(): Promise<TestContext> {
   return { app, clock, telegram, client, db };
 }
 
+/** Simulates a nodbeat restart: a fresh `createApp` on the same database and clock. */
+export async function restartApp(ctx: TestContext): Promise<App> {
+  await ctx.app.close();
+  const app = await createApp({
+    db: ctx.db,
+    clock: ctx.clock,
+    telegram: ctx.telegram,
+    config: testConfig,
+  });
+  cleanups.push(() => app.close());
+  return app;
+}
+
 /** Creates a User the way the Admin does: through the CLI command. */
 export async function createUser(
   db: Db,

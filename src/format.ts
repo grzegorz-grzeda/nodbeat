@@ -22,3 +22,22 @@ export function formatAgo(since: Date | null, now: Date): string {
   if (!since) return "never";
   return `${formatDuration((now.getTime() - since.getTime()) / 1000)} ago`;
 }
+
+/** "2026-01-01 01:02:03" in the given IANA time zone. */
+export function formatDateTime(date: Date, timeZone: string): string {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-GB", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(date)
+      .map((p) => [p.type, p.value]),
+  );
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}

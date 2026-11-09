@@ -1,9 +1,10 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
-import { closeOpenIncident } from "./incidents.js";
+import { applyEffects } from "./effects.js";
 import { instanceLimits, MAX_HEARTBEAT_MESSAGE_LENGTH } from "./limits.js";
-import { transition, type Effect } from "./monitor-state.js";
+import { transition } from "./monitor-state.js";
+import type { MonitorLock } from "./monitor-lock.js";
 import { monitors } from "./monitors.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
 
@@ -30,6 +31,20 @@ export async function ensureHeartbeatIndexes(db: Db): Promise<void> {
   ]);
 }
 
+/** The Monitor's Heartbeats received since `since`, newest first, at most `limit`. */
+export function listHeartbeatsSince(
+  db: Db,
+  monitorId: ObjectId,
+  since: Date,
+  limit: number,
+): Promise<HeartbeatDoc[]> {
+  return heartbeats(db)
+    .find({ monitorId, receivedAt: { $gte: since } })
+    .sort({ receivedAt: -1 })
+    .limit(limit)
+    .toArray();
+}
+
 /** The message from `?msg=`, a JSON or form field `msg`, or a plain-text body; capped at 200 characters. */
 function readMessage(req: FastifyRequest): string | null {
   const query = req.query as Record<string, unknown>;
@@ -52,22 +67,10 @@ function readMessage(req: FastifyRequest): string | null {
 
 export async function registerHeartbeatIntake(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock },
+  deps: { db: Db; clock: Clock; lock: MonitorLock },
 ): Promise<void> {
-  const { db, clock } = deps;
+  const { db, clock, lock } = deps;
   const limiter = new SlidingWindowLimiter(clock, 1, 1000);
-
-  const applyEffect = async (
-    monitorId: ObjectId,
-    effect: Effect,
-    now: Date,
-  ): Promise<void> => {
-    switch (effect.kind) {
-      case "close-incident":
-        await closeOpenIncident(db, monitorId, now, effect.reason);
-        return;
-    }
-  };
 
   const handle = async (
     req: FastifyRequest<{ Params: { token: string } }>,
@@ -82,24 +85,29 @@ export async function registerHeartbeatIntake(
       return text(429, "Too Many Requests");
     }
 
-    const now = clock.now();
     const message = readMessage(req);
-    const { fields, effects } = transition(
-      monitor,
-      { kind: "heartbeat", message },
-      now,
-    );
-    await Promise.all([
-      monitors(db).updateOne({ _id: monitor._id }, { $set: fields }),
-      heartbeats(db).insertOne({
-        monitorId: monitor._id,
-        receivedAt: now,
-        message,
-        method: req.method,
-        sourceIp: req.ip,
-      }),
-    ]);
-    for (const effect of effects) await applyEffect(monitor._id, effect, now);
+    await lock.run(String(monitor._id), async () => {
+      // Re-read under the lock: the Down checker may have changed the state since the lookup above.
+      const current = await monitors(db).findOne({ _id: monitor._id });
+      if (!current) return;
+      const now = clock.now();
+      const { fields, effects } = transition(
+        current,
+        { kind: "heartbeat", message },
+        now,
+      );
+      await Promise.all([
+        monitors(db).updateOne({ _id: current._id }, { $set: fields }),
+        heartbeats(db).insertOne({
+          monitorId: current._id,
+          receivedAt: now,
+          message,
+          method: req.method,
+          sourceIp: req.ip,
+        }),
+      ]);
+      await applyEffects(db, current, effects, now);
+    });
     return text(200, "OK");
   };
 
