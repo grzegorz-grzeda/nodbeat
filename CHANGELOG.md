@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Confirmation pages before regenerating the Heartbeat URL and removing a Linked chat (deleting already had one).
 - Mobile layout: full-width action buttons and wrapping curl examples.
 
+### Changed
+
+- Monitor page: below the settings, the Heartbeat URL and examples sit in a left column and the Incidents and Heartbeats logs in a right one; they stack on narrow screens.
+
 ## [0.10.1] - 2026-11-09
 
 0.10.0 was tagged but never published; this is the first release with its changes (see 0.10.0 below).

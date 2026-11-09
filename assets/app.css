@@ -351,6 +351,22 @@ form.inline {
   display: none !important;
 }
 
+/* Monitor page below the settings: wiring (URL, examples) left, logs (Incidents, Heartbeats) right; stacked when narrow. */
+.monitor-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+  gap: 0 var(--space-4);
+  align-items: start;
+}
+
+.monitor-columns > section {
+  min-width: 0;
+}
+
+.monitor-columns > section > h2:first-child {
+  margin-top: var(--space-3);
+}
+
 /* Flash message: the one-time result of the previous action. */
 .flash {
   margin: 0 0 var(--space-3);

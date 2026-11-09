@@ -195,52 +195,52 @@ export function registerMonitors(
             </ul>
             ${monitor.notes ? html`<p class="notes">${monitor.notes}</p>` : ""}
           </div>
-          ${incidentsSection(incidentList, now, timeZone)}
-          ${heartbeatsSection(heartbeatList, timeZone)}
-          <h2>Heartbeat URL</h2>
-          <p>
-            Anyone who knows this URL can send Heartbeats for this Monitor. Keep
-            it secret.
-          </p>
-          <div class="copy-row">
-            <input
-              type="text"
-              id="hb-url"
-              readonly
-              value="${url}"
-              aria-label="Heartbeat URL"
-            />
-            ${copyButton("hb-url")}
-          </div>
-          <p class="actions">
-            <a
-              href="/monitors/${String(monitor._id)}/regenerate-url"
-              class="button secondary"
-              >Regenerate URL</a
-            >
-            <small>The current URL stops working.</small>
-          </p>
-          <h2>Examples</h2>
-          <p>
-            Send a GET or POST. An optional message (up to
-            ${MAX_HEARTBEAT_MESSAGE_LENGTH} characters) goes in the
-            <code>msg</code> query parameter or the request body.
-          </p>
-          <h3>curl GET</h3>
-          <div class="code-block">
-            <pre><code id="curl-get">${curlGet}</code></pre>
-            ${copyButton("curl-get")}
-          </div>
-          <h3>curl POST with a message</h3>
-          <div class="code-block">
-            <pre><code id="curl-post">${curlPost}</code></pre>
-            ${copyButton("curl-post")}
-          </div>
-          <h3>cron</h3>
-          <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded
+          <div class="monitor-columns">
+            <section class="monitor-wiring">
+              <h2>Heartbeat URL</h2>
+              <p>
+                Anyone who knows this URL can send Heartbeats for this Monitor.
+                Keep it secret.
+              </p>
+              <div class="copy-row">
+                <input
+                  type="text"
+                  id="hb-url"
+                  readonly
+                  value="${url}"
+                  aria-label="Heartbeat URL"
+                />
+                ${copyButton("hb-url")}
+              </div>
+              <p class="actions">
+                <a
+                  href="/monitors/${String(monitor._id)}/regenerate-url"
+                  class="button secondary"
+                  >Regenerate URL</a
+                >
+                <small>The current URL stops working.</small>
+              </p>
+              <h2>Examples</h2>
+              <p>
+                Send a GET or POST. An optional message (up to
+                ${MAX_HEARTBEAT_MESSAGE_LENGTH} characters) goes in the
+                <code>msg</code> query parameter or the request body.
+              </p>
+              <h3>curl GET</h3>
+              <div class="code-block">
+                <pre><code id="curl-get">${curlGet}</code></pre>
+                ${copyButton("curl-get")}
+              </div>
+              <h3>curl POST with a message</h3>
+              <div class="code-block">
+                <pre><code id="curl-post">${curlPost}</code></pre>
+                ${copyButton("curl-post")}
+              </div>
+              <h3>cron</h3>
+              <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded
 */5 * * * * /path/to/job.sh &amp;&amp; curl -fsS -m 10 --retry 3 ${url} &gt; /dev/null</code></pre>
-          <h3>ESP32 / Arduino</h3>
-          <pre><code>#include &lt;WiFi.h&gt;
+              <h3>ESP32 / Arduino</h3>
+              <pre><code>#include &lt;WiFi.h&gt;
 #include &lt;WiFiClientSecure.h&gt;
 #include &lt;HTTPClient.h&gt;
 
@@ -252,7 +252,13 @@ void sendHeartbeat(const String&amp; message) {
   http.addHeader("Content-Type", "text/plain");
   int code = http.POST(message); // 200 = accepted
   http.end();
-}</code></pre>`,
+}</code></pre>
+            </section>
+            <section class="monitor-logs">
+              ${incidentsSection(incidentList, now, timeZone)}
+              ${heartbeatsSection(heartbeatList, timeZone)}
+            </section>
+          </div>`,
       });
     },
   );
