@@ -1,14 +1,15 @@
 name: Release
 
-# A pushed tag vX.Y.Z tests, builds, publishes and deploys that version (ADR 0005).
-# Run by hand with a version to redeploy an image that already exists (e.g. a rollback).
+# A pushed tag vX.Y.Z tests, builds and publishes that version as :X.Y.Z and :latest (ADR 0006).
+# The VPS pulls :latest once a day; nothing here touches the VPS.
+# Run by hand with a version to point :latest back at an image that already exists (a rollback).
 on:
   push:
     tags: ["v*.*.*"]
   workflow_dispatch:
     inputs:
       version:
-        description: Version to deploy, e.g. 0.9.0 (the image must already exist)
+        description: Version to make :latest, e.g. 0.12.0 (the image must already exist)
         required: true
 
 permissions:
@@ -16,7 +17,6 @@ permissions:
 
 env:
   IMAGE: ghcr.io/grzegorz-grzeda/nodbeat
-  HEALTH_URL: https://nodbeat.g2labs.pl/health
 
 jobs:
   version:
@@ -78,7 +78,9 @@ jobs:
         with:
           context: .
           push: true
-          tags: ${{ env.IMAGE }}:${{ needs.version.outputs.version }}
+          tags: |
+            ${{ env.IMAGE }}:${{ needs.version.outputs.version }}
+            ${{ env.IMAGE }}:latest
           build-args: |
             APP_VERSION=${{ needs.version.outputs.version }}
             APP_COMMIT=${{ github.sha }}
@@ -87,68 +89,30 @@ jobs:
             org.opencontainers.image.version=${{ needs.version.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-  deploy:
-    name: Deploy to the VPS
-    needs: [version, build]
-    # Runs after a successful build, or straight away for a manual redeploy (build skipped).
-    if: ${{ !cancelled() && !failure() }}
-    # One deploy at a time. Only on this job, so a queued tag still gets its image built.
-    concurrency:
-      group: deploy
-      cancel-in-progress: false
+  promote:
+    name: Point :latest at an existing version
+    if: github.event_name == 'workflow_dispatch'
+    needs: [version]
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - name: Check the image exists
-        run: docker manifest inspect "$IMAGE:$VERSION" > /dev/null
-      - name: Set up SSH
-        env:
-          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
-          VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
-        run: |
-          install -d -m 700 ~/.ssh
-          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          printf '%s\n' "$VPS_KNOWN_HOSTS" > ~/.ssh/known_hosts
-      - name: Pull and restart
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-        run: |
-          ssh -o StrictHostKeyChecking=yes "$VPS_USER@$VPS_HOST" "VERSION=$VERSION bash -s" <<'REMOTE'
-          set -euo pipefail
-          cd ~/nodbeat
-          git fetch --tags --force
-          git checkout --quiet "v$VERSION"
-          # Keep the version in .env so plain `docker compose ...` commands work afterwards.
-          if grep -q '^NODBEAT_VERSION=' .env; then
-            sed -i "s/^NODBEAT_VERSION=.*/NODBEAT_VERSION=$VERSION/" .env
-          else
-            printf '\nNODBEAT_VERSION=%s\n' "$VERSION" >> .env
-          fi
-          docker compose pull
-          docker compose up -d
-          REMOTE
-      - name: Wait for /health to report the new version
-        run: |
-          deadline=$(( $(date +%s) + 90 ))
-          while [ "$(date +%s)" -lt "$deadline" ]; do
-            running="$(curl -fsS -m 5 "$HEALTH_URL" | jq -r .version 2>/dev/null || true)"
-            if [ "$running" = "$VERSION" ]; then
-              echo "$HEALTH_URL reports $VERSION"
-              exit 0
-            fi
-            echo "waiting: running '${running:-unreachable}', want $VERSION"
-            sleep 5
-          done
-          echo "::error::$HEALTH_URL did not report $VERSION within 90 s"
-          exit 1
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retag
+        run: docker buildx imagetools create --tag "$IMAGE:latest" "$IMAGE:$VERSION"
 
   release:
     name: GitHub Release
     if: github.event_name == 'push'
-    needs: [version, deploy]
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write

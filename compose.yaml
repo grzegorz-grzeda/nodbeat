@@ -1,7 +1,7 @@
 services:
   nodbeat:
-    # Prebuilt by the release workflow (ADR 0005). NODBEAT_VERSION is kept in .env by the deploy.
-    image: ghcr.io/grzegorz-grzeda/nodbeat:${NODBEAT_VERSION:?set NODBEAT_VERSION in .env, e.g. 0.10.0}
+    # Prebuilt by the release workflow; scripts/update.sh pulls the newest release once a day (ADR 0006).
+    image: ghcr.io/grzegorz-grzeda/nodbeat:latest
     restart: unless-stopped
     env_file: .env
     # No published ports: the shared edge Caddy reaches nodbeat:3000 over the edge network (ADR 0004).
@@ -9,6 +9,12 @@ services:
       - "3000"
     networks:
       - edge
+    # Docker keeps container logs forever by default.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 networks:
   edge:

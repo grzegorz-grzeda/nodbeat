@@ -62,7 +62,6 @@ Fill it in:
 
 | Variable                  | Value                                                      |
 | ------------------------- | ---------------------------------------------------------- |
-| `NODBEAT_VERSION`         | the version to run, e.g. `0.10.0` (rewritten by deploys)   |
 | `MONGODB_URI`             | the string from step 1                                     |
 | `PUBLIC_BASE_URL`         | `https://nodbeat.g2labs.pl`                                |
 | `SESSION_SECRET`          | `openssl rand -base64 48`                                  |
@@ -72,7 +71,7 @@ Fill it in:
 
 ## 6. Start
 
-`compose.yaml` runs the prebuilt image `ghcr.io/grzegorz-grzeda/nodbeat:${NODBEAT_VERSION}` (ADR 0005); nothing is built on the VPS. Set `NODBEAT_VERSION` in `.env` to a released version, then:
+`compose.yaml` runs the prebuilt image `ghcr.io/grzegorz-grzeda/nodbeat:latest` (ADR 0006); nothing is built on the VPS and `.env` names no version.
 
 ```sh
 docker compose pull
@@ -82,7 +81,13 @@ docker compose logs -f nodbeat
 
 nodbeat prints every configuration problem and exits if `.env` is wrong. Once it listens, `https://nodbeat.g2labs.pl/health` answers `{"status":"ok","version":"X.Y.Z","commit":"<sha>"}`.
 
-Later versions are deployed by the release workflow (step 10), which keeps `NODBEAT_VERSION` in `.env` up to date. `0.10.0` is the first version with a published image; on a VPS still running the old `build: .` setup, the first release deploy switches it over by itself.
+Then add the daily update (`crontab -e`). Cron uses the VPS's time zone:
+
+```cron
+0 3 * * * ~/nodbeat/scripts/update.sh >> ~/nodbeat-update.log 2>&1
+```
+
+`scripts/update.sh` pulls `:latest`, recreates the container only if the image changed and removes the image it replaced. Run it by hand to take a release live straight away.
 
 ## 7. Admin User
 
@@ -125,35 +130,22 @@ nodbeat can't alert about its own death, so something outside must watch it.
 
 nodbeat sends a GET to that URL at startup and every 60 s. Failures are only logged. Within a minute the check should turn green.
 
-## 10. Releases (ADR 0005)
+## 10. Releases (ADR 0005, ADR 0006)
 
 Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`:
 
 1. checks the tag matches the `package.json` version and that `CHANGELOG.md` has a `## [X.Y.Z]` section;
 2. runs typecheck, tests and lint;
-3. builds the image with `APP_VERSION` / `APP_COMMIT` baked in and pushes `ghcr.io/grzegorz-grzeda/nodbeat:X.Y.Z`;
-4. over SSH: `cd ~/nodbeat`, checks out `vX.Y.Z`, sets `NODBEAT_VERSION=X.Y.Z` in `.env`, `docker compose pull && docker compose up -d`;
-5. polls `https://nodbeat.g2labs.pl/health` until it reports `X.Y.Z`, failing after 90 s (there is no automatic rollback);
-6. creates the GitHub Release `vX.Y.Z` with that `CHANGELOG.md` section as its notes.
+3. builds the image with `APP_VERSION` / `APP_COMMIT` baked in and pushes it as `ghcr.io/grzegorz-grzeda/nodbeat:X.Y.Z` and `:latest`;
+4. creates the GitHub Release `vX.Y.Z` with that `CHANGELOG.md` section as its notes.
+
+GitHub never connects to the VPS. The release goes live at the next 03:00 run of `scripts/update.sh` (step 6), or straight away if you run it by hand. The workflow doesn't check that it started: the external self-Heartbeat (step 9) catches a release that doesn't come up.
 
 `.github/workflows/ci.yml` runs typecheck, tests and lint on every push to `main`.
 
 ### One-time setup
 
-1. **Deploy key.** On your machine: `ssh-keygen -t ed25519 -N "" -C nodbeat-deploy -f nodbeat-deploy`. Append `nodbeat-deploy.pub` to `~/.ssh/authorized_keys` of the deploy user on the VPS. That user must be able to run `docker` and own `~/nodbeat`.
-2. **Known hosts.** `ssh-keyscan -t ed25519 <vps-host>` and check the fingerprint against `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` on the VPS.
-3. **GitHub secrets** (repo → Settings → Secrets and variables → Actions):
-
-   | Secret            | Value                                        |
-   | ----------------- | -------------------------------------------- |
-   | `VPS_HOST`        | the VPS hostname or IP                       |
-   | `VPS_USER`        | the deploy user                              |
-   | `VPS_SSH_KEY`     | contents of the private key `nodbeat-deploy` |
-   | `VPS_KNOWN_HOSTS` | the `ssh-keyscan` output line(s) from step 2 |
-
-   Then delete the local private key copy.
-
-4. **Public GHCR package.** After the first release pushes the image, the deploy fails until the package is public (the VPS pulls without logging in): GitHub → your profile → Packages → `nodbeat` → Package settings → Change visibility → Public. Also link it to the repository there if it isn't. Re-run the failed jobs.
+**Public GHCR package.** The VPS pulls without logging in, so the package must be public: GitHub → your profile → Packages → `nodbeat` → Package settings → Change visibility → Public. Also link it to the repository there if it isn't.
 
 ### Cutting a release
 
@@ -166,12 +158,21 @@ Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`:
    git push origin main vX.Y.Z
    ```
 
-4. Watch the run in the Actions tab. `/health` then reports the new version.
+4. Watch the run in the Actions tab. After 03:00 (or `~/nodbeat/scripts/update.sh`), `/health` reports the new version.
 
-Minor bump for features, patch for fixes; nodbeat stays `0.x`.
+Minor bump for features, patch for fixes; nodbeat stays `0.x`. Tag in order: `:latest` follows the last tag pushed, so a patch to an older line would move it backwards.
 
 ### Rolling back
 
-Actions → **Release** → **Run workflow**, enter an earlier version (`0.10.0` or later; older ones have no image). It skips the build, checks the image exists, deploys it and waits for `/health` to report it. No GitHub Release is created.
+Actions → **Release** → **Run workflow**, enter an earlier version (`0.10.0` or later; older ones have no image). It points `:latest` at that image; nothing is built and no GitHub Release is created. Then run `~/nodbeat/scripts/update.sh` on the VPS, or wait for 03:00.
 
-By hand on the VPS, the same thing: `cd ~/nodbeat && git checkout vX.Y.Z`, set `NODBEAT_VERSION=X.Y.Z` in `.env`, `docker compose pull && docker compose up -d`.
+### `compose.yaml` and scripts
+
+The daily job updates only the image. When `compose.yaml` or `scripts/` change, run `git pull` in `~/nodbeat`, then `scripts/update.sh`.
+
+### Switching from the SSH deploy (before ADR 0006)
+
+1. Create `:latest` once: Actions → **Release** → **Run workflow** with the version now running (e.g. `0.12.0`).
+2. On the VPS: `cd ~/nodbeat && git checkout main && git pull`, delete the `NODBEAT_VERSION=` line from `.env`, run `scripts/update.sh`, add the cron line from step 6.
+3. Remove the deploy key's line from `~/.ssh/authorized_keys`.
+4. Delete the GitHub secrets `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY` and `VPS_KNOWN_HOSTS`.

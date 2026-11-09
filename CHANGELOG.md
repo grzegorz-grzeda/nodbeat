@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Deploys are pulled by the VPS instead of pushed over SSH (ADR 0006). Releases are tagged `:X.Y.Z` and `:latest`; `compose.yaml` runs `:latest` and `.env` no longer has `NODBEAT_VERSION`. A daily cron job (`scripts/update.sh`, 03:00) pulls and restarts only when the image changed. Running the Release workflow by hand now points `:latest` at an earlier version (rollback). See "Switching from the SSH deploy" in `docs/deploy.md`.
+- Container logs are capped at 3 × 10 MB.
+
 ## [0.12.0] - 2026-11-09
 
 ### Added
