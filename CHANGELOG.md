@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-09
+
 ### Added
 
 - One error page for every 40x/50x answer: unknown URLs, a missing Monitor, asset or docs file, a bad form value, an expired form and unexpected errors all show the same page in the app shell (with the nav when logged in) instead of Fastify's JSON or bare text. A request asking for JSON gets `{ "error": ... }`; Heartbeat URLs keep their plain-text answers.
@@ -95,7 +97,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.10.1...v0.11.0
 [0.10.1]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.10.0...v0.10.1
