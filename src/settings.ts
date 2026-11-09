@@ -3,13 +3,26 @@ import type { Db } from "mongodb";
 import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import { formatDateTime } from "./format.js";
-import { csrfField, html, page, userHeader } from "./html.js";
+import { csrfField, html, page, SafeHtml, userHeader } from "./html.js";
 import {
   createLinkCode,
   findActiveLinkCode,
   listLinkedChats,
   removeLinkedChat,
 } from "./linked-chats.js";
+import { setUserTimeZone } from "./users.js";
+
+/** Every IANA time zone the runtime knows, plus `current` in case it's an alias missing from that list. */
+function timeZoneOptions(current: string): SafeHtml[] {
+  const zones = Intl.supportedValuesOf("timeZone");
+  if (!zones.includes(current)) zones.unshift(current);
+  return zones.map(
+    (z) =>
+      html`<option value="${z}" ${z === current && html`selected`}>
+        ${z}
+      </option>`,
+  );
+}
 
 export function registerSettings(
   app: FastifyInstance,
@@ -29,7 +42,17 @@ export function registerSettings(
         title: "Settings",
         header: userHeader(user.email, csrf),
         body: html`<h1>Settings</h1>
-          <p>Time zone: ${user.timeZone}</p>
+          <h2>Time zone</h2>
+          <form method="post" action="/settings/time-zone">
+            ${csrfField(csrf)}
+            <label
+              >Times are shown in
+              <select name="timeZone">
+                ${timeZoneOptions(user.timeZone)}
+              </select></label
+            >
+            <button type="submit">Save time zone</button>
+          </form>
           <h2>Linked chats</h2>
           ${
             chats.length === 0
@@ -74,6 +97,21 @@ export function registerSettings(
       }),
     );
   });
+
+  app.post(
+    "/settings/time-zone",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const value = (req.body as Record<string, unknown> | undefined)?.timeZone;
+      const ok =
+        typeof value === "string" &&
+        (await setUserTimeZone(db, req.user!._id, value));
+      if (!ok) {
+        return reply.code(400).type("text/plain").send("Unknown time zone");
+      }
+      return reply.redirect("/settings", 303);
+    },
+  );
 
   app.post(
     "/settings/link-code",

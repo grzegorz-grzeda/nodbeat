@@ -28,6 +28,9 @@ _Avoid_: Tolerance, timeout
 One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval + Grace period passed with no Heartbeat) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
 _Avoid_: Status, health
 
+**New period**:
+A stretch of time a Monitor spent New, from its creation or the unpause that left it New to its next Heartbeat or pause. Kept so Uptime can leave it out.
+
 **Pause period**:
 A stretch of time a Monitor spent Paused, from pause to unpause. Kept so Uptime can leave it out.
 

@@ -20,8 +20,8 @@ import { ensureLinkedChatIndexes } from "./linked-chats.js";
 import { MonitorLock } from "./monitor-lock.js";
 import { registerMonitorManagement } from "./monitor-management.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
-import { ensurePausePeriodIndexes } from "./pause-periods.js";
 import { registerSettings } from "./settings.js";
+import { ensureStatePeriodIndexes } from "./state-periods.js";
 import type { TelegramClient } from "./telegram.js";
 import { registerTelegramBot } from "./telegram-bot.js";
 import { ensureUserIndexes } from "./users.js";
@@ -63,7 +63,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ensureHeartbeatIndexes(db),
     ensureIncidentIndexes(db),
     ensureLinkedChatIndexes(db),
-    ensurePausePeriodIndexes(db),
+    ensureStatePeriodIndexes(db),
     ensureAlertIndexes(db),
   ]);
 

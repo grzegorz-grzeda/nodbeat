@@ -10,7 +10,7 @@ import {
   type IncidentDoc,
 } from "./incidents.js";
 import type { Effect } from "./monitor-state.js";
-import { endPausePeriod, startPausePeriod } from "./pause-periods.js";
+import { endPeriod, startPeriod } from "./state-periods.js";
 
 /** Carries out the effects a state transition asked for, in order. */
 export async function applyEffects(
@@ -31,11 +31,11 @@ export async function applyEffects(
         incident = await closeOpenIncident(db, monitor._id, now, effect.reason);
         if (incident) await dropPendingDownAlert(db, incident._id);
         break;
-      case "start-pause-period":
-        await startPausePeriod(db, monitor, now);
+      case "start-period":
+        await startPeriod(db, effect.state, monitor, now);
         break;
-      case "end-pause-period":
-        await endPausePeriod(db, monitor._id, now);
+      case "end-period":
+        await endPeriod(db, effect.state, monitor._id, now);
         break;
       case "enqueue-alert":
         if (incident) {

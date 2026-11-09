@@ -114,3 +114,14 @@ function dummyHash(): Promise<string> {
   dummy ??= hashPassword("nodbeat-dummy-password");
   return dummy;
 }
+
+/** Sets the User's time zone. Returns false (and changes nothing) for a time zone Intl doesn't know. */
+export async function setUserTimeZone(
+  db: Db,
+  id: ObjectId,
+  timeZone: string,
+): Promise<boolean> {
+  if (!isValidTimeZone(timeZone)) return false;
+  await users(db).updateOne({ _id: id }, { $set: { timeZone } });
+  return true;
+}

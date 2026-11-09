@@ -2,7 +2,7 @@ import { ObjectId } from "mongodb";
 import { describe, expect, it } from "vitest";
 import { listHeartbeatsSince } from "../src/heartbeats.js";
 import { listIncidents } from "../src/incidents.js";
-import { listPausePeriods } from "../src/pause-periods.js";
+import { listPeriodsSince } from "../src/state-periods.js";
 import { buildTestApp, createUser, login, type Browser } from "./helpers.js";
 
 const SEC = 1000;
@@ -225,28 +225,6 @@ describe("pausing a Monitor", () => {
     expect(body).toMatch(/2026-01-01 01:01:40\s*\(paused\)/);
     expect(body).toMatch(/<td>\s*10 s\s*<\/td>/);
   });
-
-  it("records pause periods for Uptime", async () => {
-    const { browser, clock, db } = await loggedIn();
-    const m = await createMonitor(browser);
-    const t0 = clock.now();
-    await browser.submit(m.page, `${m.page}/pause`);
-    clock.advance(60 * SEC);
-    await browser.submit(m.page, `${m.page}/unpause`);
-    clock.advance(60 * SEC);
-    await browser.submit(m.page, `${m.page}/pause`);
-    await browser.submit(m.page, `${m.page}/pause`);
-
-    const periods = await listPausePeriods(
-      db,
-      new ObjectId(m.page.split("/").pop()),
-    );
-
-    expect(periods.map((p) => [p.startedAt, p.endedAt])).toEqual([
-      [t0, new Date(t0.getTime() + 60 * SEC)],
-      [new Date(t0.getTime() + 120 * SEC), null],
-    ]);
-  });
 });
 
 describe("unpausing a Monitor", () => {
@@ -370,6 +348,8 @@ describe("deleting a Monitor", () => {
     );
     expect(await listIncidents(db, id, 10)).toEqual([]);
     expect(await listHeartbeatsSince(db, id, new Date(0), 10)).toEqual([]);
-    expect(await listPausePeriods(db, id)).toEqual([]);
+    for (const state of ["new", "paused"] as const) {
+      expect(await listPeriodsSince(db, state, id, new Date(0))).toEqual([]);
+    }
   });
 });

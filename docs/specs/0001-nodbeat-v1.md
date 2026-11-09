@@ -99,7 +99,7 @@ nodbeat is a self-hosted web app at `nodbeat.g2labs.pl`. I create a **Monitor** 
 
 ## Implementation Decisions
 
-- **Runtime and stack**: Node 22, TypeScript, Fastify, the official MongoDB driver, no ORM. Pages are rendered on the server. A small client-side TypeScript script polls a JSON endpoint to refresh the Dashboard. pnpm, Vitest, ESLint + Prettier. SemVer, starting at `0.1.0`, with git tags `vX.Y.Z`.
+- **Runtime and stack**: Node 22, TypeScript, Fastify, the official MongoDB driver, no ORM. Pages are rendered on the server. A small inline client-side script on the Dashboard polls a JSON endpoint (`GET /dashboard.json`) every 5 s to refresh it. pnpm, Vitest, ESLint + Prettier. SemVer, starting at `0.1.0`, with git tags `vX.Y.Z`.
 - **Single process** (ADR 0002): one always-on process holds the web UI, Heartbeat intake, Telegram webhook, Down checker, Alert dispatcher and self-Heartbeat. A single instance is assumed, with no distributed locking.
 - **Composition root**: `createApp({ db, clock, telegram, config })` builds the Fastify instance and every module. `clock` provides "now". `telegram` is a small client interface (send message, set webhook). The real `main` wires in the real Mongo, the system clock, the HTTP Telegram client and a timer that calls `tick()` every 10 s, plus the self-Heartbeat timer.
 - **Modules**:
@@ -111,12 +111,12 @@ nodbeat is a self-hosted web app at `nodbeat.g2labs.pl`. I create a **Monitor** 
   - **Telegram**: the webhook route checks the `X-Telegram-Bot-Api-Secret-Token` header and handles `/start <code>`, `/status` and `/unlink`. Link codes are 8 characters, single-use, with a 10-minute TTL.
   - **Auth**: Users in Mongo with argon2id hashes. Sessions are stored in Mongo with a 30-day sliding expiry and an HttpOnly, Secure, SameSite=Lax cookie. Login is rate-limited to 5 per 15 min per IP. Includes a CLI command for creating a User, with an Admin flag.
   - **Limits**: one module exposing per-User limits (max Monitors, Interval and Grace bounds, Heartbeat retention). For now it returns constants. Plans will feed it later.
-  - **Uptime**: computes Uptime for a window from Incidents and pause periods. Returns "—" when there was no Up or Down time.
+  - **Uptime**: computes Uptime for a window from Incidents, New periods and pause periods. Returns "—" when there was no Up or Down time.
   - **Self-Heartbeat**: if the env var is set, sends a GET to the external URL every 60 s. Failures are only logged.
 - **Data model (MongoDB collections)**:
   - `users`: email (unique), password hash, isAdmin, timeZone (default `Europe/Warsaw`), createdAt.
   - `sessions`: id, userId, expiresAt (TTL index).
-  - `monitors`: ownerId, name, notes, intervalSec, graceSec, state (`new|up|down|paused`), token (unique index), alertsEnabled, lastHeartbeatAt, lastMessage, pausedAt, createdAt. Also records pause periods, or pause start/end events, for the Uptime calculation.
+  - `monitors`: ownerId, name, notes, intervalSec, graceSec, state (`new|up|down|paused`), token (unique index), alertsEnabled, lastHeartbeatAt, lastMessage, pausedAt, createdAt. New periods (`newPeriods`) and pause periods (`pausePeriods`) are kept in their own collections (monitorId, ownerId, startedAt, endedAt) for the Uptime calculation.
   - `heartbeats`: monitorId, receivedAt (TTL index, 7 days), message, method, source IP.
   - `incidents`: monitorId, ownerId, startedAt, endedAt, endReason (`heartbeat|paused`).
   - `linkedChats`: ownerId, telegram chatId, title, linkedAt. Unique on (ownerId, chatId).

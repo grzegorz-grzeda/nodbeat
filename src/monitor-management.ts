@@ -10,6 +10,7 @@ import { applyEffects } from "./effects.js";
 import { deleteAlertsOf } from "./alerts.js";
 import type { MonitorLock } from "./monitor-lock.js";
 import { transition, type MonitorEvent } from "./monitor-state.js";
+import { deleteStatePeriodsOf } from "./state-periods.js";
 import {
   formFor,
   monitorFormBody,
@@ -17,7 +18,6 @@ import {
   validate,
   type MonitorForm,
 } from "./monitor-form.js";
-import { deletePausePeriodsOf } from "./pause-periods.js";
 import {
   findOwnMonitor,
   monitors,
@@ -193,7 +193,7 @@ export function registerMonitorManagement(
         await Promise.all([
           deleteHeartbeatsOf(db, monitor._id),
           deleteIncidentsOf(db, monitor._id),
-          deletePausePeriodsOf(db, monitor._id),
+          deleteStatePeriodsOf(db, monitor._id),
           deleteAlertsOf(db, monitor._id),
         ]);
       });

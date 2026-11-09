@@ -2,6 +2,9 @@ import type { AlertKind } from "./alerts.js";
 
 export type MonitorState = "new" | "up" | "down" | "paused";
 
+/** States whose time Uptime leaves out. Each is recorded as periods, from entering the state to leaving it. */
+export type UncountedState = Extract<MonitorState, "new" | "paused">;
+
 /** The part of a Monitor the state machine reads and changes. */
 export interface MonitorStateFields {
   state: MonitorState;
@@ -41,9 +44,9 @@ export type Effect =
   /** The Incident starts at the deadline, not when the checker noticed. */
   | { kind: "open-incident"; startedAt: Date }
   | { kind: "close-incident"; reason: "heartbeat" | "paused" }
-  /** Pause periods are left out of Uptime. */
-  | { kind: "start-pause-period" }
-  | { kind: "end-pause-period" }
+  /** New and pause periods are left out of Uptime. */
+  | { kind: "start-period"; state: UncountedState }
+  | { kind: "end-period"; state: UncountedState }
   /** Down: about the Incident just opened. Up: about the Incident just closed. */
   | { kind: "enqueue-alert"; alert: AlertKind };
 
@@ -127,6 +130,10 @@ function onHeartbeat(
   const { state } = current;
   switch (state) {
     case "new":
+      return {
+        fields: { ...seen, state: "up" },
+        effects: [{ kind: "end-period", state: "new" }],
+      };
     case "up":
       return { fields: { ...seen, state: "up" }, effects: [] };
     case "down":
@@ -169,7 +176,10 @@ function onPause(current: MonitorStateFields, now: Date): Transition {
       ...(fields.state === "down"
         ? [{ kind: "close-incident", reason: "paused" } as const]
         : []),
-      { kind: "start-pause-period" },
+      ...(fields.state === "new"
+        ? [{ kind: "end-period", state: "new" } as const]
+        : []),
+      { kind: "start-period", state: "paused" },
     ],
   };
 }
@@ -188,7 +198,12 @@ function onUnpause(current: MonitorStateFields, now: Date): Transition {
       pausedAt: null,
       watchedSince: now,
     },
-    effects: [{ kind: "end-pause-period" }],
+    effects: [
+      { kind: "end-period", state: "paused" },
+      ...(heardDuringPause
+        ? []
+        : [{ kind: "start-period", state: "new" } as const]),
+    ],
   };
 }
 

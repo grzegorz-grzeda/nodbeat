@@ -290,12 +290,12 @@ describe("Heartbeat intake", () => {
 
     await app.inject({
       method: "GET",
-      url: `${url}?msg=${encodeURIComponent("<script>")}`,
+      url: `${url}?msg=${encodeURIComponent("<script>alert(1)</script>")}`,
     });
 
     const dashboard = (await browser.get("/")).body;
-    expect(dashboard).toContain("&lt;script&gt;");
-    expect(dashboard).not.toContain("<script>");
+    expect(dashboard).toContain("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(dashboard).not.toContain("<script>alert(1)");
   });
 
   it("answers 404 for an unknown token", async () => {

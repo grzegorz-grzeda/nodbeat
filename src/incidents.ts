@@ -66,3 +66,15 @@ export async function deleteIncidentsOf(
 ): Promise<void> {
   await incidents(db).deleteMany({ monitorId });
 }
+
+/** The Monitor's Incidents that were still open at or after `since`, oldest first. */
+export function listIncidentsSince(
+  db: Db,
+  monitorId: ObjectId,
+  since: Date,
+): Promise<IncidentDoc[]> {
+  return incidents(db)
+    .find({ monitorId, $or: [{ endedAt: null }, { endedAt: { $gt: since } }] })
+    .sort({ startedAt: 1 })
+    .toArray();
+}

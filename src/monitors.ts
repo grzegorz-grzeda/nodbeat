@@ -16,6 +16,7 @@ import {
   MAX_HEARTBEAT_MESSAGE_LENGTH,
 } from "./limits.js";
 import { STATE_LABELS, type MonitorStateFields } from "./monitor-state.js";
+import { startPeriod } from "./state-periods.js";
 
 export interface MonitorDoc extends MonitorStateFields {
   _id: ObjectId;
@@ -146,6 +147,7 @@ export function registerMonitors(
       createdAt: clock.now(),
     };
     await monitors(db).insertOne(monitor);
+    await startPeriod(db, "new", monitor, monitor.createdAt);
     return reply.redirect(`/monitors/${monitor._id}`, 303);
   });
 
