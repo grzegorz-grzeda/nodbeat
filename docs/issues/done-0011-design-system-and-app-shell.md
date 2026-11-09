@@ -1,7 +1,7 @@
 # 0011: Design system and app shell
 
 Spec: 0002
-Status: ready-for-agent
+Status: done
 
 **What to build:** Every page uses one static, token-based stylesheet, a nav bar for logged-in Users, and a footer with the running version. No inline scripts or styles; a strict CSP.
 

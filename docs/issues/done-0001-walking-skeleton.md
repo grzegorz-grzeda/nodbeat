@@ -1,7 +1,7 @@
 # 0001: Walking skeleton
 
 Spec: 0001
-Status: ready-for-agent
+Status: done
 
 **What to build:** A deployable empty nodbeat. `GET /health` answers ok when Mongo can be pinged. The app is built through the `createApp({ db, clock, telegram, config })` composition root that every later test goes through, and it runs as a container on the shared `edge` network.
 

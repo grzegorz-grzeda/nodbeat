@@ -1,6 +1,6 @@
 # Single always-on process on the private VPS
 
-nodbeat runs as one always-on Node process on the owner's private VPS, at `nodbeat.g2labs.pl`. That one process serves the web page, takes in Heartbeats, receives the Telegram webhook and runs the Down checker every 10 s. Down detection needs a timer that runs all the time, which serverless platforms provide only through coarse (≥1 min), rate-limited cron jobs. The VPS already exists and runs Docker with Caddy, so it adds no cost.
+nodbeat runs as one always-on Node process on the owner's private VPS, at `nodbeat.g2labs.pl`. That one process serves the web page, takes in Heartbeats, receives the Telegram webhook, runs the Down checker and Alert dispatcher every 10 s and sends its own self-Heartbeat every minute. Down detection needs a timer that runs all the time, which serverless platforms provide only through coarse (≥1 min), rate-limited cron jobs. The VPS already exists and runs Docker with Caddy, so it adds no cost.
 
 ## Consequences
 

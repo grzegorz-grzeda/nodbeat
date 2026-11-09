@@ -1,6 +1,6 @@
 # Spec 0001: nodbeat v1
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

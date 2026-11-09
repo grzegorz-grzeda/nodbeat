@@ -1,6 +1,6 @@
 # Spec 0002: UI refresh and delivery
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

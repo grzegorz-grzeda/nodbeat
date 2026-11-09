@@ -1,7 +1,7 @@
 # 0007: Alerts
 
 Spec: 0001
-Status: ready-for-agent
+Status: done
 
 **What to build:** When one of my Monitors goes Down, every Linked chat of mine gets a Telegram Alert. When it comes back Up, they get an Alert saying how long the Incident lasted.
 

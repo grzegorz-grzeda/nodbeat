@@ -1,7 +1,7 @@
 # 0010: Release pipeline
 
 Spec: 0002
-Status: ready-for-agent
+Status: done
 
 **What to build:** Pushing a tag `vX.Y.Z` tests, builds and deploys nodbeat to the VPS, and `/health` reports the running version and commit. CI runs on every push to `main`.
 

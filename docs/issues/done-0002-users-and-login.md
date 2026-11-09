@@ -1,7 +1,7 @@
 # 0002: Users and login
 
 Spec: 0001
-Status: ready-for-agent
+Status: done
 
 **What to build:** I can create my User (with the Admin flag) from the CLI, log in with my email and password, see an empty Dashboard, and log out. Unauthenticated visitors are sent to the login page.
 

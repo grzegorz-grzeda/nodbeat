@@ -1,7 +1,7 @@
 # 0009: Operations: self-Heartbeat, backups, deploy guide
 
 Spec: 0001
-Status: ready-for-agent
+Status: done
 
 **What to build:** nodbeat reports its own liveness to an external service. Its data is backed up nightly. A guide takes me from nothing to a running `nodbeat.g2labs.pl`.
 

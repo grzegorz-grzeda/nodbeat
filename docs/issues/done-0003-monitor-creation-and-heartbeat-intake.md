@@ -1,7 +1,7 @@
 # 0003: Monitor creation and Heartbeat intake
 
 Spec: 0001
-Status: ready-for-agent
+Status: done
 
 **What to build:** I create a Monitor, copy its Heartbeat URL, curl it, and see the Monitor go from New to Up on the Dashboard, along with the last Heartbeat time and message.
 

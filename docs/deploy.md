@@ -30,6 +30,8 @@ From nothing to a running `https://nodbeat.g2labs.pl` on the VPS. The VPS alread
 
 4. Generate a webhook secret for `TELEGRAM_WEBHOOK_SECRET`: `openssl rand -hex 32` (Telegram allows `A-Z a-z 0-9 _ -` only).
 
+There's no need to call `setWebhook` yourself: at every startup nodbeat registers `PUBLIC_BASE_URL/telegram/webhook` with that secret. A failure is logged and doesn't stop startup.
+
 ## 3. DNS
 
 Add an `A` record (and `AAAA` if the VPS has IPv6) for `nodbeat.g2labs.pl` pointing at the VPS. Check with `dig +short nodbeat.g2labs.pl` before step 4, so Caddy can get a certificate.

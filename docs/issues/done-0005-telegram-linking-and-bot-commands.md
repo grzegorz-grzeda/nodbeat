@@ -1,7 +1,7 @@
 # 0005: Telegram linking and bot commands
 
 Spec: 0001
-Status: ready-for-agent
+Status: done
 
 **What to build:** I generate a Link code on the Settings page, send `/start <code>` to the nodbeat bot, and the chat shows up as a Linked chat. In a Linked chat, `/status` lists my Monitors and their states, and `/unlink` disconnects the chat.
 

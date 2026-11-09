@@ -1,7 +1,7 @@
 # 0008: Uptime and live Dashboard
 
 Spec: 0001
-Status: ready-for-agent
+Status: done
 
 **What to build:** The Dashboard shows the 7-day Uptime for each Monitor and refreshes about every 5 s without a page reload. I can set my time zone on the Settings page.
 

@@ -1,7 +1,7 @@
 # 0012: Theme preference
 
 Spec: 0002
-Status: ready-for-agent
+Status: done
 
 **What to build:** Each User picks light, dark or system with a 3-way switch in the nav. The choice is stored on the User and applied from the first paint.
 

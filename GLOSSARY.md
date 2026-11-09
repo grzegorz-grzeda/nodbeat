@@ -49,11 +49,11 @@ _Avoid_: Overview, home, status page
 ## Notifications
 
 **Alert**:
-A message sent to a Monitor's Alert chats when it goes Down or comes back Up.
+A Telegram message sent to a Monitor's Alert chats when it goes Down or comes back Up. Not sent while the Monitor's Alerts are switched off.
 _Avoid_: Notification, ping
 
 **Alert chats**:
-The Linked chats a Monitor's Alerts go to: either all of its owner's Linked chats, including ones linked later, or a chosen few. A Monitor whose chosen chats were all removed has no Alert chats and alerts nowhere.
+The Linked chats a Monitor's Alerts go to. Today that is always every Linked chat of its owner at the moment the Alert is raised. Planned (issue 0031): either all of them, including ones linked later, or a chosen few; a Monitor whose chosen chats were all removed has no Alert chats and alerts nowhere.
 _Avoid_: Recipients, routes, targets
 
 **Linked chat**:

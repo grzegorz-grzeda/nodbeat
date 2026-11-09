@@ -1,7 +1,7 @@
 # 0004: Down detection and Incidents
 
 Spec: 0001
-Status: ready-for-agent
+Status: done
 
 **What to build:** When a Monitor stops sending Heartbeats it goes Down within about 10 s of Interval + Grace period, and an Incident opens. The next Heartbeat brings it back Up and closes the Incident. The Monitor page shows the Incident history and the last 7 days of Heartbeats.
 

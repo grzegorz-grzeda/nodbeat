@@ -1,7 +1,7 @@
 # 0006: Monitor management
 
 Spec: 0001
-Status: ready-for-agent
+Status: done
 
 **What to build:** I can edit a Monitor, regenerate its Heartbeat URL, pause and unpause it, turn its Alerts on or off, and delete it.
 
