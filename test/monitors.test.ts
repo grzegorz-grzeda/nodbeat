@@ -271,7 +271,8 @@ describe("Heartbeat intake", () => {
 
     const dashboard = (await browser.get("/")).body;
     expect(dashboard).toContain(`${"a".repeat(199)}b<`);
-    expect(dashboard).not.toContain("bX");
+    // Anchored to the message: a random CSRF token on the page may contain "bX".
+    expect(dashboard).not.toContain(`${"a".repeat(199)}bX`);
   });
 
   it("escapes the message on the Dashboard", async () => {

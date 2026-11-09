@@ -54,19 +54,18 @@ async function dashboardMonitors(
   );
 }
 
+/** `data-label` heads each cell when the table turns into cards on a phone. */
 function row(m: DashboardMonitor): SafeHtml {
   return html`<tr>
-    <td><a href="/monitors/${m.id}">${m.name}</a></td>
-    <td>${stateBadge(m.state)}</td>
-    <td title="${m.lastHeartbeatTitle}">${m.lastHeartbeatText}</td>
-    <td>${m.lastMessage ?? ""}</td>
-    <td>${m.uptime7dText}</td>
+    <td class="cell-name"><a href="/monitors/${m.id}">${m.name}</a></td>
+    <td data-label="State">${stateBadge(m.state)}</td>
+    <td data-label="Last Heartbeat" title="${m.lastHeartbeatTitle}">
+      ${m.lastHeartbeatText}
+    </td>
+    <td data-label="Last message">${m.lastMessage ?? ""}</td>
+    <td data-label="7-day Uptime">${m.uptime7dText}</td>
   </tr>`;
 }
-
-const EMPTY_ROW = html`<tr>
-  <td colspan="5">No Monitors yet.</td>
-</tr>`;
 
 export function registerDashboard(
   app: FastifyInstance,
@@ -88,12 +87,29 @@ export function registerDashboard(
       title: "Dashboard",
       // Polls /dashboard.json and rebuilds the table body with the same cells `row` renders.
       scripts: ["dashboard.js"],
+      // Both the empty state and the table are rendered; the poll toggles `hidden` as Monitors come and go.
       body: html`<div class="page-head">
           <h1>Dashboard</h1>
           <a href="/monitors/new" class="button">New Monitor</a>
         </div>
-        <div class="table-wrap">
-          <table>
+        <div
+          class="card empty-state"
+          id="empty-state"
+          ${list.length > 0 && html`hidden`}
+        >
+          <h2>No Monitors yet.</h2>
+          <p>
+            A Monitor gets a Heartbeat URL. Send Heartbeats to it from a cron
+            job, a service or a device, and nodbeat tells you when they stop.
+          </p>
+          <a href="/monitors/new" class="button">Create your first Monitor</a>
+        </div>
+        <div
+          class="table-wrap"
+          id="monitors-table"
+          ${list.length === 0 && html`hidden`}
+        >
+          <table class="cards">
             <thead>
               <tr>
                 <th>Monitor</th>
@@ -104,7 +120,7 @@ export function registerDashboard(
               </tr>
             </thead>
             <tbody id="monitors">
-              ${list.length === 0 ? EMPTY_ROW : list.map(row)}
+              ${list.map(row)}
             </tbody>
           </table>
         </div>`,

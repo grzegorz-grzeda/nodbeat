@@ -2,11 +2,14 @@ import type { FastifyInstance } from "fastify";
 import type { Db } from "mongodb";
 import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
+import { sendConfirmPage } from "./confirm.js";
+import { setFlash } from "./flash.js";
 import { formatDateTime } from "./format.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
 import {
   createLinkCode,
   findActiveLinkCode,
+  findLinkedChat,
   listLinkedChats,
   removeLinkedChat,
 } from "./linked-chats.js";
@@ -69,14 +72,11 @@ export function registerSettings(
                         >linked
                         ${formatDateTime(c.linkedAt, user.timeZone)}</small
                       >
-                      <form
-                        class="inline"
-                        method="post"
-                        action="/settings/linked-chats/${String(c._id)}/delete"
+                      <a
+                        href="/settings/linked-chats/${String(c._id)}/delete"
+                        class="button secondary"
+                        >Remove</a
                       >
-                        ${csrfField(csrf)}
-                        <button type="submit" class="secondary">Remove</button>
-                      </form>
                     </li>`,
                 )}
               </ul>`
@@ -111,6 +111,7 @@ export function registerSettings(
       if (!ok) {
         return reply.code(400).type("text/plain").send("Unknown time zone");
       }
+      setFlash(reply, "Time zone saved.");
       return reply.redirect("/settings", 303);
     },
   );
@@ -142,11 +143,30 @@ export function registerSettings(
     },
   );
 
+  app.get<{ Params: { id: string } }>(
+    "/settings/linked-chats/:id/delete",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const chat = await findLinkedChat(db, req.user!._id, req.params.id);
+      if (!chat) return reply.redirect("/settings", 303);
+      return sendConfirmPage(reply, auth.csrfToken(req, reply), {
+        title: "Remove Linked chat",
+        question: `Remove ${chat.title}?`,
+        explanation: html`Alerts stop arriving in this chat. You can link it
+        again later with a new Link code.`,
+        action: `/settings/linked-chats/${String(chat._id)}/delete`,
+        button: "Remove chat",
+        cancel: "/settings",
+      });
+    },
+  );
+
   app.post<{ Params: { id: string } }>(
     "/settings/linked-chats/:id/delete",
     { preHandler: requireUser },
     async (req, reply) => {
-      await removeLinkedChat(db, req.user!._id, req.params.id);
+      const chat = await removeLinkedChat(db, req.user!._id, req.params.id);
+      if (chat) setFlash(reply, `${chat.title} removed.`);
       return reply.redirect("/settings", 303);
     },
   );

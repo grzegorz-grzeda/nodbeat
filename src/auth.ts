@@ -38,7 +38,7 @@ declare module "fastify" {
   }
 }
 
-const cookieOptions = {
+export const cookieOptions = {
   httpOnly: true,
   secure: true,
   sameSite: "lax",

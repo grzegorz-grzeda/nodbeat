@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Flash messages after creating, saving, pausing, unpausing, regenerating the Heartbeat URL, deleting a Monitor, switching Alerts, saving the time zone and removing a Linked chat. Signed cookie, shown once.
+- Dashboard empty state with "Create your first Monitor"; on a phone the Dashboard rows become cards.
+- Copy buttons for the Heartbeat URL and separate curl GET and POST examples on the Monitor page.
+- Confirmation pages before regenerating the Heartbeat URL and removing a Linked chat (deleting already had one).
+- Mobile layout: full-width action buttons and wrapping curl examples.
+
 ## [0.10.1] - 2026-11-09
 
 0.10.0 was tagged but never published; this is the first release with its changes (see 0.10.0 below).

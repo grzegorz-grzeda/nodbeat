@@ -6,6 +6,7 @@ import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { parseObjectId } from "./ids.js";
 import { formatDateTime, formatDuration } from "./format.js";
+import { setFlash } from "./flash.js";
 import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
 import { listIncidents, type IncidentDoc } from "./incidents.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
@@ -131,6 +132,7 @@ export function registerMonitors(
     };
     await monitors(db).insertOne(monitor);
     await startPeriod(db, "new", monitor, monitor.createdAt);
+    setFlash(reply, "Monitor created.");
     return reply.redirect(`/monitors/${monitor._id}`, 303);
   });
 
@@ -155,8 +157,12 @@ export function registerMonitors(
       ]);
       const timeZone = req.user!.timeZone;
       const csrf = auth.csrfToken(req, reply);
+      const curlGet = `curl -fsS -m 10 --retry 3 ${url}`;
+      const curlPost = `curl -fsS -m 10 --retry 3 --data-raw "battery 3.7V" ${url}`;
       return reply.page({
         title: monitor.name,
+        // Enhances the copy buttons; without JS they stay hidden and the text is still selectable.
+        scripts: ["copy.js"],
         body: html`<p><a href="/">← Dashboard</a></p>
           <div class="title-row">
             <h1>${monitor.name}</h1>
@@ -196,30 +202,40 @@ export function registerMonitors(
             Anyone who knows this URL can send Heartbeats for this Monitor. Keep
             it secret.
           </p>
-          <input
-            type="text"
-            readonly
-            value="${url}"
-            aria-label="Heartbeat URL"
-          />
-          <form
-            class="actions"
-            method="post"
-            action="/monitors/${String(monitor._id)}/regenerate-url"
-          >
-            ${csrfField(csrf)}
-            <button type="submit" class="secondary">Regenerate URL</button>
+          <div class="copy-row">
+            <input
+              type="text"
+              id="hb-url"
+              readonly
+              value="${url}"
+              aria-label="Heartbeat URL"
+            />
+            ${copyButton("hb-url")}
+          </div>
+          <p class="actions">
+            <a
+              href="/monitors/${String(monitor._id)}/regenerate-url"
+              class="button secondary"
+              >Regenerate URL</a
+            >
             <small>The current URL stops working.</small>
-          </form>
+          </p>
           <h2>Examples</h2>
           <p>
             Send a GET or POST. An optional message (up to
             ${MAX_HEARTBEAT_MESSAGE_LENGTH} characters) goes in the
             <code>msg</code> query parameter or the request body.
           </p>
-          <h3>curl</h3>
-          <pre><code>curl -fsS -m 10 --retry 3 ${url}
-curl -fsS -m 10 --retry 3 --data-raw "battery 3.7V" ${url}</code></pre>
+          <h3>curl GET</h3>
+          <div class="code-block">
+            <pre><code id="curl-get">${curlGet}</code></pre>
+            ${copyButton("curl-get")}
+          </div>
+          <h3>curl POST with a message</h3>
+          <div class="code-block">
+            <pre><code id="curl-post">${curlPost}</code></pre>
+            ${copyButton("curl-post")}
+          </div>
           <h3>cron</h3>
           <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded
 */5 * * * * /path/to/job.sh &amp;&amp; curl -fsS -m 10 --retry 3 ${url} &gt; /dev/null</code></pre>
@@ -242,19 +258,31 @@ void sendHeartbeat(const String&amp; message) {
   );
 }
 
+/** Copies the text of the element with this id; `assets/copy.js` reveals and wires it. */
+function copyButton(target: string): SafeHtml {
+  return html`<button
+    type="button"
+    class="secondary copy"
+    data-copy="${target}"
+    hidden
+  >
+    Copy
+  </button>`;
+}
+
 /** Edit and Delete links and the Pause/Unpause button. */
 function actionsSection(monitor: MonitorDoc, csrf: string): SafeHtml {
   const base = `/monitors/${String(monitor._id)}`;
   const paused = monitor.state === "paused";
   return html`<div class="actions">
-    <a href="${base}/edit">Edit</a>
-    <a href="${base}/delete">Delete</a>
+    <a href="${base}/edit" class="button secondary">Edit</a>
     <form method="post" action="${base}/${paused ? "unpause" : "pause"}">
       ${csrfField(csrf)}
       <button type="submit" class="secondary">
         ${paused ? "Unpause" : "Pause"}
       </button>
     </form>
+    <a href="${base}/delete" class="button danger">Delete</a>
   </div>`;
 }
 

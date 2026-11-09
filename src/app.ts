@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import cookie from "@fastify/cookie";
 import formbody from "@fastify/formbody";
 import Fastify, {
@@ -71,7 +72,12 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ensureAlertIndexes(db),
   ]);
 
-  await app.register(cookie);
+  // Signs Flash cookies. A key derived for that purpose alone, so a signature never doubles as a CSRF token.
+  await app.register(cookie, {
+    secret: createHmac("sha256", config.sessionSecret)
+      .update("flash-cookie")
+      .digest("base64url"),
+  });
   await app.register(formbody);
   const auth = registerAuth(app, { db, clock, config });
   registerLayout(app, { auth, build: deps.build });

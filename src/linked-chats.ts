@@ -142,14 +142,24 @@ export async function unlinkChat(db: Db, chatId: number): Promise<number> {
   return res.deletedCount;
 }
 
-/** Removes one of the User's Linked chats by id. Returns false when it isn't theirs or doesn't exist. */
+/** One of the User's Linked chats by id; null when it isn't theirs or doesn't exist. */
+export async function findLinkedChat(
+  db: Db,
+  ownerId: ObjectId,
+  id: string,
+): Promise<LinkedChatDoc | null> {
+  const _id = parseObjectId(id);
+  if (!_id) return null;
+  return linkedChats(db).findOne({ _id, ownerId });
+}
+
+/** Removes one of the User's Linked chats by id. Returns it, or null when it isn't theirs or doesn't exist. */
 export async function removeLinkedChat(
   db: Db,
   ownerId: ObjectId,
   id: string,
-): Promise<boolean> {
+): Promise<LinkedChatDoc | null> {
   const _id = parseObjectId(id);
-  if (!_id) return false;
-  const res = await linkedChats(db).deleteOne({ _id, ownerId });
-  return res.deletedCount === 1;
+  if (!_id) return null;
+  return linkedChats(db).findOneAndDelete({ _id, ownerId });
 }

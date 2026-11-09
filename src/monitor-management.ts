@@ -2,8 +2,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Db } from "mongodb";
 import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
+import { setFlash } from "./flash.js";
 import { deleteHeartbeatsOf } from "./heartbeats.js";
-import { csrfField, html } from "./html.js";
+import { sendConfirmPage } from "./confirm.js";
+import { html } from "./html.js";
 import { deleteIncidentsOf } from "./incidents.js";
 import { limitsFor } from "./limits.js";
 import { applyEffects } from "./effects.js";
@@ -109,8 +111,24 @@ export function registerMonitorManagement(
         { kind: "edit", timing: { intervalSec, graceSec } },
         result.settings,
       );
+      setFlash(reply, "Monitor saved.");
       return reply.redirect(`/monitors/${monitor._id}`, 303);
     }),
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/monitors/:id/regenerate-url",
+    ownMonitorRoute(async (monitor, req, reply) =>
+      sendConfirmPage(reply, auth.csrfToken(req, reply), {
+        title: "Regenerate Heartbeat URL",
+        question: "Regenerate the Heartbeat URL?",
+        explanation: html`The current URL of ${monitor.name} stops working at
+        once. Every device or job that sends Heartbeats needs the new one.`,
+        action: `/monitors/${String(monitor._id)}/regenerate-url`,
+        button: "Regenerate URL",
+        cancel: `/monitors/${String(monitor._id)}`,
+      }),
+    ),
   );
 
   app.post<{ Params: { id: string } }>(
@@ -123,6 +141,10 @@ export function registerMonitorManagement(
           { $set: { token: newHeartbeatToken() } },
         ),
       );
+      setFlash(
+        reply,
+        "Heartbeat URL regenerated. The old one no longer works.",
+      );
       return reply.redirect(`/monitors/${monitor._id}`, 303);
     }),
   );
@@ -132,6 +154,10 @@ export function registerMonitorManagement(
       `/monitors/:id/${kind}`,
       ownMonitorRoute(async (monitor, _req, reply) => {
         await runTransition(monitor, { kind });
+        setFlash(
+          reply,
+          kind === "pause" ? "Monitor paused." : "Monitor unpaused.",
+        );
         return reply.redirect(`/monitors/${monitor._id}`, 303);
       }),
     );
@@ -149,34 +175,24 @@ export function registerMonitorManagement(
         { _id: monitor._id },
         { $set: { alertsEnabled: value === "true" } },
       );
+      setFlash(reply, value === "true" ? "Alerts on." : "Alerts off.");
       return reply.redirect(`/monitors/${monitor._id}`, 303);
     }),
   );
 
   app.get<{ Params: { id: string } }>(
     "/monitors/:id/delete",
-    ownMonitorRoute(async (monitor, req, reply) => {
-      const csrf = auth.csrfToken(req, reply);
-      return reply.page({
+    ownMonitorRoute(async (monitor, req, reply) =>
+      sendConfirmPage(reply, auth.csrfToken(req, reply), {
         title: "Delete Monitor",
-        body: html`<div class="card narrow">
-          <h1>Delete ${monitor.name}?</h1>
-          <p>
-            This removes the Monitor with all its Heartbeats and Incidents. It
-            can't be undone.
-          </p>
-          <form
-            class="actions"
-            method="post"
-            action="/monitors/${String(monitor._id)}/delete"
-          >
-            ${csrfField(csrf)}
-            <button type="submit" class="danger">Delete Monitor</button>
-            <a href="/monitors/${String(monitor._id)}">Cancel</a>
-          </form>
-        </div>`,
-      });
-    }),
+        question: `Delete ${monitor.name}?`,
+        explanation: html`This removes the Monitor with all its Heartbeats and
+        Incidents. It can't be undone.`,
+        action: `/monitors/${String(monitor._id)}/delete`,
+        button: "Delete Monitor",
+        cancel: `/monitors/${String(monitor._id)}`,
+      }),
+    ),
   );
 
   app.post<{ Params: { id: string } }>(
@@ -192,6 +208,7 @@ export function registerMonitorManagement(
           deleteAlertsOf(db, monitor._id),
         ]);
       });
+      setFlash(reply, `${monitor.name} deleted.`);
       return reply.redirect("/", 303);
     }),
   );

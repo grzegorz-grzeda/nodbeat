@@ -47,10 +47,10 @@ async function loggedIn(email = "me@example.com") {
   return { ...ctx, browser };
 }
 
-/** The delete-form action of the Linked chat with this title on the Settings page. */
+/** The Remove link of the Linked chat with this title on the Settings page; it posts to the same path. */
 function removeActionFor(settingsBody: string, title: string): string {
   const item = settingsBody.split("<li>").find((li) => li.includes(title));
-  const action = /action="(\/settings\/linked-chats\/[^"]+\/delete)"/.exec(
+  const action = /href="(\/settings\/linked-chats\/[^"]+\/delete)"/.exec(
     item ?? "",
   )?.[1];
   expect(action).toBeDefined();
@@ -197,9 +197,16 @@ describe("Linked chats", () => {
     expect(settings.body).toContain("Garden project");
 
     const removeAction = removeActionFor(settings.body, "Grzegorz");
-    const res = await ctx.browser.submit("/settings", removeAction);
+    const confirm = await ctx.browser.get(removeAction);
+    expect(confirm.body).toContain("Remove Grzegorz?");
+    expect(confirm.body).toContain(`action="${removeAction}"`);
+    const res = await ctx.browser.submit(removeAction, removeAction);
     expect(res.statusCode).toBe(303);
 
+    settings = await ctx.browser.get("/settings");
+    expect(settings.body).toContain(
+      '<p class="flash" role="status">Grzegorz removed.</p>',
+    );
     settings = await ctx.browser.get("/settings");
     expect(settings.body).not.toContain("Grzegorz");
     expect(settings.body).toContain("Garden project");

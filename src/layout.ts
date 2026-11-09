@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import type { Auth } from "./auth.js";
 import type { BuildInfo } from "./build-info.js";
+import { takeFlash } from "./flash.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
 import { DEFAULT_THEME, THEMES, themeOf, type Theme } from "./users.js";
@@ -127,6 +128,8 @@ export function renderPage(
   options: PageOptions & {
     build: BuildInfo;
     user?: NavUser | undefined;
+    /** One-time message from the previous action, shown above the body. */
+    flash?: string | undefined;
   },
 ): string {
   const { build, user } = options;
@@ -149,7 +152,14 @@ export function renderPage(
           <a href="/" class="brand">${LOGO}<span>nodbeat</span></a>
           ${user ? nav(user) : ""}
         </header>
-        <main>${options.body}</main>
+        <main>
+          ${
+            options.flash
+              ? html`<p class="flash" role="status">${options.flash}</p>`
+              : ""
+          }
+          ${options.body}
+        </main>
         <footer class="site-footer">
           <a href="${REPO_URL}/releases/tag/v${build.version}"
             >v${build.version} · ${shortCommit}</a
@@ -189,7 +199,7 @@ export function registerLayout(
         }
       : undefined;
     return this.type("text/html; charset=utf-8").send(
-      renderPage({ ...options, build, user }),
+      renderPage({ ...options, build, user, flash: takeFlash(req, this) }),
     );
   });
 

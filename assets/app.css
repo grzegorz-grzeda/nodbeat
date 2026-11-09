@@ -265,18 +265,23 @@ button:hover {
 }
 
 button.secondary,
-button.secondary:hover {
+button.secondary:hover,
+a.button.secondary,
+a.button.secondary:hover {
   color: var(--text);
   background: var(--surface);
   border-color: var(--border-strong);
 }
 
-button.secondary:hover {
+button.secondary:hover,
+a.button.secondary:hover {
   border-color: var(--text);
 }
 
 button.danger,
-button.danger:hover {
+button.danger:hover,
+a.button.danger,
+a.button.danger:hover {
   color: var(--on-danger);
   background: var(--danger-bg);
   border-color: var(--danger-bg);
@@ -339,6 +344,67 @@ form.inline {
 .error {
   color: var(--danger);
   font-weight: 500;
+}
+
+/* Classes that set display must not override the hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
+/* Flash message: the one-time result of the previous action. */
+.flash {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  color: var(--up-fg);
+  background: var(--up-bg);
+  border-radius: var(--radius);
+  font-weight: 500;
+}
+
+/* Copy buttons sit next to the text they copy. */
+.copy-row {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.copy-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.code-block {
+  position: relative;
+}
+
+.code-block pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.code-block pre:has(+ .copy:not([hidden])) {
+  padding-right: 5.5rem;
+}
+
+.code-block .copy {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+}
+
+button.copy {
+  font-size: 0.875rem;
+  padding: var(--space-1) var(--space-2);
+  white-space: nowrap;
+}
+
+.empty-state {
+  text-align: center;
+  padding: var(--space-5) var(--space-3);
+}
+
+.empty-state p {
+  color: var(--text-muted);
 }
 
 .muted {
@@ -589,6 +655,60 @@ ul.plain > li:last-child {
 
   h1 {
     font-size: 1.5rem;
+  }
+
+  /* Dashboard rows become cards: the header row hides and each cell carries its own label. */
+  table.cards thead {
+    display: none;
+  }
+
+  table.cards,
+  table.cards tbody,
+  table.cards tr,
+  table.cards td {
+    display: block;
+  }
+
+  table.cards tr {
+    padding: var(--space-2) var(--space-3);
+    border-bottom: 1px solid var(--border);
+  }
+
+  table.cards tbody tr:last-child {
+    border-bottom: none;
+  }
+
+  table.cards td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-1) 0;
+    border: none;
+    overflow-wrap: anywhere;
+  }
+
+  table.cards td[data-label]::before {
+    content: attr(data-label);
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    flex: none;
+  }
+
+  table.cards td.cell-name {
+    font-weight: 600;
+    font-size: 1.0625rem;
+  }
+
+  .actions > .button,
+  .actions > form {
+    flex: 1 1 auto;
+  }
+
+  .actions > .button,
+  .actions > form > button {
+    width: 100%;
+    text-align: center;
   }
 }
 
