@@ -42,6 +42,10 @@ _Avoid_: Outage, downtime event, alert
 The share of a time window a Monitor spent Up, out of the time it spent Up or Down. Time spent New or Paused is left out.
 _Avoid_: Availability, SLA
 
+**Dashboard**:
+The page where a User sees the live Monitor state of all their Monitors.
+_Avoid_: Overview, home, status page
+
 ## Notifications
 
 **Alert**:
