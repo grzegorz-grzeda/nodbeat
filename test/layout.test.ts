@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTestApp, createUser, login, testBuild } from "./helpers.js";
+import { buildTestApp, createUser, CSP, login, testBuild } from "./helpers.js";
 
 const LONG_CACHE = "public, max-age=31536000, immutable";
 
@@ -70,9 +70,7 @@ describe("HTML pages", () => {
     for (const url of pages) {
       const res = await browser.get(url);
       expect(res.headers["content-type"], url).toContain("text/html");
-      expect(res.headers["content-security-policy"], url).toBe(
-        "default-src 'self'",
-      );
+      expect(res.headers["content-security-policy"], url).toBe(CSP);
       expect(inlineCode(res.body), url).toEqual([]);
     }
   });
@@ -82,7 +80,7 @@ describe("HTML pages", () => {
 
     const res = await app.inject({ method: "GET", url: "/login" });
 
-    expect(res.headers["content-security-policy"]).toBe("default-src 'self'");
+    expect(res.headers["content-security-policy"]).toBe(CSP);
     expect(inlineCode(res.body)).toEqual([]);
   });
 

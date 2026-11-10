@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- Every response, HTML or not, now carries `Strict-Transport-Security: max-age=31536000`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` and the CSP `default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'` (previously only `default-src 'self'`, on HTML only).
+
 ## [0.16.0] - 2026-11-10
 
 ### Changed

@@ -8,7 +8,6 @@ import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
 import { DEFAULT_THEME, THEMES, themeOf, type Theme } from "./users.js";
 
 const REPO_URL = "https://github.com/grzegorz-grzeda/nodbeat";
-const CSP = "default-src 'self'";
 /** Asset URLs carry `?v=<commit>`, so a new release busts the cache. */
 const LONG_CACHE = "public, max-age=31536000, immutable";
 /** Local dev always has commit `dev`, so the URL never changes: revalidate instead. */
@@ -178,7 +177,7 @@ export function renderPage(
     </html> `.value;
 }
 
-/** Serves `/assets/*`, adds `reply.page()` and the CSP header on every HTML response. */
+/** Serves `/assets/*` and adds `reply.page()`. */
 export function registerLayout(
   app: FastifyInstance,
   deps: { auth: Auth; build: BuildInfo },
@@ -211,13 +210,5 @@ export function registerLayout(
     return this.type("text/html; charset=utf-8").send(
       renderPage({ ...options, build, user, flash: takeFlash(req, this) }),
     );
-  });
-
-  app.addHook("onSend", async (_req, reply, payload) => {
-    const type = reply.getHeader("content-type");
-    if (typeof type === "string" && type.startsWith("text/html")) {
-      reply.header("content-security-policy", CSP);
-    }
-    return payload;
   });
 }

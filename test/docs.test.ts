@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildTestApp, createUser, login } from "./helpers.js";
+import { buildTestApp, createUser, CSP, login } from "./helpers.js";
 
 /** Inline `<script>` (without src), `<style>`, `style="…"` and `on…="…"` handlers: all blocked by the CSP. */
 function inlineCode(body: string): string[] {
@@ -27,7 +27,7 @@ describe("GET /docs", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.headers["content-type"]).toContain("text/html");
-    expect(res.headers["content-security-policy"]).toBe("default-src 'self'");
+    expect(res.headers["content-security-policy"]).toBe(CSP);
     expect(inlineCode(res.body)).toEqual([]);
   });
 

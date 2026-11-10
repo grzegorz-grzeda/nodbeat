@@ -59,6 +59,10 @@ export const testConfig: Config = {
   selfHeartbeatUrl: undefined,
 };
 
+/** The Content-Security-Policy sent on every response. */
+export const CSP =
+  "default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+
 /** Fixed build info so tests can assert on it. */
 export const testBuild: BuildInfo = { version: "1.2.3", commit: "abc1234" };
 

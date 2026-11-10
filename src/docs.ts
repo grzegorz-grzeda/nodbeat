@@ -80,7 +80,7 @@ function loadSwaggerUi(): Map<string, StaticFile> {
 /**
  * Public API docs: `/docs` is a plain Swagger UI page (no app shell, light theme only)
  * reading `/openapi.yaml`. Every file it loads is served by nodbeat, and it has no
- * inline code, so it passes the strict CSP the layout adds to HTML responses.
+ * inline code, so it passes the strict CSP sent on every response.
  */
 export function registerDocs(
   app: FastifyInstance,

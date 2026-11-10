@@ -29,6 +29,7 @@ import { registerMonitorLogs } from "./monitor-logs.js";
 import { registerMonitorManagement } from "./monitor-management.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
 import { registerOpenApi } from "./openapi.js";
+import { registerSecurityHeaders } from "./security-headers.js";
 import { registerSettings } from "./settings.js";
 import { ensureStatePeriodIndexes } from "./state-periods.js";
 import type { TelegramClient } from "./telegram.js";
@@ -67,6 +68,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
     // Exactly one proxy (the edge Caddy, ADR 0004) sits in front; the client IP is the last X-Forwarded-For hop it adds.
     trustProxy: (_address, hop) => hop === 0,
   });
+
+  registerSecurityHeaders(app);
 
   await Promise.all([
     ensureUserIndexes(db),
