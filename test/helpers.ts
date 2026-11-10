@@ -57,6 +57,7 @@ export const testConfig: Config = {
   telegramBotToken: "123:test-token",
   telegramWebhookSecret: "test-webhook-secret",
   selfHeartbeatUrl: undefined,
+  trustedProxyIp: "172.18.0.2",
 };
 
 /** The Content-Security-Policy sent on every response. */

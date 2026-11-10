@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Security
 
+- `X-Forwarded-For` is believed only from the edge Caddy at the new required `TRUSTED_PROXY_IP`, so another container on the `edge` network can't fake its IP to dodge the login limit or forge recorded source IPs. Set it before upgrading; see `docs/deploy.md` steps 4–5.
 - Every response, HTML or not, now carries `Strict-Transport-Security: max-age=31536000`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: same-origin` and the CSP `default-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'` (previously only `default-src 'self'`, on HTML only).
 
 ## [0.16.0] - 2026-11-10

@@ -65,14 +65,15 @@ One always-on Node 22 process (ADR 0002) built with TypeScript, Fastify and the 
 
 All configuration comes from environment variables (see [.env.example](.env.example)). nodbeat lists every problem and exits when one is wrong.
 
-| Variable                  | Required | Description                                                                    |
-| ------------------------- | -------- | ------------------------------------------------------------------------------ |
-| `MONGODB_URI`             | yes      | Connection string; must name the database in its path (e.g. `.../nodbeat`)     |
-| `PUBLIC_BASE_URL`         | yes      | Public http(s) URL; used for Heartbeat URLs and the Telegram webhook           |
-| `SESSION_SECRET`          | yes      | At least 32 characters (`openssl rand -base64 48`)                             |
-| `TELEGRAM_BOT_TOKEN`      | yes      | Bot token from BotFather                                                       |
-| `TELEGRAM_WEBHOOK_SECRET` | yes      | 1–256 characters of `A-Z a-z 0-9 _ -`                                          |
-| `SELF_HEARTBEAT_URL`      | no       | External URL nodbeat sends its own Heartbeat to every minute (healthchecks.io) |
+| Variable                  | Required | Description                                                                          |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------ |
+| `MONGODB_URI`             | yes      | Connection string; must name the database in its path (e.g. `.../nodbeat`)           |
+| `PUBLIC_BASE_URL`         | yes      | Public http(s) URL; used for Heartbeat URLs and the Telegram webhook                 |
+| `SESSION_SECRET`          | yes      | At least 32 characters (`openssl rand -base64 48`)                                   |
+| `TELEGRAM_BOT_TOKEN`      | yes      | Bot token from BotFather                                                             |
+| `TELEGRAM_WEBHOOK_SECRET` | yes      | 1–256 characters of `A-Z a-z 0-9 _ -`                                                |
+| `TRUSTED_PROXY_IP`        | yes      | IPv4/IPv6 address of the edge Caddy; only it may set the client IP (X-Forwarded-For) |
+| `SELF_HEARTBEAT_URL`      | no       | External URL nodbeat sends its own Heartbeat to every minute (healthchecks.io)       |
 
 The server listens on port 3000. `GET /health` answers `{"status":"ok","version":...,"commit":...}`, or `503` when Mongo can't be pinged.
 

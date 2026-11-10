@@ -65,8 +65,9 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const pruner = createLogPruner({ db, clock });
   const app = Fastify({
     logger: deps.logger ?? false,
-    // Exactly one proxy (the edge Caddy, ADR 0004) sits in front; the client IP is the last X-Forwarded-For hop it adds.
-    trustProxy: (_address, hop) => hop === 0,
+    // Only the edge Caddy (ADR 0004), at its fixed address, may set the client IP via X-Forwarded-For;
+    // another container on the edge network can't fake one.
+    trustProxy: config.trustedProxyIp,
   });
 
   registerSecurityHeaders(app);

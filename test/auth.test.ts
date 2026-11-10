@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { Browser, buildTestApp, createUser, login } from "./helpers.js";
+import {
+  Browser,
+  buildTestApp,
+  createUser,
+  login,
+  testConfig,
+} from "./helpers.js";
 
 const DAY = 24 * 60 * 60 * 1000;
 const MINUTE = 60 * 1000;
@@ -94,9 +100,9 @@ describe("login", () => {
     expect(browser.lastResponse.statusCode).toBe(303);
   });
 
-  it("limits by the client IP the edge proxy forwards, not the proxy's own", async () => {
+  it("limits by the client IP the edge Caddy forwards, not its own", async () => {
     const { app } = await appWithUser();
-    const caddy = "172.18.0.2";
+    const caddy = testConfig.trustedProxyIp;
     const client = (ip: string) =>
       new Browser(app, caddy, { "x-forwarded-for": ip });
     const attacker = client("198.51.100.7");
@@ -121,6 +127,28 @@ describe("login", () => {
       client("10.9.9.9, 198.51.100.7"),
     );
     expect(spoofing.lastResponse.statusCode).toBe(429);
+  });
+
+  it("ignores X-Forwarded-For from any address but the edge Caddy", async () => {
+    const { app } = await appWithUser();
+    // Another container on the edge network, rotating forged client IPs.
+    const forger = "172.18.0.9";
+    for (let i = 0; i < 5; i++) {
+      await login(
+        app,
+        "me@example.com",
+        "wrong horse",
+        new Browser(app, forger, { "x-forwarded-for": `198.51.100.${i}` }),
+      );
+    }
+
+    const sixth = await login(
+      app,
+      "me@example.com",
+      "correct horse",
+      new Browser(app, forger, { "x-forwarded-for": "198.51.100.99" }),
+    );
+    expect(sixth.lastResponse.statusCode).toBe(429);
   });
 
   it("rejects a login form without a valid CSRF token", async () => {

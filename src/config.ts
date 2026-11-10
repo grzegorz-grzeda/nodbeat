@@ -1,3 +1,5 @@
+import { isIP } from "node:net";
+
 export interface Config {
   mongoUri: string;
   publicBaseUrl: string;
@@ -6,6 +8,8 @@ export interface Config {
   telegramWebhookSecret: string;
   /** External URL nodbeat sends its own Heartbeat to; disabled when unset. */
   selfHeartbeatUrl: string | undefined;
+  /** The edge Caddy's fixed address; only its X-Forwarded-For is believed. */
+  trustedProxyIp: string;
 }
 
 export class ConfigError extends Error {
@@ -72,6 +76,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const selfHeartbeatUrl = env.SELF_HEARTBEAT_URL?.trim() || undefined;
   if (selfHeartbeatUrl) checkHttpUrl("SELF_HEARTBEAT_URL", selfHeartbeatUrl);
 
+  const trustedProxyIp = required("TRUSTED_PROXY_IP");
+  if (trustedProxyIp && isIP(trustedProxyIp) === 0) {
+    problems.push("TRUSTED_PROXY_IP must be an IPv4 or IPv6 address");
+  }
+
   if (problems.length > 0) throw new ConfigError(problems);
 
   return {
@@ -81,6 +90,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     telegramBotToken,
     telegramWebhookSecret,
     selfHeartbeatUrl,
+    trustedProxyIp,
   };
 }
 

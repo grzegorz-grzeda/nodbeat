@@ -47,6 +47,25 @@ nodbeat.g2labs.pl {
 }
 ```
 
+nodbeat believes `X-Forwarded-For` only from the edge Caddy, recognised by a fixed IP; anything else on the `edge` network is limited and logged by its own address. So in the edge repo, give the `edge` network a fixed subnet and Caddy a fixed address in it (in its `compose.yaml`):
+
+```yaml
+services:
+  caddy:
+    networks:
+      edge:
+        ipv4_address: 172.30.0.10
+
+networks:
+  edge:
+    name: edge
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+```
+
+Pick a subnet that no other Docker network on the VPS uses (`docker network inspect $(docker network ls -q) | grep Subnet`). An existing `edge` network without that subnet must be recreated: stop every project on it, `docker network rm edge`, then bring the edge project up first. Check with `docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' <caddy-container>`. This address goes into `TRUSTED_PROXY_IP` in step 5. Keep the `edge` network IPv4-only: with IPv6 enabled Caddy may connect from an untrusted IPv6 address, and every visitor would then share one login limit.
+
 Commit, push, and reload the edge Caddy on the VPS (e.g. `docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile`, or however the edge repo documents it). The `edge` Docker network must exist (`docker network ls | grep edge`); the edge project creates it.
 
 ## 5. `.env`
@@ -69,6 +88,7 @@ Fill it in:
 | `SESSION_SECRET`          | `openssl rand -base64 48`                                  |
 | `TELEGRAM_BOT_TOKEN`      | from step 2                                                |
 | `TELEGRAM_WEBHOOK_SECRET` | from step 2                                                |
+| `TRUSTED_PROXY_IP`        | the edge Caddy's fixed IP from step 4 (e.g. `172.30.0.10`) |
 | `SELF_HEARTBEAT_URL`      | from step 9 (leave empty for now; set it and restart then) |
 
 ## 6. Start
