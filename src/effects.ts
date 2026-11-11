@@ -10,7 +10,7 @@ import {
   type IncidentDoc,
 } from "./incidents.js";
 import type { Effect } from "./monitor-state.js";
-import { firstReminderAt, type ReminderSettings } from "./reminders.js";
+import { nextReminderFrom, type ReminderSettings } from "./reminders.js";
 import { endPeriod, startPeriod } from "./state-periods.js";
 
 /** Carries out the effects a state transition asked for, in order. */
@@ -38,7 +38,7 @@ export async function applyEffects(
             }),
           },
           // Reminders count from going Down.
-          firstReminderAt(monitor, effect.startedAt),
+          nextReminderFrom(monitor, effect.startedAt),
         );
         break;
       case "close-incident":

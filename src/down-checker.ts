@@ -4,8 +4,10 @@ import { enqueueAlert } from "./alerts.js";
 import { applyEffects } from "./effects.js";
 import {
   claimReminder,
+  countReminder,
   listDueReminders,
   setNextReminder,
+  unclaimReminder,
 } from "./incidents.js";
 import { reminderAfter } from "./reminders.js";
 import type { LogPruner } from "./log-pruner.js";
@@ -74,14 +76,26 @@ async function sendDueReminders(
         await setNextReminder(db, monitor._id, null);
         return;
       }
-      const claimed = await claimReminder(
-        db,
-        incident._id,
-        due,
-        reminderAfter(due, everySec, now),
-      );
+      const next = reminderAfter(due, everySec, now);
+      const claimed = await claimReminder(db, incident._id, due, next);
       if (!claimed) return;
-      await enqueueAlert(db, monitor, "reminder", claimed, now, publicBaseUrl);
+      let enqueued: boolean;
+      try {
+        enqueued = await enqueueAlert(
+          db,
+          monitor,
+          "reminder",
+          claimed,
+          now,
+          publicBaseUrl,
+        );
+      } catch (err) {
+        // Not sent: the next tick tries again.
+        await unclaimReminder(db, incident._id, due, next);
+        throw err;
+      }
+      // No Alert channel: the slot passes, but nothing was sent to count.
+      if (enqueued) await countReminder(db, incident._id);
     });
   }
 }

@@ -370,4 +370,22 @@ describe("Reminders", () => {
       expect(body).toMatch(/<td class="reminders">\s*2\s*<\/td>/);
     }
   });
+
+  it("aren't counted when the Monitor has no Alert channel to send them to", async () => {
+    const ctx = await loggedIn();
+    const m = await createMonitor(ctx.browser);
+    const downAt = await goDown(ctx, m.hb);
+    for (const h of [1, 2]) await tickAt(ctx, downAt, h * HOUR);
+
+    const body = (await ctx.browser.get(`${m.page}/incidents`)).body;
+    expect(body).toMatch(/<td class="reminders">\s*0\s*<\/td>/);
+
+    // A chat linked at 2.5 h gets the 3 h Reminder, not the passed ones.
+    await tickAt(ctx, downAt, 2.5 * HOUR);
+    await linkChat(ctx, ctx.browser);
+    await ctx.app.tick();
+    expect(reminders(ctx)).toHaveLength(0);
+    await tickAt(ctx, downAt, 3 * HOUR);
+    expect(reminders(ctx)).toHaveLength(1);
+  });
 });

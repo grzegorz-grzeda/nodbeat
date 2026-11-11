@@ -473,7 +473,7 @@ ${form.notes}</textarea>
             ["", "Never"],
             ...REMINDER_CADENCES_SEC.map((sec) => [
               String(sec),
-              `Remind me every ${cadenceText(sec)} while Down`,
+              `Remind me ${cadenceText(sec)}`,
             ]),
           ].map(
             ([value, label]) =>
