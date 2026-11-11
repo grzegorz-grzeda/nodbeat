@@ -7,6 +7,9 @@ export interface Limits {
   maxIntervalSec: number;
   minGraceSec: number;
   maxGraceSec: number;
+  /** Bounds of a Monitor's Max run time (which is optional). */
+  minMaxRunTimeSec: number;
+  maxMaxRunTimeSec: number;
   heartbeatRetentionSec: number;
   /** Heartbeats and Incidents kept per Monitor; older ones are dropped. */
   maxLogRowsPerMonitor: number;
@@ -26,6 +29,8 @@ const DEFAULT_LIMITS: Limits = {
   maxIntervalSec: 7 * DAY_SEC,
   minGraceSec: 0,
   maxGraceSec: DAY_SEC,
+  minMaxRunTimeSec: 60,
+  maxMaxRunTimeSec: DAY_SEC,
   heartbeatRetentionSec: 7 * DAY_SEC,
   maxLogRowsPerMonitor: 100,
 };

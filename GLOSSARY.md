@@ -32,6 +32,10 @@ _Avoid_: Job, execution
 How long a Run took: from its Start signal to the Heartbeat or Fail signal that ended it, in whole seconds.
 _Avoid_: Runtime, elapsed time
 
+**Max run time**:
+An optional per-Monitor limit on a Run. An Up Monitor whose Run lasts longer goes Down, counted from the Start signal (or nodbeat's start, an unpause or an edit, whichever is latest).
+_Avoid_: Timeout, run limit
+
 **Interval**:
 How often a Monitor is expected to send a Heartbeat. A Monitor has either an Interval or a Schedule, never both.
 _Avoid_: Period, frequency
@@ -45,7 +49,7 @@ Extra time allowed after the Interval or the scheduled time before a missing Hea
 _Avoid_: Tolerance, timeout
 
 **Monitor state**:
-One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval or scheduled time + Grace period passed with no Heartbeat, or a Fail signal) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
+One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval or scheduled time + Grace period passed with no Heartbeat, or a Fail signal, or a Run longer than its Max run time) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
 _Avoid_: Status, health
 
 **New period**:

@@ -62,6 +62,8 @@ export interface AlertedMonitor {
   name: string;
   /** The last Heartbeat's message; a Down Alert carries it. */
   lastMessage: string | null;
+  /** A too long Run's Down Alert names it. Absent on Monitors stored before Max run times existed. */
+  maxRunTimeSec?: number | null;
 }
 
 /** Puts an Alert about `incident` in the outbox, addressed to the owner's Linked chats at this moment. */
@@ -118,10 +120,12 @@ function alertText(
   const link = `<a href="${escapeTelegramHtml(url)}">Open Monitor</a>`;
   if (kind === "down") {
     const failed = incident.cause === "failed";
-    const lines = [
-      failed ? `🔴 ${name} reported a failure` : `🔴 ${name} is Down`,
-      `Since ${at(incident.startedAt)}`,
-    ];
+    const headline = failed
+      ? `🔴 ${name} reported a failure`
+      : incident.cause === "run-too-long"
+        ? `🔴 ${name} ran longer than ${formatDuration(monitor.maxRunTimeSec ?? 0)}`
+        : `🔴 ${name} is Down`;
+    const lines = [headline, `Since ${at(incident.startedAt)}`];
     if (monitor.lastMessage) {
       // A failure's message is the Fail signal's own.
       const label = failed ? "Message" : "Last message";

@@ -13,8 +13,8 @@ export interface MonitorStateFields {
   /** When the current pause started; null unless Paused. */
   pausedAt: Date | null;
   /**
-   * When the Monitor was last unpaused or had its Interval or Grace period edited: its deadline counts from here at
-   * the earliest. Null if never; absent on Monitors stored before pausing existed.
+   * When the Monitor was last unpaused or had its Interval, Grace period or Max run time edited: its deadlines count
+   * from here at the earliest. Null if never; absent on Monitors stored before pausing existed.
    */
   watchedSince?: Date | null;
   /** When the open Run began (its Start signal); null if none. Absent on Monitors stored before Start signals existed. */
@@ -23,10 +23,12 @@ export interface MonitorStateFields {
   lastRunDurationSec?: number | null;
 }
 
-/** A Monitor's Interval and Grace period. */
+/** A Monitor's Interval, Grace period and Max run time. */
 export interface MonitorTiming {
   intervalSec: number;
   graceSec: number;
+  /** Longest a Run may last before the Monitor goes Down; null for none. Absent on Monitors stored before it existed. */
+  maxRunTimeSec?: number | null;
 }
 
 /** What the state machine reads besides the state fields. */
@@ -48,11 +50,11 @@ export type MonitorEvent =
   /** New settings saved. Only the timing matters to the state machine. */
   | { kind: "edit"; timing: MonitorTiming };
 
-/** Why an Incident opened: a missed deadline or a Fail signal. */
-export type IncidentCause = "missed" | "failed";
+/** Why an Incident opened: a missed deadline, a Fail signal or a Run longer than the Max run time. */
+export type IncidentCause = "missed" | "failed" | "run-too-long";
 
 export type Effect =
-  /** A missed deadline's Incident starts at the deadline, not when the checker noticed. */
+  /** A missed deadline's or too long Run's Incident starts at that deadline, not when the checker noticed. */
   | { kind: "open-incident"; startedAt: Date; cause: IncidentCause }
   | { kind: "close-incident"; reason: "heartbeat" | "paused" }
   /** New and pause periods are left out of Uptime. */
@@ -90,6 +92,24 @@ export function downDeadline(
     startedAt.getTime(),
   );
   return new Date(from + (monitor.intervalSec + monitor.graceSec) * 1000);
+}
+
+/**
+ * When an Up Monitor's open Run makes it Down: Max run time after its Start signal, its last unpause or edit, or
+ * nodbeat's start, whichever is latest. Null without an open Run or a Max run time.
+ */
+export function runDeadline(
+  monitor: Pick<MonitorStateFields, "runStartedAt" | "watchedSince"> &
+    Pick<MonitorTiming, "maxRunTimeSec">,
+  startedAt: Date,
+): Date | null {
+  if (!monitor.runStartedAt || monitor.maxRunTimeSec == null) return null;
+  const from = Math.max(
+    monitor.runStartedAt.getTime(),
+    monitor.watchedSince?.getTime() ?? 0,
+    startedAt.getTime(),
+  );
+  return new Date(from + monitor.maxRunTimeSec * 1000);
 }
 
 /** The single place Monitor state changes are decided. Pure: no I/O, time comes in as `now`. */
@@ -233,12 +253,20 @@ function onDeadlineCheck(
 ): Transition {
   const fields = stateFields(current);
   if (fields.state !== "up") return { fields, effects: [] };
-  const deadline = downDeadline(current, startedAt);
-  if (!deadline || now < deadline) return { fields, effects: [] };
+  // The earliest passed deadline decides when the Incident started and why.
+  const deadlines: Array<[Date | null, IncidentCause]> = [
+    [downDeadline(current, startedAt), "missed"],
+    [runDeadline(current, startedAt), "run-too-long"],
+  ];
+  const first = deadlines
+    .filter((d): d is [Date, IncidentCause] => d[0] !== null && d[0] <= now)
+    .sort((a, b) => a[0].getTime() - b[0].getTime())[0];
+  if (!first) return { fields, effects: [] };
+  const [deadline, cause] = first;
   return {
     fields: { ...fields, state: "down" },
     effects: [
-      { kind: "open-incident", startedAt: deadline, cause: "missed" },
+      { kind: "open-incident", startedAt: deadline, cause },
       ...alertEffects(current, "down"),
     ],
   };
@@ -284,7 +312,7 @@ function onUnpause(current: MonitorStateFields, now: Date): Transition {
   };
 }
 
-/** A changed Interval or Grace period counts from the edit, so a shorter one can't backdate an Incident. */
+/** A changed Interval, Grace period or Max run time counts from the edit, so a shorter one can't backdate an Incident. */
 function onEdit(
   current: MonitorStateFields & MonitorTiming,
   timing: MonitorTiming,
@@ -293,7 +321,8 @@ function onEdit(
   const fields = stateFields(current);
   const changed =
     timing.intervalSec !== current.intervalSec ||
-    timing.graceSec !== current.graceSec;
+    timing.graceSec !== current.graceSec ||
+    (timing.maxRunTimeSec ?? null) !== (current.maxRunTimeSec ?? null);
   return {
     fields: changed ? { ...fields, watchedSince: now } : fields,
     effects: [],

@@ -179,3 +179,96 @@ describe("transition: ending a Run", () => {
     expect(fields).toMatchObject({ runStartedAt: null, lastRunDurationSec: 7 });
   });
 });
+
+describe("transition: Max run time", () => {
+  const check = (startedAt = T0) =>
+    ({ kind: "deadline-check", startedAt }) as const;
+  const RUN_AT = new Date("2026-01-01T00:00:10Z");
+  const long = { intervalSec: 3600, graceSec: 60, maxRunTimeSec: 300 };
+
+  it("makes an Up Monitor Down once its Run passes the Max run time, the Incident starting then", () => {
+    const { fields, effects } = transition(
+      monitor({ runStartedAt: RUN_AT }, long),
+      check(),
+      new Date("2026-01-01T00:07:00Z"),
+    );
+    expect(fields.state).toBe("down");
+    expect(effects).toEqual([
+      {
+        kind: "open-incident",
+        startedAt: new Date("2026-01-01T00:05:10Z"),
+        cause: "run-too-long",
+      },
+      { kind: "enqueue-alert", alert: "down" },
+    ]);
+  });
+
+  it("stays Up before the Max run time has passed", () => {
+    const { fields, effects } = transition(
+      monitor({ runStartedAt: RUN_AT }, long),
+      check(),
+      new Date("2026-01-01T00:05:09Z"),
+    );
+    expect(fields.state).toBe("up");
+    expect(effects).toEqual([]);
+  });
+
+  it("counts from nodbeat's start when that is later than the Start signal", () => {
+    const restarted = new Date("2026-01-01T00:03:00Z");
+    const at = (iso: string) =>
+      transition(
+        monitor({ runStartedAt: RUN_AT }, long),
+        check(restarted),
+        new Date(iso),
+      ).effects;
+    expect(at("2026-01-01T00:07:59Z")).toEqual([]);
+    expect(at("2026-01-01T00:08:00Z")[0]).toEqual({
+      kind: "open-incident",
+      startedAt: new Date("2026-01-01T00:08:00Z"),
+      cause: "run-too-long",
+    });
+  });
+
+  it("ignores a Run when there is no Max run time", () => {
+    const { effects } = transition(
+      monitor({ runStartedAt: RUN_AT }, { ...long, maxRunTimeSec: null }),
+      check(),
+      new Date("2026-01-01T00:30:00Z"),
+    );
+    expect(effects).toEqual([]);
+  });
+
+  it("uses the missed deadline when it came first", () => {
+    const { effects } = transition(
+      monitor(
+        { runStartedAt: RUN_AT },
+        { intervalSec: 60, graceSec: 30, maxRunTimeSec: 300 },
+      ),
+      check(),
+      new Date("2026-01-01T00:10:00Z"),
+    );
+    expect(effects[0]).toEqual({
+      kind: "open-incident",
+      startedAt: new Date("2026-01-01T00:01:30Z"),
+      cause: "missed",
+    });
+  });
+
+  it("counts a changed Max run time from the edit, so it can't backdate an Incident", () => {
+    const edited = new Date("2026-01-01T00:04:00Z");
+    const shorter = { ...long, maxRunTimeSec: 120 };
+    const { fields } = transition(
+      monitor({ runStartedAt: RUN_AT }, long),
+      { kind: "edit", timing: shorter },
+      edited,
+    );
+    expect(fields.watchedSince).toEqual(edited);
+    const check1 = (iso: string) =>
+      transition(monitor(fields, shorter), check(), new Date(iso)).effects;
+    expect(check1("2026-01-01T00:05:59Z")).toEqual([]);
+    expect(check1("2026-01-01T00:06:00Z")[0]).toMatchObject({
+      startedAt: new Date("2026-01-01T00:06:00Z"),
+      cause: "run-too-long",
+    });
+  });
+});
