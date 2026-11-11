@@ -36,8 +36,8 @@ Follow chat id changes and bot removals as they happen, set up the bot at startu
 
 ## Implementation Decisions
 
-- **Supergroup migration**: a `message` update with `migrate_to_chat_id` moves every Link of the old chat id to the new one. Pending Alerts in the outbox are moved too. When `sendMessage` fails with `400` and `parameters.migrate_to_chat_id`, the same move happens and the send is retried to the new id at once. `TelegramClient.sendMessage` reports this error with the new id.
-- **Removed from a group**: a `my_chat_member` update whose new status is `left` or `kicked` unlinks the chat (all its Links), the same as `/unlink`.
+- **Supergroup migration**: a `message` update with `migrate_to_chat_id` moves every Linked chat with the old chat id to the new one. Pending Alerts in the outbox are moved too. When `sendMessage` fails with `400` and `parameters.migrate_to_chat_id`, the same move happens and the send is retried to the new id at once. `TelegramClient.sendMessage` reports this error with the new id.
+- **Removed from a group**: a `my_chat_member` update whose new status is `left` or `kicked` unlinks the chat (for every owner), the same as `/unlink`.
 - **Startup**: `setMyCommands` with `start`, `status` and `unlink`, plus `setWebhook` with `allowed_updates: ["message", "my_chat_member"]`. Neither call is awaited, like `setWebhook` today. `docs/deploy.md` drops the manual `/setcommands` step.
 - **Alert text**: sent with `parse_mode: "HTML"`. Everything from Users or devices (Monitor name, Heartbeat message) is escaped for Telegram HTML (`&`, `<`, `>`). Down: bold name, "is Down", since when, and the last Heartbeat message if any. Up: bold name, "is Up again", when, how long it was Down. Both end with a link to `PUBLIC_BASE_URL/monitors/<id>`. The text is still built when the Alert is enqueued.
 - **Silent Up**: Up Alerts are sent with `disable_notification: true`. This applies to everyone and has no setting.

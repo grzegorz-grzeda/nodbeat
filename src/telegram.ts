@@ -15,6 +15,9 @@ export interface SendMessageOptions {
   disableNotification?: boolean;
 }
 
+/** The kinds of Update nodbeat asks Telegram to send to the webhook. */
+export type UpdateType = "message" | "my_chat_member";
+
 /** An entry in the bot's command menu. */
 export interface BotCommand {
   command: string;
@@ -37,7 +40,7 @@ export interface TelegramClient {
   setWebhook(
     url: string,
     secretToken: string,
-    allowedUpdates: string[],
+    allowedUpdates: UpdateType[],
   ): Promise<void>;
   setMyCommands(commands: BotCommand[]): Promise<void>;
 }

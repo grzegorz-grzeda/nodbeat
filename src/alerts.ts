@@ -2,7 +2,11 @@ import { ObjectId, type Db } from "mongodb";
 import type { Clock } from "./clock.js";
 import { formatDateTime, formatDuration } from "./format.js";
 import type { IncidentDoc } from "./incidents.js";
-import { listLinkedChats, moveChatLinks, unlinkChat } from "./linked-chats.js";
+import {
+  listLinkedChats,
+  moveLinkedChats,
+  unlinkChat,
+} from "./linked-chats.js";
 import {
   TelegramChatMigratedError,
   TelegramForbiddenError,
@@ -83,10 +87,7 @@ export async function enqueueAlert(
     incidentId: incident._id,
     text: alertText(monitor, kind, incident, timeZone, publicBaseUrl),
     // An Up Alert is good news: it shouldn't wake the User.
-    options: {
-      parseMode: "HTML",
-      ...(kind === "up" ? { disableNotification: true } : {}),
-    },
+    options: { parseMode: "HTML", disableNotification: kind === "up" },
     chatIds: chats.map((c) => c.chatId),
     attempts: 0,
     createdAt: now,
@@ -95,9 +96,13 @@ export async function enqueueAlert(
   });
 }
 
-/** Escapes text from Users or devices for Telegram HTML. */
+/** Escapes text from Users or devices for Telegram HTML, in text and in attribute values. */
 const escapeTelegramHtml = (text: string) =>
-  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
 /** The Alert in Telegram HTML: bold name, state, when, details, and a link to the Monitor page. */
 function alertText(
@@ -129,13 +134,13 @@ function alertText(
   ].join("\n");
 }
 
-/** Follows a group upgraded to a supergroup: its Links and its pending Alerts move to the new chat id. */
+/** Follows a group upgraded to a supergroup: its Linked chats and its pending Alerts move to the new chat id. */
 export async function migrateChat(
   db: Db,
   fromChatId: number,
   toChatId: number,
 ): Promise<void> {
-  await moveChatLinks(db, fromChatId, toChatId);
+  await moveLinkedChats(db, fromChatId, toChatId);
   await outbox(db).updateMany({ chatIds: fromChatId }, [
     {
       $set: {
@@ -217,17 +222,31 @@ export function createAlertDispatcher(deps: {
       (await listLinkedChats(db, alert.ownerId)).map((c) => c.chatId),
     );
     const failed: number[] = [];
+    /** Chats that got the Alert in this dispatch, so a group migrating onto one of them isn't sent it twice. */
+    const delivered = new Set<number>();
     /** Sends to one chat; a chat that moved is followed once, so two migration answers in a row can't loop. */
     const send = async (
       chatId: number,
       followMigration = true,
     ): Promise<void> => {
+      if (delivered.has(chatId)) return;
       try {
         await telegram.sendMessage(chatId, alert.text, alert.options ?? {});
+        delivered.add(chatId);
       } catch (err) {
         if (err instanceof TelegramChatMigratedError && followMigration) {
           // The group became a supergroup: follow it and send to the new id at once.
-          await migrateChat(db, chatId, err.newChatId);
+          try {
+            await migrateChat(db, chatId, err.newChatId);
+          } catch (migrateErr) {
+            // Retried with the old id: Telegram answers the same and the migration is followed again.
+            failed.push(chatId);
+            log.warn(
+              { err: migrateErr, chatId, newChatId: err.newChatId },
+              "Following a group upgraded to a supergroup failed",
+            );
+            return;
+          }
           log.warn(
             { chatId, newChatId: err.newChatId },
             "Linked chat moved: the group was upgraded to a supergroup",
@@ -268,11 +287,17 @@ export function createAlertDispatcher(deps: {
       return true;
     }
     const delay = FIRST_RETRY_DELAY_MS * 2 ** (attempts - 1);
+    // Remove only the chats done with, rather than writing `failed` back: a group upgraded to a supergroup
+    // while this dispatch ran has had its id replaced in the outbox, and the old id mustn't come back.
+    const stillFailing = new Set(failed);
+    const done = [...alert.chatIds, ...delivered].filter(
+      (id) => !stillFailing.has(id),
+    );
     await outbox(db).updateOne(
       { _id: alert._id },
       {
+        $pull: { chatIds: { $in: done } },
         $set: {
-          chatIds: failed,
           attempts,
           firstFailedAt,
           nextAttemptAt: new Date(Math.min(now.getTime() + delay, giveUpAt)),

@@ -66,7 +66,10 @@ interface Update {
 }
 
 /** The bot's membership statuses that mean it can no longer write to the chat. */
-const REMOVED_STATUSES: ReadonlySet<unknown> = new Set(["left", "kicked"]);
+const REMOVED_STATUSES: ReadonlySet<ChatMemberStatus> = new Set([
+  "left",
+  "kicked",
+]);
 
 /** A bot command as sent: the chat, the text after the command and the sending Telegram user. */
 interface CommandMessage {
@@ -214,9 +217,11 @@ export function registerTelegramBot(
 
   const handle = async (update: Update): Promise<void> => {
     const member = update.my_chat_member;
+    const status = member?.new_chat_member?.status;
     if (
       typeof member?.chat?.id === "number" &&
-      REMOVED_STATUSES.has(member.new_chat_member?.status)
+      typeof status === "string" &&
+      REMOVED_STATUSES.has(status)
     ) {
       // The bot was removed from the group or blocked: unlink the chat, the same as /unlink.
       await unlinkChat(db, member.chat.id);
