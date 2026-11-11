@@ -1,7 +1,7 @@
 # 0045: ntfy channel
 
 Spec: 0009
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** A User adds an ntfy topic by its full URL (ntfy.sh or self-hosted) with an optional access token. Down Alerts arrive at high priority, Up Alerts at low priority, each linking to its Monitor.
 

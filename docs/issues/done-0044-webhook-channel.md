@@ -1,7 +1,7 @@
 # 0044: Webhook channel
 
 Spec: 0009
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** A User adds a Webhook (URL, optional secret). Alerts are POSTed to it as JSON, signed when a secret is set. Addresses on private networks are refused. A Webhook whose Alerts kept failing is marked Failing in Settings.
 

@@ -1,7 +1,7 @@
 # 0043: Alert channels groundwork
 
 Spec: 0009
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** Linked chats become the first kind of Alert channel. Alerts are addressed to Alert channels and sent by a sender per kind. Settings lists all Alert channels in one place. For Users nothing changes yet: Alerts still go to every Linked chat, exactly as today.
 

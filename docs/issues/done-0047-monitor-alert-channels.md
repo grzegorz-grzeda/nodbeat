@@ -1,7 +1,7 @@
 # 0047: Monitor's Alert channels
 
 Spec: 0009
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** Each Monitor chooses its Alert channels: all of its owner's Alert channels (default, including ones added later) or a chosen few. Alerts and a Telegram chat's `/status` follow that choice. Replaces issue 0031.
 
