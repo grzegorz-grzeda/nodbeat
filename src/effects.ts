@@ -18,6 +18,7 @@ export async function applyEffects(
   monitor: AlertedMonitor,
   effects: Effect[],
   now: Date,
+  publicBaseUrl: string,
 ): Promise<void> {
   // The Incident opened or closed by an earlier effect. The state machine always emits enqueue-alert after the
   // open-/close-incident effect it is about.
@@ -39,7 +40,14 @@ export async function applyEffects(
         break;
       case "enqueue-alert":
         if (incident) {
-          await enqueueAlert(db, monitor, effect.alert, incident, now);
+          await enqueueAlert(
+            db,
+            monitor,
+            effect.alert,
+            incident,
+            now,
+            publicBaseUrl,
+          );
         }
         break;
     }

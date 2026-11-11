@@ -8,10 +8,19 @@ export type ChatMemberStatus =
   | "kicked"
   | (string & {});
 
+/** How Telegram should show a message. Omitted fields are Telegram's defaults (plain text, with a sound). */
+export interface SendMessageOptions {
+  parseMode?: "HTML";
+}
+
 /** The small slice of the Telegram Bot API nodbeat needs. */
 export interface TelegramClient {
   /** Rejects with TelegramForbiddenError when Telegram answers 403 (the bot was blocked or removed from the chat). */
-  sendMessage(chatId: number, text: string): Promise<void>;
+  sendMessage(
+    chatId: number,
+    text: string,
+    options?: SendMessageOptions,
+  ): Promise<void>;
   getChatMember(chatId: number, userId: number): Promise<ChatMemberStatus>;
   setWebhook(url: string, secretToken: string): Promise<void>;
 }
@@ -48,8 +57,12 @@ export function createHttpTelegramClient(
   };
 
   return {
-    sendMessage: async (chatId, text) => {
-      await call("sendMessage", { chat_id: chatId, text });
+    sendMessage: async (chatId, text, options = {}) => {
+      await call("sendMessage", {
+        chat_id: chatId,
+        text,
+        ...(options.parseMode ? { parse_mode: options.parseMode } : {}),
+      });
     },
     getChatMember: async (chatId, userId) => {
       const body = (await call("getChatMember", {

@@ -3,7 +3,11 @@ import type { Clock } from "./clock.js";
 import { formatDateTime, formatDuration } from "./format.js";
 import type { IncidentDoc } from "./incidents.js";
 import { listLinkedChats, unlinkChat } from "./linked-chats.js";
-import { TelegramForbiddenError, type TelegramClient } from "./telegram.js";
+import {
+  TelegramForbiddenError,
+  type SendMessageOptions,
+  type TelegramClient,
+} from "./telegram.js";
 import { DEFAULT_TIME_ZONE, findUserById } from "./users.js";
 
 /** An Alert waiting in the outbox. Removed once every Linked chat has it, or when it is given up on. */
@@ -15,6 +19,8 @@ export interface AlertDoc {
   incidentId: ObjectId;
   /** The message, formatted when the Alert was enqueued. */
   text: string;
+  /** How `text` is sent. Absent on Alerts enqueued before Alerts were Telegram HTML: those are plain text. */
+  options?: SendMessageOptions;
   /** Linked chats that still have to receive it. */
   chatIds: number[];
   attempts: number;
@@ -49,6 +55,8 @@ export interface AlertedMonitor {
   _id: ObjectId;
   ownerId: ObjectId;
   name: string;
+  /** The last Heartbeat's message; a Down Alert carries it. */
+  lastMessage: string | null;
 }
 
 /** Puts an Alert about `incident` in the outbox, addressed to the owner's Linked chats at this moment. */
@@ -58,6 +66,7 @@ export async function enqueueAlert(
   kind: AlertKind,
   incident: IncidentDoc,
   now: Date,
+  publicBaseUrl: string,
 ): Promise<void> {
   const [owner, chats] = await Promise.all([
     findUserById(db, monitor.ownerId),
@@ -71,7 +80,8 @@ export async function enqueueAlert(
     ownerId: monitor.ownerId,
     kind,
     incidentId: incident._id,
-    text: alertText(monitor.name, kind, incident, timeZone),
+    text: alertText(monitor, kind, incident, timeZone, publicBaseUrl),
+    options: { parseMode: "HTML" },
     chatIds: chats.map((c) => c.chatId),
     attempts: 0,
     createdAt: now,
@@ -80,21 +90,38 @@ export async function enqueueAlert(
   });
 }
 
+/** Escapes text from Users or devices for Telegram HTML. */
+const escapeTelegramHtml = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** The Alert in Telegram HTML: bold name, state, when, details, and a link to the Monitor page. */
 function alertText(
-  name: string,
+  monitor: AlertedMonitor,
   kind: AlertKind,
   incident: IncidentDoc,
   timeZone: string,
+  publicBaseUrl: string,
 ): string {
   const at = (date: Date) => `${formatDateTime(date, timeZone)} (${timeZone})`;
+  const name = `<b>${escapeTelegramHtml(monitor.name)}</b>`;
+  const url = `${publicBaseUrl}/monitors/${String(monitor._id)}`;
+  const link = `<a href="${escapeTelegramHtml(url)}">Open Monitor</a>`;
   if (kind === "down") {
-    return `🔴 ${name} is Down\nSince ${at(incident.startedAt)}`;
+    const lines = [`🔴 ${name} is Down`, `Since ${at(incident.startedAt)}`];
+    if (monitor.lastMessage) {
+      lines.push(`Last message: ${escapeTelegramHtml(monitor.lastMessage)}`);
+    }
+    return [...lines, link].join("\n");
   }
   const endedAt = incident.endedAt ?? incident.startedAt;
   const duration = formatDuration(
     (endedAt.getTime() - incident.startedAt.getTime()) / 1000,
   );
-  return `🟢 ${name} is Up again\nAt ${at(endedAt)}, after ${duration} Down`;
+  return [
+    `🟢 ${name} is Up again`,
+    `At ${at(endedAt)}, after ${duration} Down`,
+    link,
+  ].join("\n");
 }
 
 /** A Down Alert not yet delivered when its Incident closes is stale: the Up Alert says it all. */
@@ -160,7 +187,7 @@ export function createAlertDispatcher(deps: {
     const failed: number[] = [];
     for (const chatId of alert.chatIds.filter((id) => linked.has(id))) {
       try {
-        await telegram.sendMessage(chatId, alert.text);
+        await telegram.sendMessage(chatId, alert.text, alert.options ?? {});
       } catch (err) {
         if (err instanceof TelegramForbiddenError) {
           // The bot was blocked or removed: retrying can't help, and the chat is gone for every owner.

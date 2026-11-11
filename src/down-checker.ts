@@ -16,8 +16,9 @@ export function createDownChecker(deps: {
   startedAt: Date;
   lock: KeyedLock;
   pruner: LogPruner;
+  publicBaseUrl: string;
 }): () => Promise<void> {
-  const { db, clock, startedAt, lock, pruner } = deps;
+  const { db, clock, startedAt, lock, pruner, publicBaseUrl } = deps;
   return async () => {
     const now = clock.now();
     // Pre-filter with the same rule as downDeadline(), so only overdue Monitors are loaded; transition() decides.
@@ -56,7 +57,7 @@ export function createDownChecker(deps: {
         );
         if (effects.length === 0) return;
         await monitors(db).updateOne({ _id }, { $set: fields });
-        await applyEffects(db, monitor, effects, now);
+        await applyEffects(db, monitor, effects, now, publicBaseUrl);
         pruner.mark(_id);
       });
     }

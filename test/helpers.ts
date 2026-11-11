@@ -9,6 +9,7 @@ import type { Config } from "../src/config.js";
 import {
   TelegramForbiddenError,
   type ChatMemberStatus,
+  type SendMessageOptions,
   type TelegramClient,
 } from "../src/telegram.js";
 
@@ -31,6 +32,7 @@ export class FakeClock implements Clock {
 export interface SentMessage {
   chatId: number;
   text: string;
+  options: SendMessageOptions;
 }
 
 const memberKey = (chatId: number, userId: number) => `${chatId}:${userId}`;
@@ -45,14 +47,18 @@ export class RecordingTelegram implements TelegramClient {
   /** Sends to these chats fail with HTTP 403: the bot was blocked or removed. */
   readonly forbiddenChats = new Set<number>();
 
-  async sendMessage(chatId: number, text: string): Promise<void> {
+  async sendMessage(
+    chatId: number,
+    text: string,
+    options: SendMessageOptions = {},
+  ): Promise<void> {
     if (this.forbiddenChats.has(chatId)) {
       throw new TelegramForbiddenError("sendMessage");
     }
     if (this.failing || this.failingChats.has(chatId)) {
       throw new Error("telegram unavailable");
     }
-    this.sent.push({ chatId, text });
+    this.sent.push({ chatId, text, options });
   }
 
   readonly #memberStatuses = new Map<string, ChatMemberStatus>();
