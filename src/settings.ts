@@ -13,6 +13,7 @@ import {
   listLinkedChats,
   removeLinkedChat,
 } from "./linked-chats.js";
+import { SlidingWindowLimiter } from "./rate-limit.js";
 import {
   authenticate,
   isTheme,
@@ -28,16 +29,25 @@ function localPath(value: unknown): string {
   return typeof value === "string" && /^\/(?![/\\])/.test(value) ? value : "/";
 }
 
+/** Link codes a User may generate per hour. */
+const LINK_CODE_MAX = 10;
+const LINK_CODE_WINDOW_MS = 60 * 60 * 1000;
+
 export function registerSettings(
   app: FastifyInstance,
   deps: { db: Db; clock: Clock; auth: Auth },
 ): void {
   const { db, clock, auth } = deps;
+  const linkCodesPerUser = new SlidingWindowLimiter(
+    clock,
+    LINK_CODE_MAX,
+    LINK_CODE_WINDOW_MS,
+  );
 
   const settingsPage = async (
     req: FastifyRequest,
     reply: FastifyReply,
-    options: { passwordError?: string } = {},
+    options: { passwordError?: string; linkCodeError?: string } = {},
   ) => {
     const user = req.user!;
     const csrf = auth.csrfToken(req, reply);
@@ -91,6 +101,11 @@ export function registerSettings(
                 group). The code works once and expires at
                 ${formatDateTime(code.expiresAt, user.timeZone)}.
               </p>`
+            : ""
+        }
+        ${
+          options.linkCodeError
+            ? html`<p class="error">${options.linkCodeError}</p>`
             : ""
         }
         <form method="post" action="/settings/link-code">
@@ -225,6 +240,12 @@ export function registerSettings(
     "/settings/link-code",
     { preHandler: requireUser },
     async (req, reply) => {
+      if (!linkCodesPerUser.tryAcquire(String(req.user!._id))) {
+        reply.code(429);
+        return settingsPage(req, reply, {
+          linkCodeError: "Too many Link codes. Try again later.",
+        });
+      }
       await createLinkCode(db, req.user!._id, clock.now());
       return reply.redirect("/settings", 303);
     },

@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- Backups are encrypted with `age` on the VPS before upload (`nodbeat-*.archive.gz.age`); no plaintext archive touches the disk. `scripts/backup.sh` now needs `BACKUP_AGE_RECIPIENT` and refuses to run without it. See `docs/deploy.md` step 8 for the key pair, restoring and deleting old unencrypted backups.
+- Bot replies never show an email: in a group linked by several Users, `/status` shows one numbered "Account" section per User.
+- In a group, `/status` and `/unlink` answer only its Telegram admins; everyone else (and anyone, when Telegram can't say who is an admin) gets "Only group admins can use this command." `/start` stays open to any member.
+- When Telegram answers `403` to an Alert (the bot was blocked or removed from the chat), that Linked chat is unlinked instead of retried.
+- The Monitor limit is checked and the Monitor created under a per-User lock, so parallel creates can't go past it.
+- A User can generate at most 10 Link codes per hour; more get `429` and "Too many Link codes. Try again later."
+- CI fails when `pnpm audit --prod` finds a high or critical vulnerability in a production dependency.
+
 ## [0.20.0] - 2026-11-11
 
 ### Added

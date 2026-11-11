@@ -1,7 +1,27 @@
+/** A Telegram chat member's status, as `getChatMember` reports it. */
+export type ChatMemberStatus =
+  | "creator"
+  | "administrator"
+  | "member"
+  | "restricted"
+  | "left"
+  | "kicked"
+  | (string & {});
+
 /** The small slice of the Telegram Bot API nodbeat needs. */
 export interface TelegramClient {
+  /** Rejects with TelegramForbiddenError when Telegram answers 403 (the bot was blocked or removed from the chat). */
   sendMessage(chatId: number, text: string): Promise<void>;
+  getChatMember(chatId: number, userId: number): Promise<ChatMemberStatus>;
   setWebhook(url: string, secretToken: string): Promise<void>;
+}
+
+/** Telegram answered HTTP 403: the bot can no longer write to that chat. */
+export class TelegramForbiddenError extends Error {
+  constructor(method: string) {
+    super(`Telegram ${method} failed: HTTP 403`);
+    this.name = "TelegramForbiddenError";
+  }
 }
 
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -10,7 +30,7 @@ export function createHttpTelegramClient(
   botToken: string,
   fetchFn: typeof fetch = fetch,
 ): TelegramClient {
-  const call = async (method: string, body: unknown): Promise<void> => {
+  const call = async (method: string, body: unknown): Promise<unknown> => {
     const res = await fetchFn(
       `https://api.telegram.org/bot${botToken}/${method}`,
       {
@@ -20,15 +40,30 @@ export function createHttpTelegramClient(
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       },
     );
+    if (res.status === 403) throw new TelegramForbiddenError(method);
     if (!res.ok) {
       throw new Error(`Telegram ${method} failed: HTTP ${res.status}`);
     }
+    return res.json();
   };
 
   return {
-    sendMessage: (chatId, text) =>
-      call("sendMessage", { chat_id: chatId, text }),
-    setWebhook: (url, secretToken) =>
-      call("setWebhook", { url, secret_token: secretToken }),
+    sendMessage: async (chatId, text) => {
+      await call("sendMessage", { chat_id: chatId, text });
+    },
+    getChatMember: async (chatId, userId) => {
+      const body = (await call("getChatMember", {
+        chat_id: chatId,
+        user_id: userId,
+      })) as { result?: { status?: unknown } };
+      const status = body.result?.status;
+      if (typeof status !== "string") {
+        throw new Error("Telegram getChatMember answered without a status");
+      }
+      return status;
+    },
+    setWebhook: async (url, secretToken) => {
+      await call("setWebhook", { url, secret_token: secretToken });
+    },
   };
 }

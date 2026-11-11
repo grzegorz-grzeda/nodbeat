@@ -2,8 +2,8 @@ import { ObjectId, type Db } from "mongodb";
 import type { Clock } from "./clock.js";
 import { formatDateTime, formatDuration } from "./format.js";
 import type { IncidentDoc } from "./incidents.js";
-import { listLinkedChats } from "./linked-chats.js";
-import type { TelegramClient } from "./telegram.js";
+import { listLinkedChats, unlinkChat } from "./linked-chats.js";
+import { TelegramForbiddenError, type TelegramClient } from "./telegram.js";
 import { DEFAULT_TIME_ZONE, findUserById } from "./users.js";
 
 /** An Alert waiting in the outbox. Removed once every Linked chat has it, or when it is given up on. */
@@ -161,8 +161,17 @@ export function createAlertDispatcher(deps: {
     for (const chatId of alert.chatIds.filter((id) => linked.has(id))) {
       try {
         await telegram.sendMessage(chatId, alert.text);
-      } catch {
-        failed.push(chatId);
+      } catch (err) {
+        if (err instanceof TelegramForbiddenError) {
+          // The bot was blocked or removed: retrying can't help, and the chat is gone for every owner.
+          await unlinkChat(db, chatId);
+          log.warn(
+            { chatId, monitorId: String(alert.monitorId) },
+            "Linked chat unlinked: Telegram answered 403 (bot blocked or removed)",
+          );
+        } else {
+          failed.push(chatId);
+        }
       }
     }
     const attempts = alert.attempts + 1;

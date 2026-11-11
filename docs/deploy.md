@@ -123,22 +123,38 @@ Log in at `https://nodbeat.g2labs.pl`.
 
 ## 8. Nightly backup
 
-M0 has no automated backups. `scripts/backup.sh` runs `mongodump` without the raw `heartbeats` collection (they expire after 7 days anyway) and copies a gzipped archive to Google Drive with `rclone`, removing its own archives older than 30 days.
+M0 has no automated backups. `scripts/backup.sh` runs `mongodump` without the raw `heartbeats` collection (they expire after 7 days anyway), encrypts the gzipped archive with [`age`](https://age-encryption.org) and streams it to Google Drive with `rclone` as `nodbeat-<UTC time>.archive.gz.age`, removing its own archives older than 30 days. No plaintext archive touches the VPS disk, and Google Drive only ever holds ciphertext. The VPS holds only the public key, so it can write backups but not read them.
+
+**Key pair, off the VPS.** On your own machine (not the VPS), install `age` and generate the key:
+
+```sh
+age-keygen -o nodbeat-backup-key.txt
+```
+
+It prints the public key (`Public key: age1...`). Keep `nodbeat-backup-key.txt` (the private key) somewhere safe off the VPS, e.g. a password manager, plus an offline copy: without it no backup can be restored.
 
 On the VPS host:
 
-1. Install the [MongoDB Database Tools](https://www.mongodb.com/docs/database-tools/installation/) (`mongodump`) and [rclone](https://rclone.org/install/).
-2. `rclone config` → new remote named `gdrive`, type _Google Drive_, scope `drive.file`. On a headless VPS, use the `rclone authorize "drive"` flow from a machine with a browser.
-3. Try it once: `~/nodbeat/scripts/backup.sh`, then `rclone ls gdrive:nodbeat-backups`.
-4. `crontab -e`:
+1. Install the [MongoDB Database Tools](https://www.mongodb.com/docs/database-tools/installation/) (`mongodump`), `age` (`sudo apt install age`) and [rclone](https://rclone.org/install/).
+2. Put only the public key into `~/nodbeat/.env`: `BACKUP_AGE_RECIPIENT=age1...`. The script refuses to run without it.
+3. `rclone config` → new remote named `gdrive`, type _Google Drive_, scope `drive.file`. On a headless VPS, use the `rclone authorize "drive"` flow from a machine with a browser.
+4. Try it once: `~/nodbeat/scripts/backup.sh`, then `rclone ls gdrive:nodbeat-backups`.
+5. `crontab -e`:
 
    ```cron
    30 3 * * * ~/nodbeat/scripts/backup.sh >> ~/nodbeat-backup.log 2>&1
    ```
 
-The script reads `MONGODB_URI` from `~/nodbeat/.env`. Override with env vars: `RCLONE_REMOTE` (default `gdrive:nodbeat-backups`), `RETENTION_DAYS` (default `30`), `ENV_FILE`.
+The script reads `MONGODB_URI` and `BACKUP_AGE_RECIPIENT` from `~/nodbeat/.env` unless they are set in the environment. Override with env vars: `RCLONE_REMOTE` (default `gdrive:nodbeat-backups`), `RETENTION_DAYS` (default `30`), `ENV_FILE`. The upload goes to `partial-<name>` first and is renamed only when the whole pipeline succeeded; a failed run removes it.
 
-To restore: `rclone copy gdrive:nodbeat-backups/<file> .` then `mongorestore --uri="$MONGODB_URI" --archive=<file> --gzip --drop`.
+To restore, on a machine that has the private key:
+
+```sh
+rclone copy gdrive:nodbeat-backups/<file> .
+age -d -i nodbeat-backup-key.txt <file> | mongorestore --uri="$MONGODB_URI" --archive --gzip --drop
+```
+
+**Upgrading from unencrypted backups.** Older backups are named `nodbeat-*.archive.gz` (no `.age`) and are no longer removed by retention. Delete them once the first encrypted backup is in place: `rclone delete gdrive:nodbeat-backups --include "nodbeat-*.archive.gz"`.
 
 Optionally signal a second healthchecks.io check at the end of the cron line (`&& curl -fsS -m 10 --retry 3 <check-url>`) so a silently failing backup gets noticed.
 

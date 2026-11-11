@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildTestApp, createUser, login, type Browser } from "./helpers.js";
+import {
+  buildTestApp,
+  createUser,
+  csrfTokenIn,
+  login,
+  type Browser,
+} from "./helpers.js";
 
 async function loggedIn(email = "me@example.com") {
   const ctx = await buildTestApp();
@@ -131,6 +137,36 @@ describe("creating a Monitor", () => {
 
     expect(res.statusCode).toBe(400);
     expect(res.body).toContain("You can have at most 50 Monitors");
+  });
+
+  it("creates only one Monitor from parallel requests when there is room for one", async () => {
+    const { browser } = await loggedIn();
+    for (let i = 0; i < 49; i++) {
+      await createMonitor(browser, {
+        name: `m${i}`,
+        interval: "60",
+        intervalUnit: "s",
+      });
+    }
+    const page = await browser.get("/monitors/new");
+    const csrf = csrfTokenIn(page.body)!;
+
+    const results = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        browser.submit(
+          "/monitors/new",
+          "/monitors",
+          { name: `parallel${i}`, interval: "60", intervalUnit: "s" },
+          { csrf },
+        ),
+      ),
+    );
+
+    expect(results.map((r) => r.statusCode).sort()).toEqual([
+      303, 400, 400, 400, 400,
+    ]);
+    const dashboard = await browser.get("/");
+    expect(dashboard.body.match(/parallel\d/g)).toHaveLength(1);
   });
 
   it("requires login", async () => {

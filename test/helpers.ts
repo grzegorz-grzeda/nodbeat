@@ -6,7 +6,11 @@ import { runCli } from "../src/cli.js";
 import type { BuildInfo } from "../src/build-info.js";
 import type { Clock } from "../src/clock.js";
 import type { Config } from "../src/config.js";
-import type { TelegramClient } from "../src/telegram.js";
+import {
+  TelegramForbiddenError,
+  type ChatMemberStatus,
+  type TelegramClient,
+} from "../src/telegram.js";
 
 export class FakeClock implements Clock {
   #now: Date;
@@ -29,6 +33,8 @@ export interface SentMessage {
   text: string;
 }
 
+const memberKey = (chatId: number, userId: number) => `${chatId}:${userId}`;
+
 export class RecordingTelegram implements TelegramClient {
   readonly sent: SentMessage[] = [];
   /** Every send fails. */
@@ -36,11 +42,41 @@ export class RecordingTelegram implements TelegramClient {
   /** Sends to these chats fail, e.g. a group the bot was removed from. */
   readonly failingChats = new Set<number>();
 
+  /** Sends to these chats fail with HTTP 403: the bot was blocked or removed. */
+  readonly forbiddenChats = new Set<number>();
+
   async sendMessage(chatId: number, text: string): Promise<void> {
+    if (this.forbiddenChats.has(chatId)) {
+      throw new TelegramForbiddenError("sendMessage");
+    }
     if (this.failing || this.failingChats.has(chatId)) {
       throw new Error("telegram unavailable");
     }
     this.sent.push({ chatId, text });
+  }
+
+  readonly #memberStatuses = new Map<string, ChatMemberStatus>();
+
+  /** `getChatMember` fails for every user in these chats, e.g. Telegram is down. */
+  readonly failingMemberChats = new Set<number>();
+
+  /** What `getChatMember` answers for this user in this chat; "member" unless set. */
+  setChatMemberStatus(
+    chatId: number,
+    userId: number,
+    status: ChatMemberStatus,
+  ): void {
+    this.#memberStatuses.set(memberKey(chatId, userId), status);
+  }
+
+  async getChatMember(
+    chatId: number,
+    userId: number,
+  ): Promise<ChatMemberStatus> {
+    if (this.failingMemberChats.has(chatId)) {
+      throw new Error("telegram unavailable");
+    }
+    return this.#memberStatuses.get(memberKey(chatId, userId)) ?? "member";
   }
 
   readonly webhooks: Array<{ url: string; secretToken: string }> = [];
@@ -152,6 +188,10 @@ export async function createUser(
   return { exitCode, output };
 }
 
+/** The CSRF token of the first form in this page, if any. */
+export const csrfTokenIn = (body: string): string | undefined =>
+  /name="_csrf" value="([^"]+)"/.exec(body)?.[1];
+
 type InjectResponse = Awaited<ReturnType<App["inject"]>>;
 
 /** A cookie-keeping client that fills in CSRF tokens from the last page it saw. */
@@ -215,7 +255,7 @@ export class Browser {
       if (expired) this.cookies.delete(c.name);
       else this.cookies.set(c.name, c.value);
     }
-    const token = /name="_csrf" value="([^"]+)"/.exec(res.body)?.[1];
+    const token = csrfTokenIn(res.body);
     if (token) this.#csrf = token;
     this.lastResponse = res;
     return res;

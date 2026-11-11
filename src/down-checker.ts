@@ -2,7 +2,7 @@ import type { Db } from "mongodb";
 import type { Clock } from "./clock.js";
 import { applyEffects } from "./effects.js";
 import type { LogPruner } from "./log-pruner.js";
-import type { MonitorLock } from "./monitor-lock.js";
+import type { KeyedLock } from "./keyed-lock.js";
 import { transition } from "./monitor-state.js";
 import { monitors } from "./monitors.js";
 
@@ -14,7 +14,7 @@ export function createDownChecker(deps: {
   db: Db;
   clock: Clock;
   startedAt: Date;
-  lock: MonitorLock;
+  lock: KeyedLock;
   pruner: LogPruner;
 }): () => Promise<void> {
   const { db, clock, startedAt, lock, pruner } = deps;
