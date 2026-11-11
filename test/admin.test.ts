@@ -217,4 +217,60 @@ describe("Admin page", () => {
 
     expect(body).not.toContain("marker-");
   });
+
+  it("shows how Heartbeats arrive", async () => {
+    const ctx = await withUsers();
+    const a = await createMonitor(ctx.user, "A");
+    const b = await createMonitor(ctx.admin, "B");
+    const send = async (
+      hb: string,
+      method: "GET" | "POST",
+      userAgent: string,
+      msg = "",
+    ) => {
+      ctx.clock.advance(1 * SEC); // One Heartbeat per Monitor per second.
+      const res = await ctx.app.inject({
+        method,
+        url: method === "GET" && msg ? `${hb}?msg=${msg}` : hb,
+        headers: { "user-agent": userAgent, "content-type": "text/plain" },
+        ...(method === "POST" ? { payload: msg } : {}),
+      });
+      expect(res.statusCode).toBe(200);
+    };
+
+    await send(a.hb, "GET", "curl/8.5.0", "too-old");
+    ctx.clock.advance(8 * DAY);
+    await send(a.hb, "GET", "curl/8.5.0", "marker-message-7f3a");
+    await send(a.hb, "POST", "ESP32HTTPClient", "temp=21");
+    await send(b.hb, "POST", "python-requests/2.32.3");
+    await send(
+      b.hb,
+      "GET",
+      "Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0",
+    );
+    await send(b.hb, "GET", "");
+
+    const body = (await ctx.admin.get("/admin")).body;
+    expect(stat(body, "Heartbeats (7 days)")).toBe(5);
+    expect(stat(body, "GET")).toBe(3);
+    expect(share(body, "GET")).toBe("60%");
+    expect(stat(body, "POST")).toBe(2);
+    expect(share(body, "POST")).toBe("40%");
+    expect(stat(body, "With a message")).toBe(2);
+    expect(share(body, "With a message")).toBe("40%");
+
+    expect(stat(body, "curl")).toBe(1);
+    expect(share(body, "curl")).toBe("20%");
+    expect(stat(body, "wget")).toBe(0);
+    expect(stat(body, "Python")).toBe(1);
+    expect(stat(body, "ESP32/Arduino")).toBe(1);
+    expect(stat(body, "Browser")).toBe(1);
+    expect(stat(body, "Other")).toBe(0);
+    expect(stat(body, "None")).toBe(1);
+
+    expect(body).not.toContain("marker-");
+    expect(body).not.toContain("curl/8.5.0");
+    expect(body).not.toContain("ESP32HTTPClient");
+    expect(body).not.toContain("Mozilla/");
+  });
 });

@@ -15,6 +15,9 @@ export interface Limits {
 /** Longest Heartbeat message kept, in characters. Instance-wide. */
 export const MAX_HEARTBEAT_MESSAGE_LENGTH = 200;
 
+/** Longest Heartbeat User-Agent kept, in characters. Instance-wide. */
+export const MAX_USER_AGENT_LENGTH = 200;
+
 const DAY_SEC = 24 * 60 * 60;
 
 const DEFAULT_LIMITS: Limits = {
