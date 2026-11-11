@@ -1,7 +1,7 @@
 # 0029: Richer Alerts
 
 Spec: 0005
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** Alerts are formatted in Telegram HTML with the Monitor name in bold, a Down Alert carries the last Heartbeat message, and every Alert links to its Monitor page.
 

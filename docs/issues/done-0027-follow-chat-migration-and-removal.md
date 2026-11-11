@@ -1,7 +1,7 @@
 # 0027: Follow supergroup migration and bot removal
 
 Spec: 0005
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** A Linked chat keeps getting Alerts after Telegram upgrades the group to a supergroup, and a group that removed the bot is unlinked straight away.
 

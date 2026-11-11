@@ -1,6 +1,6 @@
 # Spec 0005: Telegram bot improvements
 
-Status: ready-for-agent
+Status: resolved
 
 Note: stories 9–12 (Alert chats, issue 0031) are wontfix here and moved to spec 0009 (issue 0047). This spec is done once issues 0027–0030 are done.
 

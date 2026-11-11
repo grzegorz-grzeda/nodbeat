@@ -1,7 +1,7 @@
 # 0030: Silent Up Alerts
 
 Spec: 0005
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** Up Alerts arrive without a sound, so a recovery doesn't wake the User; Down Alerts still notify.
 

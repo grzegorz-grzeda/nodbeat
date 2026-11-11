@@ -1,7 +1,7 @@
 # 0028: Bot setup at startup
 
 Spec: 0005
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** nodbeat sets the bot's command menu and limits the webhook to the updates it reads when it starts, so nothing is set up by hand in BotFather.
 
