@@ -1,6 +1,6 @@
 # Spec 0010: Schedules
 
-Status: ready-for-agent
+Status: resolved
 
 Blocked by: spec 0007 (Start and Fail signals), so a scheduled job can use both
 

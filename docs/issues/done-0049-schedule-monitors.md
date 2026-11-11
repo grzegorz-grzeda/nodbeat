@@ -1,7 +1,7 @@
 # 0049: Schedule Monitors
 
 Spec: 0010
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** A User gives a Monitor a Schedule (5-field cron expression in a time zone chosen per Monitor) instead of an Interval. It goes Down when the Heartbeat for a scheduled time hasn't arrived by that time + Grace period, and stays Up between runs, so a weekday job is quiet at the weekend.
 

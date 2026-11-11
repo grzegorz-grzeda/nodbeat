@@ -1,7 +1,7 @@
 # 0048: Next expected Heartbeat
 
 Spec: 0010
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** The Monitor page and Dashboard show "next expected by HH:MM" for every Monitor that is Up or New. One rule decides when a Monitor is next due, and both this display and Down detection use it, so a Schedule can later be added in one place.
 
