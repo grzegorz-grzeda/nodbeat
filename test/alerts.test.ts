@@ -84,8 +84,11 @@ async function goDown(ctx: TestContext, hb: string) {
   await ctx.app.tick();
 }
 
+/** An Alert's text as the chat shows it: Telegram HTML tags dropped. */
+const shown = (text: string) => text.replace(/<[^>]*>/g, "");
+
 const firstLines = (ctx: TestContext) =>
-  ctx.telegram.sent.map((s) => s.text.split("\n")[0]);
+  ctx.telegram.sent.map((s) => shown(s.text).split("\n")[0]);
 
 describe("Alerts", () => {
   it("sends a Down Alert to every Linked chat, then an Up Alert with the Incident duration", async () => {
@@ -101,7 +104,7 @@ describe("Alerts", () => {
       PRIVATE_CHAT.id,
     ]);
     for (const s of ctx.telegram.sent) {
-      expect(s.text).toContain("Garden sensor is Down");
+      expect(shown(s.text)).toContain("Garden sensor is Down");
       expect(s.text).toContain("2026-01-01 01:01:30");
     }
     ctx.telegram.sent.length = 0;
@@ -111,7 +114,7 @@ describe("Alerts", () => {
     await ctx.app.tick();
     expect(ctx.telegram.sent).toHaveLength(2);
     for (const s of ctx.telegram.sent) {
-      expect(s.text).toContain("Garden sensor is Up");
+      expect(shown(s.text)).toContain("Garden sensor is Up");
       expect(s.text).toContain("31 s");
       expect(s.text).toContain("2026-01-01 01:02:01");
     }
@@ -358,7 +361,9 @@ describe("Alerts", () => {
     await ctx.app.tick();
 
     expect(ctx.telegram.sent).toHaveLength(1);
-    expect(ctx.telegram.sent[0]!.text).toContain("Garden sensor is Up again");
+    expect(shown(ctx.telegram.sent[0]!.text)).toContain(
+      "Garden sensor is Up again",
+    );
     expect(ctx.telegram.sent[0]!.text).toContain("11 s Down");
   });
 
@@ -375,7 +380,9 @@ describe("Alerts", () => {
     await app.tick();
 
     expect(ctx.telegram.sent).toHaveLength(1);
-    expect(ctx.telegram.sent[0]!.text).toContain("Garden sensor is Down");
+    expect(shown(ctx.telegram.sent[0]!.text)).toContain(
+      "Garden sensor is Down",
+    );
   });
 
   it("drops a deleted Monitor's pending Alerts", async () => {
@@ -391,5 +398,120 @@ describe("Alerts", () => {
     await ctx.app.tick();
 
     expect(ctx.telegram.sent).toEqual([]);
+  });
+
+  describe("Alert text", () => {
+    it("sends a Down Alert in Telegram HTML with the bold name, the last Heartbeat message and a link", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      await ctx.app.inject({
+        method: "GET",
+        url: `${m.hb}?msg=battery%203.1V`,
+      });
+      ctx.clock.advance(91 * SEC);
+      await ctx.app.tick();
+
+      expect(ctx.telegram.sent).toHaveLength(1);
+      const [down] = ctx.telegram.sent;
+      expect(down!.options).toEqual({ parseMode: "HTML" });
+      expect(down!.text).toBe(
+        "🔴 <b>Garden sensor</b> is Down\n" +
+          "Since 2026-01-01 01:01:30 (Europe/Warsaw)\n" +
+          "Last message: battery 3.1V\n" +
+          `<a href="https://nodbeat.test${m.page}">Open Monitor</a>`,
+      );
+    });
+
+    it("leaves the message line out of a Down Alert when the last Heartbeat had none", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      await goDown(ctx, m.hb);
+
+      expect(ctx.telegram.sent[0]!.text).not.toContain("Last message");
+    });
+
+    it("sends an Up Alert in Telegram HTML with the bold name, the Down duration and a link", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      await goDown(ctx, m.hb);
+      ctx.telegram.sent.length = 0;
+      ctx.clock.advance(30 * SEC);
+      await ctx.app.inject({ method: "GET", url: `${m.hb}?msg=back` });
+      await ctx.app.tick();
+
+      expect(ctx.telegram.sent).toHaveLength(1);
+      const [up] = ctx.telegram.sent;
+      expect(up!.options).toEqual({ parseMode: "HTML" });
+      expect(up!.text).toBe(
+        "🟢 <b>Garden sensor</b> is Up again\n" +
+          "At 2026-01-01 01:02:01 (Europe/Warsaw), after 31 s Down\n" +
+          `<a href="https://nodbeat.test${m.page}">Open Monitor</a>`,
+      );
+    });
+
+    it("escapes the Monitor name and the Heartbeat message for Telegram HTML", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser, "<b>&co</b>");
+      await ctx.app.inject({
+        method: "GET",
+        url: `${m.hb}?msg=${encodeURIComponent("v < 3 & t > 40")}`,
+      });
+      ctx.clock.advance(91 * SEC);
+      await ctx.app.tick();
+
+      const text = ctx.telegram.sent[0]!.text;
+      expect(text).toContain("🔴 <b>&lt;b&gt;&amp;co&lt;/b&gt;</b> is Down");
+      expect(text).toContain("Last message: v &lt; 3 &amp; t &gt; 40");
+    });
+
+    it("keeps the text built when the Alert was enqueued", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      ctx.telegram.failing = true;
+      await goDown(ctx, m.hb);
+      ctx.telegram.failing = false;
+      await ctx.browser.submit(`${m.page}/edit`, `${m.page}/edit`, {
+        name: "Renamed",
+        interval: "60",
+        intervalUnit: "s",
+        grace: "30",
+        graceUnit: "s",
+      });
+
+      ctx.clock.advance(30 * SEC);
+      await ctx.app.tick();
+
+      expect(ctx.telegram.sent).toHaveLength(1);
+      expect(ctx.telegram.sent[0]!.text).toContain("<b>Garden sensor</b>");
+    });
+
+    it("sends bot command replies as plain text", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      await ctx.app.inject({
+        method: "POST",
+        url: "/telegram/webhook",
+        headers: {
+          "x-telegram-bot-api-secret-token": testConfig.telegramWebhookSecret,
+        },
+        payload: {
+          update_id: ++updateId,
+          message: {
+            message_id: updateId,
+            chat: PRIVATE_CHAT,
+            date: 0,
+            text: "/status",
+          },
+        },
+      });
+
+      expect(ctx.telegram.sent).toHaveLength(1);
+      expect(ctx.telegram.sent[0]!.options).toEqual({});
+    });
   });
 });
