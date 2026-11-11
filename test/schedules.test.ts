@@ -42,7 +42,7 @@ async function createScheduled(
 }
 
 describe("Schedule Monitors", () => {
-  it("is Up after the 02:00 run's Heartbeat and Down at 02:00 + Grace period the next day", async () => {
+  it("is Up after the Heartbeat for 02:00 and Down at 02:00 + Grace period the next day", async () => {
     const { app, browser, clock } = await loggedIn();
     const m = await createScheduled(browser, {
       cron: "0 2 * * *",
@@ -54,7 +54,7 @@ describe("Schedule Monitors", () => {
     await app.inject({ method: "GET", url: m.hb });
     expect(await stateOf(browser, m.page)).toBe("Up");
 
-    // Next run: 2026-01-02 02:00, due by 02:30.
+    // Next scheduled time: 2026-01-02 02:00, due by 02:30.
     clock.advance(DAY + 29 * MIN - SEC);
     await app.tick();
     expect(await stateOf(browser, m.page)).toBe("Up");
@@ -65,7 +65,7 @@ describe("Schedule Monitors", () => {
     expect((await browser.get(m.page)).body).toContain("2026-01-02 02:30:00");
   });
 
-  it("counts a Heartbeat at 01:58 for the 02:00 run", async () => {
+  it("counts a Heartbeat at 01:58 for the 02:00 scheduled time", async () => {
     const { app, browser, clock } = await loggedIn();
     const m = await createScheduled(browser, {
       cron: "0 2 * * *",
@@ -76,12 +76,69 @@ describe("Schedule Monitors", () => {
     clock.advance(1 * HOUR + 58 * MIN);
     await app.inject({ method: "GET", url: m.hb });
 
-    // Today's 02:00 run is done: the next one is tomorrow's, due by 02:30.
+    // It counts for today's 02:00: the next scheduled time is tomorrow's, due by 02:30.
     expect(await nextExpectedOnPage(browser, m.page)).toBe("2026-01-02 02:30");
     clock.advance(DAY + 32 * MIN - SEC);
     await app.tick();
     expect(await stateOf(browser, m.page)).toBe("Up");
     clock.advance(SEC);
+    await app.tick();
+    expect(await stateOf(browser, m.page)).toBe("Down");
+  });
+
+  it("counts a rerun after a missed scheduled time for that one, not the next", async () => {
+    const { app, browser, clock } = await loggedIn();
+    const m = await createScheduled(browser, {
+      cron: "0 2 * * *",
+      timeZone: "UTC",
+      grace: "30",
+      graceUnit: "m",
+    });
+    clock.advance(2 * HOUR);
+    await app.inject({ method: "GET", url: m.hb });
+    // Friday 2026-01-02 02:00 is missed: Down at 02:30.
+    clock.advance(DAY + 30 * MIN);
+    await app.tick();
+    expect(await stateOf(browser, m.page)).toBe("Down");
+    // Rerun by hand at 16:00: Up, and Saturday's 02:00 Heartbeat is still expected.
+    clock.advance(13 * HOUR + 30 * MIN);
+    await app.inject({ method: "GET", url: m.hb });
+    expect(await stateOf(browser, m.page)).toBe("Up");
+    expect(await nextExpectedOnPage(browser, m.page)).toBe("2026-01-03 02:30");
+    clock.advance(10 * HOUR + 30 * MIN - SEC);
+    await app.tick();
+    expect(await stateOf(browser, m.page)).toBe("Up");
+    clock.advance(SEC);
+    await app.tick();
+    expect(await stateOf(browser, m.page)).toBe("Down");
+    expect((await browser.get(m.page)).body).toContain("2026-01-03 02:30:00");
+  });
+
+  it("counts a rerun hours after a scheduled time for that one", async () => {
+    const { app, browser, clock } = await loggedIn();
+    const m = await createScheduled(browser, {
+      cron: "0 2 * * *",
+      timeZone: "UTC",
+      grace: "30",
+      graceUnit: "m",
+    });
+    // A rerun at 10:00 of the 02:00 job counts for 02:00.
+    clock.advance(10 * HOUR);
+    await app.inject({ method: "GET", url: m.hb });
+    expect(await nextExpectedOnPage(browser, m.page)).toBe("2026-01-02 02:30");
+  });
+
+  it("with no Grace period, waits for the next scheduled time after an on-time Heartbeat", async () => {
+    const { app, browser, clock } = await loggedIn();
+    const m = await createScheduled(browser, {
+      cron: "0 2 * * *",
+      timeZone: "UTC",
+      grace: "0",
+    });
+    clock.advance(2 * HOUR + 30 * SEC);
+    await app.inject({ method: "GET", url: m.hb });
+    expect(await nextExpectedOnPage(browser, m.page)).toBe("2026-01-02 02:00");
+    clock.advance(DAY - 30 * SEC);
     await app.tick();
     expect(await stateOf(browser, m.page)).toBe("Down");
   });
@@ -118,7 +175,7 @@ describe("Schedule Monitors", () => {
     // Friday 2026-03-27 12:00 UTC; DST starts on Sunday 29 March.
     await jumpTo(Date.UTC(2026, 2, 27, 12));
     expect(await preview(browser, "0 2 * * *", "Europe/Warsaw")).toEqual({
-      // 02:00 doesn't exist on 29 March: that run is at 03:00.
+      // 02:00 doesn't exist on 29 March: that scheduled time is at 03:00.
       times: ["2026-03-28 02:00", "2026-03-29 03:00", "2026-03-30 02:00"],
     });
     const m = await createScheduled(browser, {
@@ -131,7 +188,7 @@ describe("Schedule Monitors", () => {
       /Schedule: <code>0 2 \* \* \*<\/code>\s*\(Europe\/Warsaw\)/,
     );
 
-    // Each day's run (01:00 UTC before, 00:00 UTC after the change) is the only one: the Monitor stays Up.
+    // Each day's scheduled time (01:00 UTC before, 00:00 UTC after the change) is the only one: the Monitor stays Up.
     for (const runUtc of [
       Date.UTC(2026, 2, 28, 1),
       Date.UTC(2026, 2, 29, 1),
@@ -152,12 +209,12 @@ describe("Schedule Monitors", () => {
     });
     clock.advance(Date.UTC(2026, 9, 25, 0, 1) - clock.now().getTime());
     await app.inject({ method: "GET", url: m.hb });
-    // The repeated 02:00 hour in winter time is no second run.
+    // The repeated 02:00 hour in winter time is no second scheduled time.
     clock.advance(Date.UTC(2026, 9, 25, 1, 31) - clock.now().getTime());
     await app.tick();
     expect(await stateOf(browser, m.page)).toBe("Up");
     expect(await nextExpectedOnPage(browser, m.page)).toBe("2026-10-26 02:30");
-    // The 26 October run (01:00 UTC) is missed: Down at 01:30 UTC.
+    // The 26 October scheduled time (01:00 UTC) is missed: Down at 01:30 UTC.
     clock.advance(Date.UTC(2026, 9, 26, 1, 30) - SEC - clock.now().getTime());
     await app.tick();
     expect(await stateOf(browser, m.page)).toBe("Up");
@@ -174,11 +231,11 @@ describe("Schedule Monitors", () => {
       grace: "10",
       graceUnit: "m",
     });
-    // New: the first run after creation, 00:15 UTC, + 10 min = 01:25 in Warsaw.
+    // New: the first scheduled time after creation, 00:15 UTC, + 10 min = 01:25 in Warsaw.
     expect(await nextExpectedOnPage(browser, m.page)).toBe("01:25");
     clock.advance(16 * MIN);
     await app.inject({ method: "GET", url: m.hb });
-    // Next run 06:15 UTC + 10 min = 07:25 in Warsaw.
+    // Next scheduled time 06:15 UTC + 10 min = 07:25 in Warsaw.
     expect(await nextExpectedOnPage(browser, m.page)).toBe("07:25");
     clock.advance(6 * HOUR + 9 * MIN - SEC);
     await app.tick();
@@ -203,10 +260,10 @@ describe("Schedule Monitors", () => {
       ["0 0 ? * *", "invalid day of month field: ?"],
       ["61 * * * *", "Schedule is not a valid cron expression"],
       ["0 0 * FOO *", "Schedule is not a valid cron expression"],
-      ["0 0 30 2 *", "Schedule never runs."],
+      ["0 0 30 2 *", "Schedule has no scheduled times."],
       [
         "* * * * *",
-        "Schedule runs too often: its scheduled times must be at least 5 min apart, and some are 1 min apart.",
+        "Schedule fires too often: its scheduled times must be at least 5 min apart, and some are 1 min apart.",
       ],
       ["0,2 * * * *", "some are 2 min apart"],
     ];
@@ -238,13 +295,13 @@ describe("Schedule Monitors", () => {
     ).toEqual({
       times: ["2026-01-01 08:30", "2026-01-01 13:30", "2026-01-01 18:30"],
     });
-    // A restricted day of month and day of week match either, as in cron.
+    // A restricted day of month and day of week match either, as in crontab.
     expect(await preview(browser, "0 0 3 * SUN", "UTC")).toEqual({
       times: ["2026-01-03 00:00", "2026-01-04 00:00", "2026-01-11 00:00"],
     });
     expect(await preview(browser, "* * * * *", "UTC")).toEqual({
       errors: [
-        "Schedule runs too often: its scheduled times must be at least 5 min apart, and some are 1 min apart.",
+        "Schedule fires too often: its scheduled times must be at least 5 min apart, and some are 1 min apart.",
       ],
     });
   });
@@ -255,9 +312,9 @@ describe("Schedule Monitors", () => {
     expect(form).toContain('<option value="Europe/Warsaw" selected');
     expect(form).toContain('id="schedule-preview"');
     expect(form).toMatch(
-      /<script src="\/assets\/schedule\.js\?v=[^"]+" defer>/,
+      /<script src="\/assets\/monitor-form\.js\?v=[^"]+" defer>/,
     );
-    const js = await browser.get("/assets/schedule.js");
+    const js = await browser.get("/assets/monitor-form.js");
     expect(js.statusCode).toBe(200);
     expect(js.body).toContain("/monitors/schedule-preview");
 
@@ -319,7 +376,7 @@ describe("Schedule Monitors", () => {
     expect((await onlyDashboardMonitor(browser)).uptime7dText).toBe(
       before.uptime7dText,
     );
-    // 01:15 now; the 02:00 run is due by 02:30.
+    // 01:15 now; the Heartbeat for 02:00 is due by 02:30.
     expect(await nextExpectedOnPage(browser, page)).toBe("02:30");
     const editForm = (await browser.get(`${page}/edit`)).body;
     expect(editForm).toMatch(/value="schedule"\s+checked/);
@@ -356,7 +413,7 @@ describe("Schedule Monitors", () => {
   });
 });
 
-/** The form's Schedule preview, as `assets/schedule.js` asks for it. */
+/** The form's Schedule preview, as `assets/monitor-form.js` asks for it. */
 async function preview(
   browser: Browser,
   cron: string,

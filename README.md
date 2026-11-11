@@ -9,7 +9,7 @@ Heartbeats are push-only (ADR 0001): nodbeat never connects to what it watches, 
 ## Features
 
 - **Monitors** with a name, notes, an Interval (30 s – 7 days) or a Schedule, and a Grace period (0 – 1 day, defaults to half the Interval or half the shortest gap between scheduled times). Up to 50 per User.
-- **Schedules**: a 5-field cron expression (ranges, lists, steps, `MON`/`JAN` names; no seconds, `@` names or `L`/`W`/`#`) in a time zone per Monitor, DST included. The form previews the next three scheduled times; scheduled times must be at least 5 min apart. A Heartbeat counts for the run it belongs to, so a weekday job stays Up at the weekend and one that starts at 01:58 for a 02:00 run is fine.
+- **Schedules**: a 5-field cron expression (ranges, lists, steps, `MON`/`JAN` names; no seconds, `@` names or `L`/`W`/`#`) in a time zone per Monitor, DST included. The form previews the next three scheduled times; scheduled times must be at least 5 min apart. A Heartbeat counts for the coming scheduled time if it is at most 1 h before it (less when scheduled times are closer), otherwise for the one before: a job that sends at 01:58 for 02:00 is fine, a rerun by hand in the afternoon doesn't excuse the next night, and a weekday job stays Up at the weekend.
 - **States**: New (no Heartbeat yet), Up, Down, Paused. New and Paused Monitors never go Down.
 - **Pause / unpause** for maintenance. Pausing a Down Monitor closes its Incident without an Up Alert; unpausing gives a fresh Interval + Grace period.
 - **Alerts on/off per Monitor**: state and Incidents are still tracked when off.
