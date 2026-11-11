@@ -7,6 +7,7 @@ import type { Config } from "./config.js";
 import { sendConfirmPage } from "./confirm.js";
 import { setFlash } from "./flash.js";
 import { formatDateTime } from "./format.js";
+import { currentVersions, type LegalDocs } from "./legal.js";
 import { copyButton, csrfField, html, timeZoneOptions } from "./html.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
 import {
@@ -156,9 +157,15 @@ function statusText(
 
 export function registerInvites(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; config: Config; auth: Auth },
+  deps: {
+    db: Db;
+    clock: Clock;
+    config: Config;
+    auth: Auth;
+    legal: LegalDocs | undefined;
+  },
 ): void {
-  const { db, clock, config, auth } = deps;
+  const { db, clock, config, auth, legal } = deps;
   const limiter = new SlidingWindowLimiter(
     clock,
     ACCEPT_MAX_REQUESTS,
@@ -354,6 +361,14 @@ export function registerInvites(
               ${timeZoneOptions(options.timeZone ?? DEFAULT_TIME_ZONE)}
             </select></label
           >
+          ${
+            legal &&
+            html`<label class="legal-acceptance"
+              ><input type="checkbox" name="acceptLegal" required /> I accept
+              the <a href="/terms" target="_blank">Terms</a> and
+              <a href="/privacy" target="_blank">Privacy policy</a></label
+            >`
+          }
           <button type="submit">Create my User</button>
         </form>
       </div>`,
@@ -383,6 +398,15 @@ export function registerInvites(
         typeof body[name] === "string" ? body[name] : "";
       const email = field("email");
       const timeZone = field("timeZone") || DEFAULT_TIME_ZONE;
+      // Checked before claiming, so a missed checkbox leaves the Invite as it was.
+      if (legal && !field("acceptLegal")) {
+        reply.code(400);
+        return acceptPage(req, reply, {
+          error: "Accept the Terms and Privacy policy to create your User.",
+          email,
+          timeZone,
+        });
+      }
 
       const claimedAt = clock.now();
       const invite = await claimInvite(
@@ -398,6 +422,7 @@ export function registerInvites(
           password: field("password"),
           timeZone,
           isAdmin: false,
+          ...(legal && { accepted: currentVersions(legal) }),
         });
       } catch (err) {
         // Only when no User was created: past this point the Invite must never be released.

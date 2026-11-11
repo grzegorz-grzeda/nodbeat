@@ -187,7 +187,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     publicBaseUrl: config.publicBaseUrl,
   });
   registerAdmin(app, { db, clock });
-  registerInvites(app, { db, clock, config, auth });
+  registerInvites(app, { db, clock, config, auth, legal });
   registerTelegramBot(app, {
     db,
     clock,
