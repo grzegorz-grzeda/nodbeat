@@ -7,7 +7,7 @@ import { html, type SafeHtml } from "./html.js";
 import { landingBody } from "./landing.js";
 import { stateBadge } from "./layout.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
-import { listMonitors } from "./monitors.js";
+import { listMonitors, nextExpected } from "./monitors.js";
 import { formatUptime, sevenDayUptime } from "./uptime.js";
 import { listAlertChannels } from "./alert-channels.js";
 import { channelsOfMonitor } from "./monitor-alert-channels.js";
@@ -28,6 +28,10 @@ export interface DashboardMonitor {
   lastRunDurationSec: number | null;
   /** "42 s", or empty if no Run has ended. */
   lastRunDurationText: string;
+  /** When the next Heartbeat is due, as the Down checker decides; null for Paused and Down. */
+  nextExpectedAt: string | null;
+  /** "14:05" in the User's time zone (with the date if not today); empty for Paused and Down. */
+  nextExpectedText: string;
   /** 0..1, null when the Monitor was neither Up nor Down in the last 7 days. */
   uptime7d: number | null;
   uptime7dText: string;
@@ -39,6 +43,7 @@ async function dashboardMonitors(
   db: Db,
   user: { _id: ObjectId; timeZone: string },
   now: Date,
+  startedAt: Date,
 ): Promise<DashboardMonitor[]> {
   const [list, channels] = await Promise.all([
     listMonitors(db, user._id),
@@ -47,6 +52,7 @@ async function dashboardMonitors(
   return Promise.all(
     list.map(async (m) => {
       const uptime = await sevenDayUptime(db, m, now);
+      const due = nextExpected(m, startedAt, now, user.timeZone);
       return {
         id: String(m._id),
         name: m.name,
@@ -60,6 +66,8 @@ async function dashboardMonitors(
         lastMessage: m.lastMessage,
         lastRunDurationSec: m.lastRunDurationSec ?? null,
         lastRunDurationText: formatDurationOrEmpty(m.lastRunDurationSec),
+        nextExpectedAt: due.at?.toISOString() ?? null,
+        nextExpectedText: due.text,
         uptime7d: uptime,
         uptime7dText: formatUptime(uptime),
         alertsGoNowhere: channelsOfMonitor(m, channels).length === 0,
@@ -81,15 +89,22 @@ function row(m: DashboardMonitor): SafeHtml {
     </td>
     <td data-label="Last message">${m.lastMessage ?? ""}</td>
     <td data-label="Last Run">${m.lastRunDurationText}</td>
+    <td data-label="Next expected by">${m.nextExpectedText}</td>
     <td data-label="7-day Uptime">${m.uptime7dText}</td>
   </tr>`;
 }
 
 export function registerDashboard(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; config: Config },
+  deps: {
+    db: Db;
+    clock: Clock;
+    config: Config;
+    /** When this nodbeat process started, for nextDueAt()'s startup grace. */
+    startedAt: Date;
+  },
 ): void {
-  const { db, clock, config } = deps;
+  const { db, clock, config, startedAt } = deps;
 
   // A visitor without a session gets the landing page; a User's bookmark keeps working.
   app.get("/", async (req, reply) => {
@@ -100,7 +115,7 @@ export function registerDashboard(
         body: landingBody(config.publicBaseUrl),
       });
     }
-    const list = await dashboardMonitors(db, user, clock.now());
+    const list = await dashboardMonitors(db, user, clock.now(), startedAt);
     return reply.page({
       title: "Dashboard",
       // Polls /dashboard.json and rebuilds the table body with the same cells `row` renders.
@@ -135,6 +150,7 @@ export function registerDashboard(
                 <th>Last Heartbeat</th>
                 <th>Last message</th>
                 <th>Last Run</th>
+                <th>Next expected by</th>
                 <th>7-day Uptime</th>
               </tr>
             </thead>
@@ -149,7 +165,7 @@ export function registerDashboard(
   app.get("/dashboard.json", async (req, reply) => {
     const user = req.user;
     if (!user) return reply.code(401).send({ error: "Not logged in" });
-    const monitors = await dashboardMonitors(db, user, clock.now());
+    const monitors = await dashboardMonitors(db, user, clock.now(), startedAt);
     return reply.header("cache-control", "no-store").send({ monitors });
   });
 }

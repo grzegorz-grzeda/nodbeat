@@ -83,18 +83,32 @@ export interface Transition {
   endedRunDurationSec?: number;
 }
 
+/** What nextDueAt() reads: the state, when the Monitor was last heard from or created, and its timing. */
+export type DueFields = Pick<
+  MonitorStateFields,
+  "state" | "lastHeartbeatAt" | "watchedSince"
+> &
+  MonitorTiming & {
+    /** Needed for a New Monitor's due time; without it a New Monitor has none. */
+    createdAt?: Date;
+  };
+
 /**
- * When an Up Monitor goes Down: Interval + Grace period after its last Heartbeat, its last unpause or nodbeat's start,
- * whichever is latest. Null for a Monitor that has never sent a Heartbeat.
+ * The one rule for when a Monitor's next Heartbeat is due: Interval + Grace period after its last Heartbeat (Up) or its
+ * creation (New), its last unpause or edit, or nodbeat's start, whichever is latest. An Up Monitor past it goes Down
+ * (a New one waits for its first Heartbeat); "next expected by" shows it. Null for Paused and Down Monitors.
+ * A Run's Max run time is a separate deadline: see runDeadline().
  */
-export function downDeadline(
-  monitor: Pick<MonitorStateFields, "lastHeartbeatAt" | "watchedSince"> &
-    MonitorTiming,
-  startedAt: Date,
-): Date | null {
-  if (!monitor.lastHeartbeatAt) return null;
+export function nextDueAt(monitor: DueFields, startedAt: Date): Date | null {
+  const heard =
+    monitor.state === "up"
+      ? monitor.lastHeartbeatAt
+      : monitor.state === "new"
+        ? (monitor.createdAt ?? null)
+        : null;
+  if (!heard) return null;
   const from = Math.max(
-    monitor.lastHeartbeatAt.getTime(),
+    heard.getTime(),
     // Absent on Monitors stored before pausing existed.
     monitor.watchedSince?.getTime() ?? 0,
     startedAt.getTime(),
@@ -271,7 +285,7 @@ function onDeadlineCheck(
   if (fields.state !== "up") return { fields, effects: [] };
   // The earliest passed deadline decides when the Incident started and why.
   const deadlines: Array<[Date | null, IncidentCause]> = [
-    [downDeadline(current, startedAt), "missed"],
+    [nextDueAt(current, startedAt), "missed"],
     [runDeadline(current, startedAt), "run-too-long"],
   ];
   const first = deadlines

@@ -5,7 +5,11 @@ import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { parseObjectId } from "./ids.js";
-import { formatDuration, formatDurationOrEmpty } from "./format.js";
+import {
+  formatDueTime,
+  formatDuration,
+  formatDurationOrEmpty,
+} from "./format.js";
 import { setFlash } from "./flash.js";
 import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
 import { listIncidents, type IncidentDoc } from "./incidents.js";
@@ -26,7 +30,12 @@ import {
   MAX_HEARTBEAT_MESSAGE_LENGTH,
   type Limits,
 } from "./limits.js";
-import type { MonitorState, MonitorStateFields } from "./monitor-state.js";
+import {
+  nextDueAt,
+  type DueFields,
+  type MonitorState,
+  type MonitorStateFields,
+} from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
 import { listAlertChannels } from "./alert-channels.js";
 import {
@@ -194,15 +203,33 @@ export async function findOwnMonitor(
   return _id ? monitors(db).findOne({ _id, ownerId }) : null;
 }
 
+/** When a Monitor's next Heartbeat is expected by, as nextDueAt() decides; null and empty for Paused and Down. */
+export function nextExpected(
+  monitor: DueFields,
+  startedAt: Date,
+  now: Date,
+  timeZone: string,
+): { at: Date | null; text: string } {
+  const at = nextDueAt(monitor, startedAt);
+  return { at, text: at ? formatDueTime(at, now, timeZone) : "" };
+}
+
 export function sendMonitorNotFound(reply: FastifyReply): FastifyReply {
   return reply.errorPage(404, { message: "No such Monitor." });
 }
 
 export function registerMonitors(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; config: Config; auth: Auth },
+  deps: {
+    db: Db;
+    clock: Clock;
+    config: Config;
+    auth: Auth;
+    /** When this nodbeat process started, for nextDueAt()'s startup grace. */
+    startedAt: Date;
+  },
 ): void {
-  const { db, clock, config, auth } = deps;
+  const { db, clock, config, auth, startedAt } = deps;
   // Keyed by owner: it guards the per-User Monitor limit.
   const ownerLock = new KeyedLock();
 
@@ -299,6 +326,7 @@ export function registerMonitors(
       const curlGet = `curl -fsS -m 10 --retry 3 ${url}`;
       const curlPost = `curl -fsS -m 10 --retry 3 --data-raw "battery 3.7V" ${url}`;
       const lastRun = formatDurationOrEmpty(monitor.lastRunDurationSec);
+      const due = nextExpected(monitor, startedAt, now, timeZone).text;
       // Start signal, then the job; success or Fail signal ends the Run.
       const cronRun = `curl -fsS -m 10 ${url}/start; /path/to/job.sh && curl -fsS -m 10 ${url} || curl -fsS -m 10 ${url}/fail`;
       return reply.page({
@@ -357,6 +385,7 @@ export function registerMonitors(
                 </li>`
               }
               ${lastRun && html`<li>Last Run duration: ${lastRun}</li>`}
+              ${due && html`<li>Next expected by: ${due}</li>`}
             </ul>
             ${monitor.notes ? html`<p class="notes">${monitor.notes}</p>` : ""}
           </div>
