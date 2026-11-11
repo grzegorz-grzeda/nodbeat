@@ -1,6 +1,7 @@
 import { hash, verify } from "@node-rs/argon2";
 import { MongoServerError, ObjectId, type Db } from "mongodb";
 import type { Clock } from "./clock.js";
+import type { LegalKind, LegalVersions } from "./legal.js";
 
 export const DEFAULT_TIME_ZONE = "Europe/Warsaw";
 
@@ -18,13 +19,22 @@ export interface UserDoc {
   /** Missing on Users created before themes existed: means `"system"`. */
   theme?: Theme;
   createdAt: Date;
+  /**
+   * The version of each legal document the User accepted, and when. Missing when they accepted none: created by the
+   * CLI, before the Terms existed, or on an instance without them. Compare with `currentVersions` to find what's due.
+   */
+  accepted?: Acceptance;
 }
+
+export type Acceptance = Record<LegalKind, { version: string; at: Date }>;
 
 export interface NewUser {
   email: string;
   password: string;
   isAdmin: boolean;
   timeZone?: string;
+  /** The versions the new User accepted, recorded as accepted at creation. */
+  accepted?: LegalVersions;
 }
 
 export class UserError extends Error {
@@ -91,13 +101,15 @@ export async function createUser(
     throw new UserError(`Unknown time zone: ${timeZone}`);
   }
 
+  const now = clock.now();
   const doc: UserDoc = {
     _id: new ObjectId(),
     email,
     passwordHash: await hashPassword(input.password),
     isAdmin: input.isAdmin,
     timeZone,
-    createdAt: clock.now(),
+    createdAt: now,
+    ...(input.accepted && { accepted: acceptance(input.accepted, now) }),
   };
   try {
     await users(db).insertOne(doc);
@@ -108,6 +120,13 @@ export async function createUser(
     }
     throw err;
   }
+}
+
+function acceptance(versions: LegalVersions, at: Date): Acceptance {
+  return {
+    terms: { version: versions.terms, at },
+    privacy: { version: versions.privacy, at },
+  };
 }
 
 export async function findUserById(

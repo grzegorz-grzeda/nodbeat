@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Terms and Privacy pages: with the new optional `LEGAL_DIR` set, `/terms` and `/privacy` show the Operator's own `terms.md` and `privacy.md` (front-matter `version` date and `summary`), rendered at startup with a small Markdown subset (headings, paragraphs, lists, links; raw HTML shows as text). `operator.md` holds the Operator's name, NIP, address and contact email: `/terms` starts with them, and the footer of every page names the Operator and links to both pages. With `LEGAL_DIR` unset or a file missing there are no pages (`404`), footer links or Operator details; a malformed file stops startup with its name. No legal text ships in the repo or the image: `compose.yaml` mounts `./legal` read-only at `/legal` (see `docs/deploy.md`).
+- Accepting the Terms on an Invite: with the legal files in place, the Invite accept page has a required "I accept the Terms and Privacy policy" checkbox linking to both pages. Without it no User is created and the Invite stays usable. The new User's accepted versions and the time are stored as `users.accepted: { terms: { version, at }, privacy: { version, at } }`. Users created with the CLI (`create-user`) and existing Users have no acceptance recorded yet.
 
 ## [0.26.1] - 2026-11-11
 

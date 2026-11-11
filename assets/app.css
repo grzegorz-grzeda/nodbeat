@@ -360,6 +360,7 @@ fieldset.timing {
   margin: var(--space-3) 0;
 }
 
+label.legal-acceptance,
 fieldset.alert-channels label,
 fieldset.timing label {
   font-weight: 400;
