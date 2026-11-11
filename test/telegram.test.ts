@@ -8,6 +8,7 @@ import {
   type Browser,
   type TestContext,
 } from "./helpers.js";
+import { createHttpTelegramClient } from "../src/telegram.js";
 
 const MIN = 60 * 1000;
 const PRIVATE_CHAT = { id: 1001, type: "private", first_name: "Grzegorz" };
@@ -508,5 +509,38 @@ describe("startup", () => {
     expect(
       (await app.inject({ method: "GET", url: "/health" })).statusCode,
     ).toBe(200);
+  });
+});
+
+describe("Telegram HTTP client", () => {
+  /** A client whose requests are recorded instead of sent; Telegram answers OK. */
+  const recordingClient = () => {
+    const bodies: unknown[] = [];
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(init.body as string));
+      return new Response(JSON.stringify({ ok: true, result: true }));
+    }) as typeof fetch;
+    return { client: createHttpTelegramClient("123:token", fetchFn), bodies };
+  };
+
+  it("sends a message with a sound unless asked to be silent", async () => {
+    const { client, bodies } = recordingClient();
+    await client.sendMessage(1, "down", {
+      parseMode: "HTML",
+      disableNotification: false,
+    });
+    await client.sendMessage(1, "up", {
+      parseMode: "HTML",
+      disableNotification: true,
+    });
+    expect(bodies).toEqual([
+      { chat_id: 1, text: "down", parse_mode: "HTML" },
+      {
+        chat_id: 1,
+        text: "up",
+        parse_mode: "HTML",
+        disable_notification: true,
+      },
+    ]);
   });
 });

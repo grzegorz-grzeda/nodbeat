@@ -12,6 +12,7 @@ import {
   type ChatMemberStatus,
   type SendMessageOptions,
   type BotCommand,
+  type UpdateType,
   type TelegramClient,
 } from "../src/telegram.js";
 
@@ -52,11 +53,15 @@ export class RecordingTelegram implements TelegramClient {
   /** Sends to these chats fail with HTTP 400 and the new id: the group was upgraded to a supergroup. */
   readonly migratedChats = new Map<number, number>();
 
+  /** Runs before every send, e.g. to make an Update arrive while an Alert is being sent. */
+  beforeSend: ((chatId: number) => Promise<void>) | null = null;
+
   async sendMessage(
     chatId: number,
     text: string,
     options: SendMessageOptions = {},
   ): Promise<void> {
+    await this.beforeSend?.(chatId);
     const newChatId = this.migratedChats.get(chatId);
     if (newChatId !== undefined) {
       throw new TelegramChatMigratedError("sendMessage", newChatId);
@@ -97,13 +102,13 @@ export class RecordingTelegram implements TelegramClient {
   readonly webhooks: Array<{
     url: string;
     secretToken: string;
-    allowedUpdates: string[];
+    allowedUpdates: UpdateType[];
   }> = [];
 
   async setWebhook(
     url: string,
     secretToken: string,
-    allowedUpdates: string[],
+    allowedUpdates: UpdateType[],
   ): Promise<void> {
     if (this.failingSetup) throw new Error("telegram unavailable");
     this.webhooks.push({ url, secretToken, allowedUpdates });

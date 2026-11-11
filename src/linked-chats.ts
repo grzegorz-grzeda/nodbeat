@@ -142,8 +142,8 @@ export async function unlinkChat(db: Db, chatId: number): Promise<number> {
   return res.deletedCount;
 }
 
-/** Moves every Link of `fromChatId` to `toChatId` (a group upgraded to a supergroup). An owner already linked to the new id keeps that Link. */
-export async function moveChatLinks(
+/** Moves every owner's Linked chat `fromChatId` to `toChatId` (a group upgraded to a supergroup). An owner who already has the new id as a Linked chat keeps that one. */
+export async function moveLinkedChats(
   db: Db,
   fromChatId: number,
   toChatId: number,
