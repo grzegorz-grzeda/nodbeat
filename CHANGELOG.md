@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-11-11
+
 ### Added
 
 - Webhook Alert channels: add one in Settings with a URL, an optional name and an optional secret, and edit its URL and secret later (the secret is never shown again: "secret set"; moving the URL to another host removes it unless a new one is typed, and the Flash message says so). Down and Up Alerts are POSTed as JSON (`monitor`, `kind`, `at`, `message`, `incidentId`; `kind` is `down`, `up` or `test`), signed in `X-Nodbeat-Signature: sha256=<HMAC>` when a secret is set. Any `2xx` counts, within 5 s; redirects aren't followed. Documented as a webhook in `/openapi.yaml` (now OpenAPI 3.1).
@@ -211,7 +213,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.20.0...v0.21.0
