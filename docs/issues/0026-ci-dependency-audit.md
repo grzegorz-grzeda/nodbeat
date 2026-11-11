@@ -7,6 +7,6 @@ Status: ready-for-agent
 
 **Blocked by:** none.
 
-- [ ] CI workflow runs `pnpm audit --prod --audit-level=high` after install
-- [ ] Release workflow inherits it (it calls CI via `workflow_call`)
-- [ ] Current dependencies pass, or the failures are fixed in this issue
+- [x] CI workflow runs `pnpm audit --prod --audit-level=high` after install
+- [x] Release workflow inherits it (it calls CI via `workflow_call`)
+- [x] Current dependencies pass, or the failures are fixed in this issue
