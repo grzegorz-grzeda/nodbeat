@@ -1,6 +1,6 @@
 import { formatDuration } from "./format.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
-import type { Limits } from "./limits.js";
+import { defaultGraceSec, type Limits } from "./limits.js";
 
 const MAX_NAME_LENGTH = 100;
 const MAX_NOTES_LENGTH = 2000;
@@ -91,9 +91,8 @@ export function validate(
 
   let graceSec: number | null;
   if (form.grace.trim() === "") {
-    graceSec = intervalSec === null ? null : Math.floor(intervalSec / 2);
-    // Half of a long Interval can exceed the Grace bound (7 d → 3.5 d > 1 d); clamp rather than blame a field left blank.
-    if (graceSec !== null) graceSec = Math.min(graceSec, limits.maxGraceSec);
+    graceSec =
+      intervalSec === null ? null : defaultGraceSec(intervalSec, limits);
   } else {
     graceSec = toSeconds(form.grace, form.graceUnit);
     if (

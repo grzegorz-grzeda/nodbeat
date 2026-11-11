@@ -36,3 +36,14 @@ export function limitsFor(user: UserDoc): Limits {
 export function instanceLimits(): Limits {
   return DEFAULT_LIMITS;
 }
+
+/**
+ * The Grace period a Monitor gets when none is given: half its Interval, clamped to the Grace bounds. Half of a long
+ * Interval can exceed the bound (7 d → 3.5 d > 1 d); clamping beats blaming a field left blank.
+ */
+export function defaultGraceSec(intervalSec: number, limits: Limits): number {
+  return Math.min(
+    Math.max(Math.floor(intervalSec / 2), limits.minGraceSec),
+    limits.maxGraceSec,
+  );
+}

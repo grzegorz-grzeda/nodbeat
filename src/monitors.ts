@@ -19,7 +19,12 @@ import {
 import { csrfField, html, type SafeHtml } from "./html.js";
 import { stateBadge } from "./layout.js";
 import { monitorFormBody, readForm, validate } from "./monitor-form.js";
-import { limitsFor, MAX_HEARTBEAT_MESSAGE_LENGTH } from "./limits.js";
+import {
+  defaultGraceSec,
+  limitsFor,
+  MAX_HEARTBEAT_MESSAGE_LENGTH,
+  type Limits,
+} from "./limits.js";
 import type { MonitorState, MonitorStateFields } from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
 
@@ -70,6 +75,71 @@ export async function countMonitorsByState(
     .toArray();
   for (const g of groups) counts[g._id] = g.count;
   return counts;
+}
+
+/** Interval groups by upper bound (inclusive); anything longer falls in the last group. */
+const INTERVAL_GROUPS: Array<{ label: string; maxSec: number }> = [
+  { label: "≤ 1 min", maxSec: 60 },
+  { label: "≤ 5 min", maxSec: 5 * 60 },
+  { label: "≤ 1 h", maxSec: 60 * 60 },
+  { label: "≤ 1 day", maxSec: 24 * 60 * 60 },
+  { label: "> 1 day", maxSec: Infinity },
+];
+
+export interface MonitorSetup {
+  total: number;
+  /** Shortest Intervals first. */
+  byInterval: Array<{ label: string; count: number }>;
+  customGrace: number;
+  withNotes: number;
+  alertsOff: number;
+  paused: number;
+}
+
+/** How the whole instance's Monitors are set up (the Admin page). Notes are only tested for presence, never read. */
+export async function summarizeMonitorSetup(
+  db: Db,
+  limits: Limits,
+): Promise<MonitorSetup> {
+  const rows = await monitors(db)
+    .aggregate<{
+      intervalSec: number;
+      graceSec: number;
+      hasNotes: boolean;
+      alertsEnabled: boolean;
+      state: MonitorState;
+    }>([
+      {
+        $project: {
+          _id: 0,
+          intervalSec: 1,
+          graceSec: 1,
+          hasNotes: { $gt: [{ $strLenCP: { $ifNull: ["$notes", ""] } }, 0] },
+          alertsEnabled: 1,
+          state: 1,
+        },
+      },
+    ])
+    .toArray();
+  const setup: MonitorSetup = {
+    total: rows.length,
+    byInterval: INTERVAL_GROUPS.map(({ label }) => ({ label, count: 0 })),
+    customGrace: 0,
+    withNotes: 0,
+    alertsOff: 0,
+    paused: 0,
+  };
+  for (const m of rows) {
+    const group = INTERVAL_GROUPS.findIndex((g) => m.intervalSec <= g.maxSec);
+    setup.byInterval[group]!.count++;
+    if (m.graceSec !== defaultGraceSec(m.intervalSec, limits)) {
+      setup.customGrace++;
+    }
+    if (m.hasNotes) setup.withNotes++;
+    if (!m.alertsEnabled) setup.alertsOff++;
+    if (m.state === "paused") setup.paused++;
+  }
+  return setup;
 }
 
 /** The owner's Monitor with this id, or null (also for another User's Monitor or a malformed id). */

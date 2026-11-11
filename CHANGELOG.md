@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The Admin page shows how Monitors are set up: counts and shares by Interval (≤ 1 min, ≤ 5 min, ≤ 1 h, ≤ 1 day, > 1 day) and the share with a custom Grace period, with notes, with Alerts off and Paused. Notes are counted, never shown.
+
 ## [0.17.0] - 2026-11-11
 
 ### Security

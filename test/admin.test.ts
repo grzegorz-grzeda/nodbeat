@@ -28,6 +28,7 @@ async function withUsers() {
 async function createMonitor(
   browser: Browser,
   name = "Garden sensor",
+  fields: Record<string, string> = {},
 ): Promise<{ page: string; hb: string }> {
   const res = await browser.submit("/monitors/new", "/monitors", {
     name,
@@ -35,6 +36,7 @@ async function createMonitor(
     intervalUnit: "s",
     grace: "30",
     graceUnit: "s",
+    ...fields,
   });
   const page = res.headers.location as string;
   const body = (await browser.get(page)).body;
@@ -74,6 +76,14 @@ function stat(body: string, label: string): number | undefined {
     `<th scope="row">\\s*${escaped}\\s*</th>\\s*<td>\\s*(\\d+)\\s*</td>`,
   ).exec(body);
   return match ? Number(match[1]) : undefined;
+}
+
+/** The share (e.g. "25%") in the row labelled `label` of the Admin page's tables. */
+function share(body: string, label: string): string | undefined {
+  const escaped = label.replace(/[()]/g, "\\$&");
+  return new RegExp(
+    `<th scope="row">\\s*${escaped}\\s*</th>\\s*<td>\\s*\\d+\\s*</td>\\s*<td>\\s*([^<\\s]+)\\s*</td>`,
+  ).exec(body)?.[1];
 }
 
 describe("Admin page", () => {
@@ -148,5 +158,63 @@ describe("Admin page", () => {
     const body = (await ctx.admin.get("/admin")).body;
     expect(body).not.toContain("marker-");
     expect(body).not.toContain("/hb/");
+  });
+
+  it("shows how Monitors are set up", async () => {
+    const ctx = await withUsers();
+    // 30 s, default Grace period (15 s), with notes.
+    await createMonitor(ctx.user, "A", {
+      interval: "30",
+      grace: "",
+      notes: "marker-note-7f3a",
+    });
+    // 5 min, custom Grace period, Alerts off.
+    const b = await createMonitor(ctx.user, "B", {
+      interval: "5",
+      intervalUnit: "m",
+      grace: "60",
+    });
+    await ctx.user.submit(b.page, `${b.page}/alerts`, {
+      alertsEnabled: "false",
+    });
+    // 2 h, Grace period typed as the default (1 h), Paused, Alerts off.
+    const c = await createMonitor(ctx.admin, "C", {
+      interval: "2",
+      intervalUnit: "h",
+      grace: "1",
+      graceUnit: "h",
+    });
+    await ctx.admin.submit(c.page, `${c.page}/pause`);
+    await ctx.admin.submit(c.page, `${c.page}/alerts`, {
+      alertsEnabled: "false",
+    });
+    // 3 days, 1 day Grace period: the default, since half the Interval is clamped to 1 day.
+    await createMonitor(ctx.admin, "D", {
+      interval: "3",
+      intervalUnit: "d",
+      grace: "1",
+      graceUnit: "d",
+    });
+
+    const body = (await ctx.admin.get("/admin")).body;
+    expect(stat(body, "≤ 1 min")).toBe(1);
+    expect(stat(body, "≤ 5 min")).toBe(1);
+    expect(stat(body, "≤ 1 h")).toBe(0);
+    expect(stat(body, "≤ 1 day")).toBe(1);
+    expect(stat(body, "&gt; 1 day")).toBe(1);
+    expect(share(body, "≤ 1 min")).toBe("25%");
+    expect(share(body, "≤ 1 h")).toBe("0%");
+    expect(share(body, "&gt; 1 day")).toBe("25%");
+
+    expect(stat(body, "Custom Grace period")).toBe(1);
+    expect(share(body, "Custom Grace period")).toBe("25%");
+    expect(stat(body, "With notes")).toBe(1);
+    expect(share(body, "With notes")).toBe("25%");
+    expect(stat(body, "Alerts off")).toBe(2);
+    expect(share(body, "Alerts off")).toBe("50%");
+    expect(stat(body, "Paused")).toBe(1);
+    expect(share(body, "Paused")).toBe("25%");
+
+    expect(body).not.toContain("marker-");
   });
 });
