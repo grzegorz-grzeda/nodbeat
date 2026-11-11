@@ -7,7 +7,7 @@ Status: ready-for-agent
 
 **Blocked by:** 0027 (it starts reading `my_chat_member`).
 
-- [ ] `TelegramClient.setMyCommands`; called at startup with `start`, `status`, `unlink` and their descriptions, not awaited, failures logged
-- [ ] `setWebhook` sends `allowed_updates: ["message", "my_chat_member"]`
-- [ ] `docs/deploy.md` drops the manual `/setcommands` step
-- [ ] Tests: the Telegram fake records both calls with the expected arguments
+- [x] `TelegramClient.setMyCommands`; called at startup with `start`, `status`, `unlink` and their descriptions, not awaited, failures logged
+- [x] `setWebhook` sends `allowed_updates: ["message", "my_chat_member"]`
+- [x] `docs/deploy.md` drops the manual `/setcommands` step
+- [x] Tests: the Telegram fake records both calls with the expected arguments

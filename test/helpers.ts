@@ -11,6 +11,7 @@ import {
   TelegramForbiddenError,
   type ChatMemberStatus,
   type SendMessageOptions,
+  type BotCommand,
   type TelegramClient,
 } from "../src/telegram.js";
 
@@ -93,10 +94,29 @@ export class RecordingTelegram implements TelegramClient {
     return this.#memberStatuses.get(memberKey(chatId, userId)) ?? "member";
   }
 
-  readonly webhooks: Array<{ url: string; secretToken: string }> = [];
+  readonly webhooks: Array<{
+    url: string;
+    secretToken: string;
+    allowedUpdates: string[];
+  }> = [];
 
-  async setWebhook(url: string, secretToken: string): Promise<void> {
-    this.webhooks.push({ url, secretToken });
+  async setWebhook(
+    url: string,
+    secretToken: string,
+    allowedUpdates: string[],
+  ): Promise<void> {
+    if (this.failingSetup) throw new Error("telegram unavailable");
+    this.webhooks.push({ url, secretToken, allowedUpdates });
+  }
+
+  /** `setWebhook` and `setMyCommands` fail, e.g. Telegram is down at startup. */
+  failingSetup = false;
+
+  readonly commandMenus: BotCommand[][] = [];
+
+  async setMyCommands(commands: BotCommand[]): Promise<void> {
+    if (this.failingSetup) throw new Error("telegram unavailable");
+    this.commandMenus.push(commands);
   }
 }
 

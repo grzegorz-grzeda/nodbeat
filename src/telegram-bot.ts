@@ -14,10 +14,20 @@ import {
 import { STATE_LABELS } from "./monitor-state.js";
 import { listMonitors } from "./monitors.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
-import type { ChatMemberStatus, TelegramClient } from "./telegram.js";
+import type {
+  BotCommand,
+  ChatMemberStatus,
+  TelegramClient,
+} from "./telegram.js";
 import { findUserById } from "./users.js";
 
 const WEBHOOK_PATH = "/telegram/webhook";
+/** The bot's command menu, set at every startup. */
+const COMMAND_MENU: BotCommand[] = [
+  { command: "start", description: "Link this chat with a code from Settings" },
+  { command: "status", description: "Show your Monitors" },
+  { command: "unlink", description: "Stop Alerts in this chat" },
+];
 const SECRET_HEADER = "x-telegram-bot-api-secret-token";
 /** Guesses at Link codes allowed per chat. */
 const START_MAX_ATTEMPTS = 10;
@@ -254,8 +264,14 @@ export function registerTelegramBot(
     .setWebhook(
       `${config.publicBaseUrl}${WEBHOOK_PATH}`,
       config.telegramWebhookSecret,
+      ["message", "my_chat_member"],
     )
     .catch((err: unknown) =>
       app.log.error({ err }, "registering the Telegram webhook failed"),
+    );
+  telegram
+    .setMyCommands(COMMAND_MENU)
+    .catch((err: unknown) =>
+      app.log.error({ err }, "setting the Telegram command menu failed"),
     );
 }

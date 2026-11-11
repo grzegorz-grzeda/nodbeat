@@ -3,6 +3,7 @@ import {
   buildTestApp,
   createUser,
   login,
+  restartApp,
   testConfig,
   type Browser,
   type TestContext,
@@ -475,7 +476,37 @@ describe("startup", () => {
       {
         url: "https://nodbeat.test/telegram/webhook",
         secretToken: testConfig.telegramWebhookSecret,
+        allowedUpdates: ["message", "my_chat_member"],
       },
     ]);
+  });
+
+  it("sets the bot's command menu", async () => {
+    const ctx = await buildTestApp();
+    expect(ctx.telegram.commandMenus).toEqual([
+      [
+        {
+          command: "start",
+          description: "Link this chat with a code from Settings",
+        },
+        { command: "status", description: "Show your Monitors" },
+        { command: "unlink", description: "Stop Alerts in this chat" },
+      ],
+    ]);
+  });
+
+  it("logs a failed command menu setup and starts anyway", async () => {
+    const ctx = await buildTestApp();
+    ctx.telegram.failingSetup = true;
+    const app = await restartApp(ctx);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(ctx.logs).toContainEqual(
+      expect.objectContaining({
+        msg: "setting the Telegram command menu failed",
+      }),
+    );
+    expect(
+      (await app.inject({ method: "GET", url: "/health" })).statusCode,
+    ).toBe(200);
   });
 });
