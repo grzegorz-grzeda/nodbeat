@@ -10,15 +10,30 @@ import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { csrfField, html } from "./html.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
-import { authenticate, findUserById, type UserDoc } from "./users.js";
+import {
+  authenticate,
+  findUserById,
+  normalizeEmail,
+  type UserDoc,
+} from "./users.js";
 
 const SESSION_COOKIE = "nb_session";
 const CSRF_COOKIE = "nb_csrf";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 /** Sliding expiry is pushed forward at most this often, so polling pages don't write on every request. */
 const SESSION_REFRESH_EVERY_MS = 60 * 1000;
-const LOGIN_MAX_ATTEMPTS = 5;
-const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES_PER_IP = 5;
+const LOGIN_IP_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_FAILURES_PER_EMAIL = 10;
+const LOGIN_EMAIL_WINDOW_MS = 60 * 60 * 1000;
+export const TOO_MANY_LOGINS = "Too many login attempts. Try again later.";
+/** Longer than any real email; keeps a junk email from becoming a huge limiter key. */
+const MAX_EMAIL_KEY_LENGTH = 320;
+
+/** One password check that counts against the login limits unless it `succeeded()`. */
+export interface LoginAttempt {
+  succeeded(): void;
+}
 
 export interface SessionDoc {
   /** sha256 of the cookie value, so a database leak doesn't leak live sessions. */
@@ -81,6 +96,13 @@ export async function requireAdmin(
 export interface Auth {
   /** Returns the CSRF token for forms on the page being rendered, issuing its cookie if needed. */
   csrfToken(req: FastifyRequest, reply: FastifyReply): string;
+  /**
+   * Takes a password check (at login or when changing the password) against both login limits, or returns null when
+   * this IP or email has too many failures. Call `succeeded()` on a right password so it doesn't count.
+   */
+  takeLoginAttempt(ip: string, email: string): LoginAttempt | null;
+  /** Ends every session of the User except this browser's. */
+  endOtherSessions(req: FastifyRequest, userId: ObjectId): Promise<void>;
   /** Logs this browser in as the User, like a successful login: a fresh session and CSRF secret. */
   startSession(
     req: FastifyRequest,
@@ -94,11 +116,33 @@ export function registerAuth(
   deps: { db: Db; clock: Clock; config: Config },
 ): Auth {
   const { db, clock, config } = deps;
-  const loginLimiter = new SlidingWindowLimiter(
+  // Only failures count: 5 per IP slows guessing from one place, 10 per email slows guessing one User's password
+  // from many. Unknown emails count the same, so the limiter doesn't tell which emails exist.
+  const failuresByIp = new SlidingWindowLimiter(
     clock,
-    LOGIN_MAX_ATTEMPTS,
-    LOGIN_WINDOW_MS,
+    LOGIN_MAX_FAILURES_PER_IP,
+    LOGIN_IP_WINDOW_MS,
   );
+  const failuresByEmail = new SlidingWindowLimiter(
+    clock,
+    LOGIN_MAX_FAILURES_PER_EMAIL,
+    LOGIN_EMAIL_WINDOW_MS,
+  );
+  // Taken before the slow password check, so parallel attempts can't all pass a check made before any is counted.
+  const takeLoginAttempt = (ip: string, email: string): LoginAttempt | null => {
+    const emailKey = normalizeEmail(email).slice(0, MAX_EMAIL_KEY_LENGTH);
+    if (!failuresByIp.tryAcquire(ip)) return null;
+    if (!failuresByEmail.tryAcquire(emailKey)) {
+      failuresByIp.release(ip);
+      return null;
+    }
+    return {
+      succeeded: () => {
+        failuresByIp.release(ip);
+        failuresByEmail.release(emailKey);
+      },
+    };
+  };
 
   const sign = (value: string) =>
     createHmac("sha256", config.sessionSecret)
@@ -242,12 +286,10 @@ export function registerAuth(
     const email = typeof body.email === "string" ? body.email : "";
     const password = typeof body.password === "string" ? body.password : "";
 
-    if (!loginLimiter.tryAcquire(req.ip)) {
+    const attempt = takeLoginAttempt(req.ip, email);
+    if (!attempt) {
       reply.code(429);
-      return loginPage(req, reply, {
-        email,
-        error: "Too many login attempts. Try again in 15 minutes.",
-      });
+      return loginPage(req, reply, { email, error: TOO_MANY_LOGINS });
     }
 
     const user = await authenticate(db, email, password);
@@ -259,6 +301,7 @@ export function registerAuth(
       });
     }
 
+    attempt.succeeded();
     await startSession(req, reply, user._id);
     return reply.redirect("/", 303);
   });
@@ -269,5 +312,28 @@ export function registerAuth(
     return reply.redirect("/login", 303);
   });
 
-  return { csrfToken, startSession };
+  const endOtherSessions = async (req: FastifyRequest, userId: ObjectId) => {
+    const token = req.cookies[SESSION_COOKIE];
+    await sessions(db).deleteMany({
+      userId,
+      ...(token ? { _id: { $ne: sha256(token) } } : {}),
+    });
+  };
+
+  app.post(
+    "/logout-everywhere",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      await sessions(db).deleteMany({ userId: req.user!._id });
+      reply.clearCookie(SESSION_COOKIE, cookieOptions);
+      return reply.redirect("/login", 303);
+    },
+  );
+
+  return {
+    csrfToken,
+    startSession,
+    takeLoginAttempt,
+    endOtherSessions,
+  };
 }

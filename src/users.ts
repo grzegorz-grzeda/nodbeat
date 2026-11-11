@@ -41,7 +41,7 @@ export async function ensureUserIndexes(db: Db): Promise<void> {
   await users(db).createIndex({ email: 1 }, { unique: true });
 }
 
-function normalizeEmail(email: string): string {
+export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
@@ -54,6 +54,28 @@ function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
+/** Throws a UserError when the password breaks the rules every User's password follows. */
+function checkPassword(password: string): void {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    throw new UserError(
+      `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+    );
+  }
+}
+
+/** Replaces the User's password; throws a UserError when the new one breaks the rules. */
+export async function setUserPassword(
+  db: Db,
+  id: ObjectId,
+  password: string,
+): Promise<void> {
+  checkPassword(password);
+  await users(db).updateOne(
+    { _id: id },
+    { $set: { passwordHash: await hashPassword(password) } },
+  );
+}
+
 export async function createUser(
   db: Db,
   clock: Clock,
@@ -63,11 +85,7 @@ export async function createUser(
   if (!/^[^\s@]+@[^\s@]+$/.test(email)) {
     throw new UserError(`Invalid email: ${input.email}`);
   }
-  if (input.password.length < MIN_PASSWORD_LENGTH) {
-    throw new UserError(
-      `Password must be at least ${MIN_PASSWORD_LENGTH} characters`,
-    );
-  }
+  checkPassword(input.password);
   const timeZone = input.timeZone ?? DEFAULT_TIME_ZONE;
   if (!isValidTimeZone(timeZone)) {
     throw new UserError(`Unknown time zone: ${timeZone}`);

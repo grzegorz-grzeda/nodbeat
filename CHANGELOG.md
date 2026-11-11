@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Settings: change your password (current, new and confirmation); every other session is logged out. **Log out everywhere** ends every session, this one included.
+
+### Security
+
+- Only failed logins count towards the login limit: 5 per 15 min per IP, plus 10 per hour per email (unknown emails too), so one User's password can't be guessed quickly from many IPs. A wrong current password on Settings counts as a failed login. Attempts are counted before the password is checked, so parallel requests can't get past the limit. The 429 message now reads "Try again later".
+- An IP that sends more than 30 requests a minute to unknown Heartbeat URLs gets `429` on every Heartbeat URL, before any database lookup, until the minute has passed.
+
 ## [0.19.0] - 2026-11-11
 
 ### Added

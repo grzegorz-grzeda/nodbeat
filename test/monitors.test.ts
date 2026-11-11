@@ -333,6 +333,43 @@ describe("Heartbeat intake", () => {
     expect(await db.collection("heartbeats").countDocuments()).toBe(0);
   });
 
+  it("answers 429 to an IP that sent more than 30 unknown tokens in a minute", async () => {
+    const { app, browser, clock } = await loggedIn();
+    const known = heartbeatUrl(
+      (
+        await browser.get(
+          await createMonitor(browser, {
+            name: "known",
+            interval: "60",
+            intervalUnit: "s",
+          }),
+        )
+      ).body,
+    );
+    const hb = (url: string, ip = "198.51.100.7") =>
+      app.inject({ method: "GET", url, remoteAddress: ip });
+
+    for (let i = 0; i < 30; i++) {
+      const res = await hb(`/hb/unknown-token-${i}`);
+      expect(res.statusCode).toBe(404);
+    }
+    const blocked = await hb("/hb/unknown-token-30");
+    expect(blocked.statusCode).toBe(429);
+    expect(blocked.headers["content-type"]).toContain("text/plain");
+    expect(blocked.body).toBe("Too Many Requests");
+    // Over the limit, even a valid Heartbeat URL is refused from that IP...
+    expect((await hb(known)).statusCode).toBe(429);
+    // ...but not from another one.
+    expect((await hb(known, "198.51.100.8")).statusCode).toBe(200);
+    expect((await hb("/hb/unknown-token-x", "198.51.100.8")).statusCode).toBe(
+      404,
+    );
+
+    clock.advance(60 * 1000 + 1);
+    expect((await hb(known)).statusCode).toBe(200);
+    expect((await hb("/hb/unknown-token-31")).statusCode).toBe(404);
+  });
+
   it("answers 429 to more than 1 Heartbeat per second per token", async () => {
     const { app, browser, clock } = await loggedIn();
     const one = heartbeatUrl(

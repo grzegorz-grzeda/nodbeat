@@ -100,6 +100,88 @@ describe("login", () => {
     expect(browser.lastResponse.statusCode).toBe(303);
   });
 
+  it("doesn't count successful logins towards the limit", async () => {
+    const { app } = await appWithUser();
+    for (let i = 0; i < 6; i++) {
+      // A new browser each time, all from one IP.
+      const browser = new Browser(app, "198.51.100.7");
+      await login(app, "me@example.com", "correct horse", browser);
+      expect(browser.lastResponse.statusCode).toBe(303);
+    }
+  });
+
+  it("rejects an email after 10 failures within an hour, from any IP", async () => {
+    const { app, clock } = await appWithUser();
+    const fromIp = (n: number) => new Browser(app, `198.51.100.${n}`);
+    for (let i = 0; i < 10; i++) {
+      // Email case and spaces don't make it a different email.
+      const email = i % 2 ? "ME@example.com " : "me@example.com";
+      const res = await login(app, email, "wrong horse", fromIp(i));
+      expect(res.lastResponse.statusCode).toBe(401);
+    }
+
+    const eleventh = await login(
+      app,
+      "me@example.com",
+      "correct horse",
+      fromIp(50),
+    );
+    expect(eleventh.lastResponse.statusCode).toBe(429);
+    expect(eleventh.lastResponse.body).toContain("Too many login attempts");
+
+    clock.advance(60 * MINUTE + 1);
+    const later = await login(
+      app,
+      "me@example.com",
+      "correct horse",
+      fromIp(51),
+    );
+    expect(later.lastResponse.statusCode).toBe(303);
+  });
+
+  it("can't be beaten by sending failed logins in parallel", async () => {
+    const { app } = await appWithUser();
+    const browsers = Array.from(
+      { length: 10 },
+      () => new Browser(app, "198.51.100.7"),
+    );
+    await Promise.all(browsers.map((b) => b.get("/login")));
+
+    const results = await Promise.all(
+      browsers.map((b) =>
+        b.submit(
+          "/login",
+          "/login",
+          { email: "me@example.com", password: "wrong horse" },
+          {
+            csrf: /name="_csrf" value="([^"]+)"/.exec(b.lastResponse.body)![1]!,
+          },
+        ),
+      ),
+    );
+    const codes = results.map((r) => r.statusCode).sort();
+    expect(codes).toEqual([401, 401, 401, 401, 401, 429, 429, 429, 429, 429]);
+  });
+
+  it("limits unknown emails the same way", async () => {
+    const { app } = await appWithUser();
+    for (let i = 0; i < 10; i++) {
+      await login(
+        app,
+        "nobody@example.com",
+        "x",
+        new Browser(app, `198.51.100.${i}`),
+      );
+    }
+    const res = await login(
+      app,
+      "nobody@example.com",
+      "x",
+      new Browser(app, "198.51.100.50"),
+    );
+    expect(res.lastResponse.statusCode).toBe(429);
+  });
+
   it("limits by the client IP the edge Caddy forwards, not its own", async () => {
     const { app } = await appWithUser();
     const caddy = testConfig.trustedProxyIp;

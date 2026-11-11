@@ -18,6 +18,9 @@ import type { MonitorLock } from "./monitor-lock.js";
 import { monitors } from "./monitors.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
 
+const UNKNOWN_TOKENS_PER_IP = 30;
+const UNKNOWN_TOKEN_WINDOW_MS = 60 * 1000;
+
 /** A message is at most 200 characters; anything much bigger is not a Heartbeat. */
 const BODY_LIMIT_BYTES = 8 * 1024;
 
@@ -123,7 +126,13 @@ export async function registerHeartbeatIntake(
   deps: { db: Db; clock: Clock; lock: MonitorLock; pruner: LogPruner },
 ): Promise<void> {
   const { db, clock, lock, pruner } = deps;
-  const limiter = new SlidingWindowLimiter(clock, 1, 1000);
+  const perMonitor = new SlidingWindowLimiter(clock, 1, 1000);
+  // Scanning for Heartbeat URLs: an IP over this many unknown tokens is refused before any database lookup.
+  const unknownTokens = new SlidingWindowLimiter(
+    clock,
+    UNKNOWN_TOKENS_PER_IP,
+    UNKNOWN_TOKEN_WINDOW_MS,
+  );
 
   const handle = async (
     req: FastifyRequest<{ Params: { token: string } }>,
@@ -132,9 +141,14 @@ export async function registerHeartbeatIntake(
     const text = (code: number, body: string) =>
       reply.code(code).type("text/plain").send(body);
 
+    // Taken before the lookup and given back for a known token, so parallel scans can't all slip past the check.
+    if (!unknownTokens.tryAcquire(req.ip)) {
+      return text(429, "Too Many Requests");
+    }
     const monitor = await monitors(db).findOne({ token: req.params.token });
     if (!monitor) return text(404, "Not Found");
-    if (!limiter.tryAcquire(monitor.token)) {
+    unknownTokens.release(req.ip);
+    if (!perMonitor.tryAcquire(monitor.token)) {
       return text(429, "Too Many Requests");
     }
 

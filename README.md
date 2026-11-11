@@ -33,12 +33,12 @@ curl -fsS -m 10 --retry 3 --data-raw "battery 3.7V" https://nodbeat.example.com/
 
 An optional message (up to 200 characters) comes from, in this order: the `msg` query parameter, the `msg` field of a JSON or form body, or a plain-text body. Bodies are capped at 8 KiB.
 
-| Answer | Meaning                                             |
-| ------ | --------------------------------------------------- |
-| `200`  | `OK`, Heartbeat recorded (Paused Monitors too)      |
-| `404`  | unknown Heartbeat URL; `HEAD` also gets 404         |
-| `413`  | body over 8 KiB                                     |
-| `429`  | more than one Heartbeat per second for this Monitor |
+| Answer | Meaning                                                                                                                                 |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `200`  | `OK`, Heartbeat recorded (Paused Monitors too)                                                                                          |
+| `404`  | unknown Heartbeat URL; `HEAD` also gets 404                                                                                             |
+| `413`  | body over 8 KiB                                                                                                                         |
+| `429`  | more than one Heartbeat per second for this Monitor, or this IP sent more than 30 requests to unknown Heartbeat URLs in the last minute |
 
 All answers are plain text. Each Monitor keeps its 100 newest Heartbeats from the last 7 days, and its 100 newest Incidents (older ones are kept only while 7-day Uptime still needs them).
 
@@ -52,7 +52,7 @@ A cron job that reports only on success:
 
 One always-on Node 22 process (ADR 0002) built with TypeScript, Fastify and the MongoDB driver (no ORM). Pages are server-rendered HTML with a strict CSP; the only client scripts are small files under `assets/`.
 
-- **Web UI**: login, Dashboard, Monitors, Settings. Sessions in Mongo (30-day sliding expiry), CSRF-protected forms, argon2id password hashes.
+- **Web UI**: login, Dashboard, Monitors, Settings. Sessions in Mongo (30-day sliding expiry), CSRF-protected forms, argon2id password hashes. Failed logins are limited to 5 per 15 min per IP and 10 per hour per email. Settings has password change (logs out every other session) and **Log out everywhere**.
 - **Heartbeat intake** (`src/heartbeats.ts`): one Monitor update plus one Heartbeat insert per request.
 - **Monitor state machine** (`src/monitor-state.ts`): one pure `transition(monitor, event, now)` decides every state change and returns effects (open/close Incident, start/end New or pause periods, enqueue Alert).
 - **Down checker** and **Alert dispatcher**: run on `app.tick()`, every 10 s. Alerts go through a persistent outbox in Mongo.

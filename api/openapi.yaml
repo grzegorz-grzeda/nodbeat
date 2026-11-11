@@ -34,7 +34,9 @@ paths:
         Records a Heartbeat for the Monitor that owns this Heartbeat URL. The
         optional message comes from `?msg=`.
 
-        At most one Heartbeat per second per Monitor is accepted.
+        At most one Heartbeat per second per Monitor is accepted. An IP that
+        sends more than 30 requests a minute to unknown Heartbeat URLs gets
+        429 on every Heartbeat URL for the rest of that minute.
       operationId: sendHeartbeat
       responses:
         "200":
@@ -61,7 +63,8 @@ paths:
         empty message means none.
 
         The body may be at most 8 KiB. At most one Heartbeat per second per
-        Monitor is accepted.
+        Monitor is accepted, and the same per-IP limit on unknown Heartbeat
+        URLs as for GET applies.
       operationId: sendHeartbeatWithBody
       requestBody:
         required: false
@@ -159,7 +162,12 @@ components:
             type: string
           example: Not Found
     TooManyHeartbeats:
-      description: More than one Heartbeat per second for this Monitor; this one wasn't recorded.
+      description: |
+        This Heartbeat wasn't recorded: either this Monitor got more than one
+        Heartbeat in the last second, or the client's IP sent more than 30
+        requests to unknown Heartbeat URLs in the last minute. While an IP is
+        over that limit, every Heartbeat URL answers 429 to it, valid ones too,
+        until the minute has passed.
       content:
         text/plain:
           schema:
