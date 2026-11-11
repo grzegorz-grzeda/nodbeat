@@ -10,6 +10,8 @@ export interface Config {
   selfHeartbeatUrl: string | undefined;
   /** The edge Caddy's fixed address; only its X-Forwarded-For is believed. */
   trustedProxyIp: string;
+  /** The Operator's directory with `terms.md`, `privacy.md` and `operator.md`; no legal pages when unset. */
+  legalDir: string | undefined;
 }
 
 export class ConfigError extends Error {
@@ -81,6 +83,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     problems.push("TRUSTED_PROXY_IP must be an IPv4 or IPv6 address");
   }
 
+  const legalDir = env.LEGAL_DIR?.trim() || undefined;
+
   if (problems.length > 0) throw new ConfigError(problems);
 
   return {
@@ -91,6 +95,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     telegramWebhookSecret,
     selfHeartbeatUrl,
     trustedProxyIp,
+    legalDir,
   };
 }
 

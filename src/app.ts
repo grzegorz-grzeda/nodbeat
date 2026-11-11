@@ -34,6 +34,7 @@ import {
 import { ensureIncidentIndexes } from "./incidents.js";
 import { ensureLinkCodeIndexes } from "./linked-chats.js";
 import { registerLayout } from "./layout.js";
+import { loadLegalDocs, registerLegalPages } from "./legal.js";
 import { createLogPruner } from "./log-pruner.js";
 import { KeyedLock } from "./keyed-lock.js";
 import { registerMonitorLogs } from "./monitor-logs.js";
@@ -142,7 +143,10 @@ export async function createApp(deps: AppDeps): Promise<App> {
   });
   await app.register(formbody);
   const auth = registerAuth(app, { db, clock, config });
-  registerLayout(app, { auth, build: deps.build });
+  // Read once: the Operator restarts nodbeat after changing their legal files.
+  const legal = loadLegalDocs(config.legalDir);
+  registerLayout(app, { auth, build: deps.build, legal });
+  registerLegalPages(app, { legal });
   registerErrorPages(app);
   registerDashboard(app, { db, clock, config, startedAt });
   registerMonitors(app, { db, clock, config, auth, startedAt });

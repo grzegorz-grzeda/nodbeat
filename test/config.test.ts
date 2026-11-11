@@ -44,3 +44,18 @@ describe("loadConfig: TRUSTED_PROXY_IP", () => {
     },
   );
 });
+
+describe("loadConfig: LEGAL_DIR", () => {
+  it("is optional", () => {
+    expect(loadConfig(validEnv).legalDir).toBeUndefined();
+    expect(
+      loadConfig({ ...validEnv, LEGAL_DIR: " " }).legalDir,
+    ).toBeUndefined();
+  });
+
+  it("reads the directory", () => {
+    expect(loadConfig({ ...validEnv, LEGAL_DIR: " /legal " }).legalDir).toBe(
+      "/legal",
+    );
+  });
+});
