@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-11-11
+
 ### Security
 
 - Backups are encrypted with `age` on the VPS before upload (`nodbeat-*.archive.gz.age`); no plaintext archive touches the disk. `scripts/backup.sh` now needs `BACKUP_AGE_RECIPIENT` and refuses to run without it. See `docs/deploy.md` step 8 for the key pair, restoring and deleting old unencrypted backups.
@@ -169,7 +171,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.17.0...v0.18.0
