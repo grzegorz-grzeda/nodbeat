@@ -19,8 +19,16 @@ export interface TelegramChannelDoc extends AlertChannelBase {
   chatId: number;
 }
 
+/** A Webhook: Alerts are POSTed to `url` as JSON, signed with `secret` when one is set. */
+export interface WebhookChannelDoc extends AlertChannelBase {
+  kind: "webhook";
+  url: string;
+  /** Stored as given (it signs every request); never shown again after saving. */
+  secret: string | null;
+}
+
 /** One document of `alertChannels`. New kinds join this union and `CHANNEL_KIND_LABELS`. */
-export type AlertChannelDoc = TelegramChannelDoc;
+export type AlertChannelDoc = TelegramChannelDoc | WebhookChannelDoc;
 
 export type AlertChannelKind = AlertChannelDoc["kind"];
 
@@ -33,6 +41,7 @@ export type AlertChannelOf<K extends AlertChannelKind> = Extract<
 /** How each kind is called in the UI. */
 export const CHANNEL_KIND_LABELS: Record<AlertChannelKind, string> = {
   telegram: "Telegram",
+  webhook: "Webhook",
 };
 
 /** Longest Alert channel name, in characters. */
@@ -191,4 +200,40 @@ export async function addAlertChannel(
     }
     await alertChannels(db).insertOne(channel);
   });
+}
+
+/**
+ * Marks channels Failing: their Alerts kept failing until the retry window ran out. `failures` maps channel id to the
+ * last error. A channel already Failing keeps its `failingSince`.
+ */
+export async function markChannelsFailing(
+  db: Db,
+  failures: ReadonlyMap<string, string>,
+  now: Date,
+): Promise<void> {
+  await Promise.all(
+    [...failures].map(([id, error]) =>
+      alertChannels(db).updateOne({ _id: new ObjectId(id) }, [
+        {
+          $set: {
+            failingSince: { $ifNull: ["$failingSince", now] },
+            lastError: error,
+          },
+        },
+      ]),
+    ),
+  );
+}
+
+/** Clears Failing on channels an Alert (or a test) just got through to. */
+export async function clearChannelsFailing(
+  db: Db,
+  ids: Iterable<string>,
+): Promise<void> {
+  const _ids = [...ids].map((id) => new ObjectId(id));
+  if (_ids.length === 0) return;
+  await alertChannels(db).updateMany(
+    { _id: { $in: _ids }, failingSince: { $ne: null } },
+    { $set: { failingSince: null, lastError: null } },
+  );
 }

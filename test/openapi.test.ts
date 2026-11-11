@@ -7,6 +7,13 @@ interface OpenApiDoc {
   info: { version: string };
   servers: { url: string }[];
   paths: Record<string, Record<string, unknown>>;
+  webhooks?: Record<string, { post?: WebhookOperation }>;
+  components: { schemas: Record<string, { required: string[] }> };
+}
+
+interface WebhookOperation {
+  parameters?: { name: string; in: string }[];
+  requestBody: { content: Record<string, { schema: { $ref: string } }> };
 }
 
 describe("GET /openapi.yaml", () => {
@@ -37,6 +44,24 @@ describe("GET /openapi.yaml", () => {
       );
     }
     expect(doc.paths["/health"]).toHaveProperty("get");
+  });
+
+  it("documents the Webhook Alert body and its signature header", async () => {
+    const { app } = await buildTestApp();
+
+    const res = await app.inject({ method: "GET", url: "/openapi.yaml" });
+    const doc = parse(res.body) as OpenApiDoc;
+
+    const op = doc.webhooks?.alert?.post;
+    expect(op).toBeDefined();
+    expect(op!.parameters).toContainEqual(
+      expect.objectContaining({ name: "X-Nodbeat-Signature", in: "header" }),
+    );
+    const ref = op!.requestBody.content["application/json"]!.schema.$ref;
+    const schema = doc.components.schemas[ref.split("/").pop()!]!;
+    expect(schema.required.sort()).toEqual(
+      ["at", "incidentId", "kind", "message", "monitor"].sort(),
+    );
   });
 
   it("is stamped with the running version and this instance's public URL", async () => {
