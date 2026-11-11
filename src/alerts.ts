@@ -2,8 +2,9 @@ import { ObjectId, type Db } from "mongodb";
 import type { Clock } from "./clock.js";
 import { formatDateTime, formatDuration } from "./format.js";
 import type { IncidentDoc } from "./incidents.js";
-import { listLinkedChats, unlinkChat } from "./linked-chats.js";
+import { listLinkedChats, moveChatLinks, unlinkChat } from "./linked-chats.js";
 import {
+  TelegramChatMigratedError,
   TelegramForbiddenError,
   type SendMessageOptions,
   type TelegramClient,
@@ -128,6 +129,33 @@ function alertText(
   ].join("\n");
 }
 
+/** Follows a group upgraded to a supergroup: its Links and its pending Alerts move to the new chat id. */
+export async function migrateChat(
+  db: Db,
+  fromChatId: number,
+  toChatId: number,
+): Promise<void> {
+  await moveChatLinks(db, fromChatId, toChatId);
+  await outbox(db).updateMany({ chatIds: fromChatId }, [
+    {
+      $set: {
+        chatIds: {
+          $setUnion: [
+            {
+              $map: {
+                input: "$chatIds",
+                in: {
+                  $cond: [{ $eq: ["$$this", fromChatId] }, toChatId, "$$this"],
+                },
+              },
+            },
+          ],
+        },
+      },
+    },
+  ]);
+}
+
 /** A Down Alert not yet delivered when its Incident closes is stale: the Up Alert says it all. */
 export async function dropPendingDownAlert(
   db: Db,
@@ -189,11 +217,23 @@ export function createAlertDispatcher(deps: {
       (await listLinkedChats(db, alert.ownerId)).map((c) => c.chatId),
     );
     const failed: number[] = [];
-    for (const chatId of alert.chatIds.filter((id) => linked.has(id))) {
+    /** Sends to one chat; a chat that moved is followed once, so two migration answers in a row can't loop. */
+    const send = async (
+      chatId: number,
+      followMigration = true,
+    ): Promise<void> => {
       try {
         await telegram.sendMessage(chatId, alert.text, alert.options ?? {});
       } catch (err) {
-        if (err instanceof TelegramForbiddenError) {
+        if (err instanceof TelegramChatMigratedError && followMigration) {
+          // The group became a supergroup: follow it and send to the new id at once.
+          await migrateChat(db, chatId, err.newChatId);
+          log.warn(
+            { chatId, newChatId: err.newChatId },
+            "Linked chat moved: the group was upgraded to a supergroup",
+          );
+          await send(err.newChatId, false);
+        } else if (err instanceof TelegramForbiddenError) {
           // The bot was blocked or removed: retrying can't help, and the chat is gone for every owner.
           await unlinkChat(db, chatId);
           log.warn(
@@ -204,6 +244,9 @@ export function createAlertDispatcher(deps: {
           failed.push(chatId);
         }
       }
+    };
+    for (const chatId of alert.chatIds.filter((id) => linked.has(id))) {
+      await send(chatId);
     }
     const attempts = alert.attempts + 1;
     const firstFailedAt = alert.firstFailedAt ?? now;

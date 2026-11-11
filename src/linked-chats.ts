@@ -142,6 +142,27 @@ export async function unlinkChat(db: Db, chatId: number): Promise<number> {
   return res.deletedCount;
 }
 
+/** Moves every Link of `fromChatId` to `toChatId` (a group upgraded to a supergroup). An owner already linked to the new id keeps that Link. */
+export async function moveChatLinks(
+  db: Db,
+  fromChatId: number,
+  toChatId: number,
+): Promise<void> {
+  for (const link of await linkedChats(db)
+    .find({ chatId: fromChatId })
+    .toArray()) {
+    try {
+      await linkedChats(db).updateOne(
+        { _id: link._id },
+        { $set: { chatId: toChatId } },
+      );
+    } catch (err) {
+      if (!(err instanceof MongoServerError && err.code === 11000)) throw err;
+      await linkedChats(db).deleteOne({ _id: link._id });
+    }
+  }
+}
+
 /** One of the User's Linked chats by id; null when it isn't theirs or doesn't exist. */
 export async function findLinkedChat(
   db: Db,
