@@ -55,6 +55,7 @@ export function incidentsTable(
 
 const SIGNAL_LABELS: Record<SignalKind, string> = {
   success: "✓",
+  start: "Start",
   fail: "Fail",
 };
 
@@ -68,6 +69,7 @@ export function heartbeatsTable(
         <tr>
           <th>Received</th>
           <th>Signal</th>
+          <th>Run duration</th>
           <th>Message</th>
         </tr>
       </thead>
@@ -77,6 +79,13 @@ export function heartbeatsTable(
             html`<tr>
               <td>${formatDateTime(h.receivedAt, timeZone)}</td>
               <td>${SIGNAL_LABELS[h.kind ?? "success"]}</td>
+              <td>
+                ${
+                  h.runDurationSec != null
+                    ? formatDuration(h.runDurationSec)
+                    : ""
+                }
+              </td>
               <td>${h.message ?? ""}</td>
             </tr>`,
         )}

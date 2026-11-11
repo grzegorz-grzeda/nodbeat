@@ -227,7 +227,7 @@ describe("Fail signal", () => {
       .map((r) =>
         [...r[1]!.matchAll(/<td>([\s\S]*?)<\/td>/g)].map((c) => c[1]!.trim()),
       );
-    expect(rows.map((r) => [r[1], r[2]])).toEqual([
+    expect(rows.map((r) => [r[1], r[3]])).toEqual([
       ["Fail", "broken"],
       ["✓", "fine"],
     ]);
