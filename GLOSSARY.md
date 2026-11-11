@@ -76,6 +76,10 @@ _Avoid_: Overview, home, status page
 A message sent to a Monitor's Alert channels when it goes Down or comes back Up. Not sent while the Monitor's Alerts are switched off.
 _Avoid_: Notification, ping
 
+**Test Alert**:
+An Alert a User sends to one of their Alert channels from Settings, to check it works. It is about no Monitor, is sent once (never retried), and getting through clears Failing.
+_Avoid_: Test notification, ping, Test message
+
 **Reminder**:
 An Alert repeated at a fixed cadence while a Monitor stays Down, for Monitors that ask for one. Stops when the Monitor comes back Up or is paused.
 _Avoid_: Re-alert, escalation, nag

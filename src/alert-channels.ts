@@ -50,7 +50,7 @@ export type AlertChannelOf<K extends AlertChannelKind> = Extract<
 
 /** How each kind is called in the UI. */
 export const CHANNEL_KIND_LABELS: Record<AlertChannelKind, string> = {
-  telegram: "Telegram",
+  telegram: "Linked chat",
   webhook: "Webhook",
   ntfy: "ntfy topic",
 };

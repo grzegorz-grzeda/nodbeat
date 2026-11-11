@@ -21,9 +21,20 @@ export interface HttpClient {
 /** Every address a host name resolves to. */
 export type HostResolver = (hostname: string) => Promise<string[]>;
 
+/** What an HTTP Alert channel's sender needs to reach it. */
+export interface OutboundHttp {
+  http: HttpClient;
+  resolveHost: HostResolver;
+}
+
+/** How long a Webhook or ntfy server has to answer. */
+export const HTTP_CHANNEL_TIMEOUT_MS = 5000;
+
 /**
- * Addresses nodbeat never sends to: private, loopback, link-local, CGNAT and unique-local (v4 and v6), plus
- * "this network", multicast and reserved ones. Keeps a Webhook or ntfy URL from probing the `edge` network or the VPS.
+ * Addresses nodbeat never sends to: private, loopback, link-local, CGNAT and unique-local (v4 and v6), "this
+ * network", documentation (TEST-NET), benchmarking, multicast, reserved and broadcast, and IPv6 prefixes that tunnel
+ * to IPv4 (NAT64, 6to4, Teredo), which could reach a private address. Keeps a Webhook or ntfy URL from probing the
+ * `edge` network or the VPS.
  */
 const BLOCKED = new BlockList();
 for (const [net, prefix] of [
@@ -34,9 +45,13 @@ for (const [net, prefix] of [
   ["169.254.0.0", 16],
   ["172.16.0.0", 12],
   ["192.0.0.0", 24],
+  ["192.0.2.0", 24],
   ["192.168.0.0", 16],
   ["198.18.0.0", 15],
+  ["198.51.100.0", 24],
+  ["203.0.113.0", 24],
   ["224.0.0.0", 4],
+  // Reserved, including the broadcast address 255.255.255.255.
   ["240.0.0.0", 4],
 ] as const) {
   BLOCKED.addSubnet(net, prefix, "ipv4");
@@ -44,8 +59,12 @@ for (const [net, prefix] of [
 for (const [net, prefix] of [
   ["::", 128],
   ["::1", 128],
+  ["64:ff9b::", 96],
   ["64:ff9b:1::", 48],
   ["100::", 64],
+  ["2001::", 32],
+  ["2001:db8::", 32],
+  ["2002::", 16],
   ["fc00::", 7],
   ["fe80::", 10],
   ["fec0::", 10],
@@ -65,6 +84,11 @@ export function isBlockedAddress(address: string): boolean {
 
 /** A URL nodbeat won't send to, with the reason in words for the User. */
 export class OutboundUrlError extends Error {}
+
+const blockedHostError = (host: string) =>
+  new OutboundUrlError(`${host} resolves to a private or reserved address.`);
+const noAddressError = (host: string) =>
+  new OutboundUrlError(`${host} has no address.`);
 
 /** Longest URL accepted for an Alert channel. */
 export const MAX_OUTBOUND_URL_LENGTH = 2000;
@@ -103,20 +127,14 @@ export async function checkOutboundUrl(
   } catch {
     throw new OutboundUrlError(`${host} can't be resolved.`);
   }
-  if (addresses.length === 0) {
-    throw new OutboundUrlError(`${host} can't be resolved.`);
-  }
-  if (addresses.some(isBlockedAddress)) {
-    throw new OutboundUrlError(
-      `${host} is a private, loopback or link-local address.`,
-    );
-  }
+  if (addresses.length === 0) throw noAddressError(host);
+  if (addresses.some(isBlockedAddress)) throw blockedHostError(host);
   return url;
 }
 
 /** POSTs after checking the URL (OutboundUrlError when it isn't safe). The one way Alert channels send over HTTP. */
 export async function guardedPost(
-  deps: { http: HttpClient; resolveHost: HostResolver },
+  deps: OutboundHttp,
   request: HttpRequest,
 ): Promise<{ status: number }> {
   await checkOutboundUrl(request.url, deps.resolveHost);
@@ -128,7 +146,7 @@ export async function guardedPost(
  * a timeout, a network error, or a URL now resolving to a blocked address is a failure worth retrying.
  */
 export async function postAlert(
-  deps: { http: HttpClient; resolveHost: HostResolver },
+  deps: OutboundHttp,
   channelId: string,
   request: HttpRequest,
   attempt: DeliveryAttempt,
@@ -162,15 +180,9 @@ const guardedLookup: LookupFunction = (hostname, options, callback) => {
   lookup(hostname, { ...options, all: true }, (err, addresses) => {
     if (err) return callback(err, "", 0);
     const list = addresses as LookupAddress[];
-    const blocked = list.find((a) => isBlockedAddress(a.address));
-    if (blocked || list.length === 0) {
-      return callback(
-        new OutboundUrlError(
-          `${hostname} is a private, loopback or link-local address.`,
-        ),
-        "",
-        0,
-      );
+    if (list.length === 0) return callback(noAddressError(hostname), "", 0);
+    if (list.some((a) => isBlockedAddress(a.address))) {
+      return callback(blockedHostError(hostname), "", 0);
     }
     if (options.all) {
       (callback as unknown as (e: null, a: LookupAddress[]) => void)(

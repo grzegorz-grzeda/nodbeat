@@ -124,8 +124,8 @@ export async function linkChat(
   );
 }
 
-/** Every Link of this Telegram chat: its owner and Alert channel id, earliest Link first. */
-export async function linksOfChat(
+/** Every User's Linked chat that is this Telegram chat: its owner and Alert channel id, earliest linked first. */
+export async function linkedChatsOf(
   db: Db,
   chatId: number,
 ): Promise<Array<{ ownerId: ObjectId; channelId: ObjectId }>> {

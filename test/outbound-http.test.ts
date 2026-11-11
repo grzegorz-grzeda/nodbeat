@@ -28,7 +28,7 @@ describe("the real HTTP client", () => {
         body: "{}",
         timeoutMs: 5000,
       }),
-    ).rejects.toThrow(/private, loopback or link-local/);
+    ).rejects.toThrow(/private or reserved address/);
     expect(hits).toBe(0);
   });
 });

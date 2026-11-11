@@ -155,6 +155,15 @@ describe("Webhook channel", () => {
     ["CGNAT", "https://100.64.0.7/hook"],
     ["unique-local v6", "https://[fd12:3456::1]/hook"],
     ["private mapped into v6", "https://[::ffff:192.168.1.1]/hook"],
+    ["private through NAT64", "https://[64:ff9b::a00:1]/hook"],
+    ["private through 6to4", "https://[2002:a00:1::1]/hook"],
+    ["Teredo", "https://[2001:0:4136:e378::1]/hook"],
+    ["TEST-NET-1", "https://192.0.2.10/hook"],
+    ["TEST-NET-2", "https://198.51.100.10/hook"],
+    ["TEST-NET-3", "https://203.0.113.10/hook"],
+    ['"this network"', "https://0.1.2.3/hook"],
+    ["reserved", "https://240.1.2.3/hook"],
+    ["broadcast", "https://255.255.255.255/hook"],
     ["not http", "ftp://hooks.example.com/hook"],
   ])("refuses %s on save", async (_what, url) => {
     const ctx = await loggedIn();
@@ -166,6 +175,23 @@ describe("Webhook channel", () => {
     expect(res.body).toContain('class="error"');
     expect(res.body).not.toContain(SECRET);
     expect(await channelItems(ctx.browser)).toEqual([]);
+  });
+
+  it("says why when a name resolves to a reserved address, or to none", async () => {
+    const ctx = await loggedIn();
+    ctx.http.hosts.set("internal.example.com", ["10.1.2.3"]);
+    ctx.http.hosts.set("nowhere.example.com", []);
+
+    const reserved = await addWebhook(ctx.browser, {
+      url: "https://internal.example.com/hook",
+    });
+    expect(reserved.body).toContain(
+      "internal.example.com resolves to a private or reserved address.",
+    );
+    const none = await addWebhook(ctx.browser, {
+      url: "https://nowhere.example.com/hook",
+    });
+    expect(none.body).toContain("nowhere.example.com has no address.");
   });
 
   it("refuses to send once its host resolves to a private address, and marks it Failing", async () => {
@@ -225,7 +251,7 @@ describe("Webhook channel", () => {
     expect(bodies(ctx).map((b) => b.kind)).toEqual(["down", "down"]);
   });
 
-  it("can be edited: a new URL keeps the secret unless removed, and the secret is never shown", async () => {
+  it("can be edited: a new URL on the same host keeps the secret unless removed, and the secret is never shown", async () => {
     const ctx = await loggedIn();
     await addWebhook(ctx.browser, {
       url: "https://old.example.com/x",
@@ -244,21 +270,50 @@ describe("Webhook channel", () => {
     });
     expect(refused.statusCode).toBe(400);
     await ctx.browser.submit(editPath, editPath, {
-      url: "https://new.example.com/x",
+      url: "https://old.example.com/new",
     });
     const m = await createMonitor(ctx.browser);
     await goDown(ctx, m.hb);
     const [signed] = ctx.http.requests;
-    expect(signed!.url).toBe("https://new.example.com/x");
+    expect(signed!.url).toBe("https://old.example.com/new");
     expect(signed!.headers["x-nodbeat-signature"]).toBe(
       `sha256=${createHmac("sha256", SECRET).update(signed!.body).digest("hex")}`,
     );
 
     await ctx.browser.submit(editPath, editPath, {
-      url: "https://new.example.com/x",
+      url: "https://old.example.com/new",
       removeSecret: "1",
     });
     expect((await channelItems(ctx.browser))[0]).toContain("no secret");
+  });
+
+  it("drops the secret when the URL moves to another host and no new secret is typed", async () => {
+    const ctx = await loggedIn();
+    await addWebhook(ctx.browser, {
+      name: "Receiver",
+      url: "https://old.example.com/x",
+      secret: SECRET,
+    });
+    const editPath = /href="(\/settings\/channels\/[0-9a-f]+\/webhook)"/.exec(
+      (await channelItems(ctx.browser))[0]!,
+    )![1]!;
+
+    await ctx.browser.submit(editPath, editPath, {
+      url: "https://elsewhere.example.net/x",
+    });
+
+    const settings = (await ctx.browser.get("/settings")).body;
+    expect(/<p class="flash"[^>]*>([^<]*)<\/p>/.exec(settings)?.[1]).toBe(
+      "Receiver saved. Its secret was removed: the URL points at another host.",
+    );
+    expect((await channelItems(ctx.browser))[0]).toContain("no secret");
+
+    // A new secret typed with the move is kept.
+    await ctx.browser.submit(editPath, editPath, {
+      url: "https://third.example.org/x",
+      secret: "another-secret",
+    });
+    expect((await channelItems(ctx.browser))[0]).toContain("secret set");
   });
 
   it('"Send test" POSTs a signed test Alert, shows a failure, and clears Failing once it gets through', async () => {
@@ -293,7 +348,7 @@ describe("Webhook channel", () => {
       `sha256=${createHmac("sha256", SECRET).update(request!.body).digest("hex")}`,
     );
     expect(JSON.parse(request!.body)).toMatchObject({
-      kind: "down",
+      kind: "test",
       message: expect.stringContaining("Test Alert"),
     });
     expect((await channelItems(ctx.browser))[0]).not.toContain("Failing");

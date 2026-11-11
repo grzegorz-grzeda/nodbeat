@@ -222,7 +222,31 @@ describe("ntfy topic", () => {
     expect((await channelItems(ctx.browser))[0]).toContain("no token");
   });
 
-  it('"Send test" pushes a test Alert with the token', async () => {
+  it("drops the token when the URL moves to another server and no new token is typed", async () => {
+    const ctx = await loggedIn();
+    await addNtfy(ctx.browser, {
+      name: "Phone",
+      url: "https://ntfy.sh/alerts",
+      token: TOKEN,
+    });
+    const editPath = /href="(\/settings\/channels\/[0-9a-f]+\/ntfy)"/.exec(
+      (await channelItems(ctx.browser))[0]!,
+    )![1]!;
+
+    await ctx.browser.submit(editPath, editPath, {
+      url: "https://ntfy.example.org/alerts",
+    });
+
+    const settings = (await ctx.browser.get("/settings")).body;
+    expect(/<p class="flash"[^>]*>([^<]*)<\/p>/.exec(settings)?.[1]).toBe(
+      "Phone saved. Its token was removed: the URL points at another host.",
+    );
+    const m = await createMonitor(ctx.browser);
+    await goDown(ctx, m.hb);
+    expect(ctx.http.requests[0]!.headers.authorization).toBeUndefined();
+  });
+
+  it('"Send test" pushes a test Alert with the token, at default priority', async () => {
     const ctx = await loggedIn();
     await addNtfy(ctx.browser, {
       name: "Phone",
@@ -242,6 +266,7 @@ describe("ntfy topic", () => {
     const [request] = ctx.http.requests;
     expect(request!.headers).toMatchObject({
       title: "Test Alert from nodbeat",
+      priority: "3",
       authorization: `Bearer ${TOKEN}`,
       click: "https://nodbeat.test/settings",
     });
