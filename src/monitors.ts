@@ -276,7 +276,7 @@ export function registerMonitors(
   // The form's Schedule preview as the User types (`assets/monitor-form.js`).
   app.get<{ Querystring: { cron?: unknown; timeZone?: unknown } }>(
     "/monitors/schedule-preview",
-    { preHandler: requireUser },
+    { preHandler: requireUser, config: { acceptTerms: false } },
     async (req, reply) => {
       const { cron, timeZone } = req.query;
       const preview = schedulePreview(

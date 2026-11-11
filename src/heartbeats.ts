@@ -257,7 +257,7 @@ export async function registerHeartbeatIntake(
         // GET and POST only: link previewers send HEAD on their own, which must not count as a Heartbeat.
         exposeHeadRoute: false,
         bodyLimit: BODY_LIMIT_BYTES,
-        config: { csrf: false },
+        config: { csrf: false, acceptTerms: false },
         handler: (req, reply) => handle(kind, req, reply),
       });
     }

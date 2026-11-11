@@ -10,6 +10,7 @@ import type { Db } from "mongodb";
 import type { BuildInfo } from "./build-info.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
+import { registerTermsAcceptance } from "./accept-terms.js";
 import { registerAdmin } from "./admin.js";
 import {
   ensureAlertChannelIndexes,
@@ -145,6 +146,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const auth = registerAuth(app, { db, clock, config });
   // Read once: the Operator restarts nodbeat after changing their legal files.
   const legal = loadLegalDocs(config.legalDir);
+  registerTermsAcceptance(app, { db, clock, auth, legal });
   registerLayout(app, { auth, build: deps.build, legal });
   registerLegalPages(app, { legal });
   registerErrorPages(app);
@@ -201,16 +203,20 @@ export async function createApp(deps: AppDeps): Promise<App> {
   });
   registerDocs(app, { build: deps.build });
 
-  app.get("/health", async (_req, reply) => {
-    try {
-      await db.command({ ping: 1 });
-      return reply.send({ status: "ok", ...deps.build });
-    } catch {
-      return reply
-        .code(503)
-        .send({ status: "mongo unavailable", ...deps.build });
-    }
-  });
+  app.get(
+    "/health",
+    { config: { acceptTerms: false } },
+    async (_req, reply) => {
+      try {
+        await db.command({ ping: 1 });
+        return reply.send({ status: "ok", ...deps.build });
+      } catch {
+        return reply
+          .code(503)
+          .send({ status: "mongo unavailable", ...deps.build });
+      }
+    },
+  );
 
   const checkDeadlines = createDownChecker({
     db,

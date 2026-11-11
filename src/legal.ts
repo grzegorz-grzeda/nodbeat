@@ -40,6 +40,20 @@ export function currentVersions(legal: LegalDocs): LegalVersions {
   };
 }
 
+/**
+ * The documents the User must accept (again): never accepted, or accepted at an older version. A stored version
+ * newer than the current one (the Operator went back) isn't due.
+ */
+export function dueDocuments(
+  legal: LegalDocs,
+  accepted: Partial<Record<LegalKind, { version: string }>> | undefined,
+): LegalKind[] {
+  return LEGAL_KINDS.filter((kind) => {
+    const version = accepted?.[kind]?.version;
+    return version === undefined || version < legal.documents[kind].version;
+  });
+}
+
 export class LegalDocsError extends Error {
   constructor(file: string, problem: string) {
     super(`LEGAL_DIR: ${file} ${problem}`);
@@ -223,7 +237,7 @@ function inline(text: string): SafeHtml {
   return html`${parts}`;
 }
 
-const TITLES: Record<LegalKind, string> = {
+export const LEGAL_TITLES: Record<LegalKind, string> = {
   terms: "Terms",
   privacy: "Privacy policy",
 };
@@ -245,15 +259,18 @@ export function registerLegalPages(
   if (!legal) return;
   for (const kind of LEGAL_KINDS) {
     const document = legal.documents[kind];
-    app.get(`/${kind}`, async (_req, reply) =>
-      reply.page({
-        title: TITLES[kind],
-        body: html`<article class="legal">
-          ${kind === "terms" && operatorDetails(legal.operator)}
-          <p class="muted">Version ${document.version}</p>
-          ${document.body}
-        </article>`,
-      }),
+    app.get(
+      `/${kind}`,
+      { config: { acceptTerms: false } },
+      async (_req, reply) =>
+        reply.page({
+          title: LEGAL_TITLES[kind],
+          body: html`<article class="legal">
+            ${kind === "terms" && operatorDetails(legal.operator)}
+            <p class="muted">Version ${document.version}</p>
+            ${document.body}
+          </article>`,
+        }),
     );
   }
 }

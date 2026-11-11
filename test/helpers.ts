@@ -361,6 +361,43 @@ export const stateOf = async (
     (await browser.get(page)).body,
   )?.[1];
 
+/** The hidden fields of the `/accept-terms` form in this page, `_csrf` aside, as a browser would send them. */
+export function acceptTermsFields(body: string): Record<string, string> {
+  const form =
+    /<form method="post" action="\/accept-terms">([\s\S]*?)<\/form>/.exec(
+      body,
+    )?.[1];
+  if (!form) throw new Error("no /accept-terms form on this page");
+  return Object.fromEntries(
+    [
+      ...form.matchAll(
+        /<input\s+type="hidden"\s+name="(\w+)"\s+value="([^"]*)"/g,
+      ),
+    ]
+      .filter((m) => m[1] !== "_csrf")
+      .map((m) => [
+        m[1]!,
+        m[2]!
+          .replaceAll("&quot;", '"')
+          .replaceAll("&#39;", "'")
+          .replaceAll("&amp;", "&"),
+      ]),
+  );
+}
+
+/** Accepts the current Terms and Privacy policy, as a CLI-created User must before using the pages. */
+export async function acceptTerms(browser: Browser): Promise<void> {
+  const page = await browser.get("/accept-terms");
+  if (page.statusCode !== 200) throw new Error("nothing to accept");
+  const res = await browser.submit(
+    "/accept-terms",
+    "/accept-terms",
+    acceptTermsFields(page.body),
+    { csrf: csrfTokenIn(page.body) ?? null },
+  );
+  if (res.statusCode !== 303) throw new Error("acceptance failed");
+}
+
 export async function login(
   app: App,
   email: string,

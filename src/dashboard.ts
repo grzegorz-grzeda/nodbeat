@@ -162,10 +162,19 @@ export function registerDashboard(
     });
   });
 
-  app.get("/dashboard.json", async (req, reply) => {
-    const user = req.user;
-    if (!user) return reply.code(401).send({ error: "Not logged in" });
-    const monitors = await dashboardMonitors(db, user, clock.now(), startedAt);
-    return reply.header("cache-control", "no-store").send({ monitors });
-  });
+  app.get(
+    "/dashboard.json",
+    { config: { acceptTerms: false } },
+    async (req, reply) => {
+      const user = req.user;
+      if (!user) return reply.code(401).send({ error: "Not logged in" });
+      const monitors = await dashboardMonitors(
+        db,
+        user,
+        clock.now(),
+        startedAt,
+      );
+      return reply.header("cache-control", "no-store").send({ monitors });
+    },
+  );
 }
