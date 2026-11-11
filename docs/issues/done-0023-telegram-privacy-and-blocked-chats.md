@@ -1,7 +1,7 @@
 # 0023: Telegram privacy and blocked chats
 
 Spec: 0004
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** The bot never shows emails; in groups only Telegram admins can use `/status` and `/unlink`; a chat that blocked or kicked the bot is unlinked as soon as Telegram answers 403.
 

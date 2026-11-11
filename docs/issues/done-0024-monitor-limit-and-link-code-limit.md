@@ -1,7 +1,7 @@
 # 0024: Atomic Monitor limit and Link code limit
 
 Spec: 0004
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** Parallel requests can't create more Monitors than the limit, and a User can generate at most 10 Link codes per hour.
 

@@ -1,7 +1,7 @@
 # 0026: Dependency audit in CI
 
 Spec: 0004
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** CI fails when a production dependency has a known high or critical vulnerability.
 
