@@ -384,7 +384,7 @@ describe("Alerts", () => {
     ctx.telegram.migratedChats.set(GROUP_CHAT.id, SUPERGROUP_ID);
     // The database refuses to move the Linked chat, e.g. it is unavailable.
     await ctx.db.command({
-      collMod: "linkedChats",
+      collMod: "alertChannels",
       validator: { chatId: { $ne: SUPERGROUP_ID } },
       validationAction: "error",
     });
@@ -392,7 +392,7 @@ describe("Alerts", () => {
     await goDown(ctx, m.hb);
     expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([PRIVATE_CHAT.id]);
 
-    await ctx.db.command({ collMod: "linkedChats", validator: {} });
+    await ctx.db.command({ collMod: "alertChannels", validator: {} });
     ctx.clock.advance(30 * SEC);
     await ctx.app.tick();
     expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([

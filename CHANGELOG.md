@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Linked chats are now Alert channels. Settings has one "Alert channels" list showing each channel's kind and name, where a channel can be renamed or removed. Relinking a chat keeps the name it was given. Existing Linked chats and queued Alerts are moved over at startup.
+- A User can have at most 10 Alert channels. Linking a chat past the limit gets a bot reply asking to remove one first.
+
 ## [0.23.0] - 2026-11-11
 
 ### Added
