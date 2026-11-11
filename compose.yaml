@@ -4,6 +4,9 @@ services:
     image: ghcr.io/grzegorz-grzeda/nodbeat:latest
     restart: unless-stopped
     env_file: .env
+    # The Operator's Terms, Privacy policy and details (LEGAL_DIR=/legal); never in the repo or the image (ADR 0008).
+    volumes:
+      - ./legal:/legal:ro
     # No published ports: the shared edge Caddy reaches nodbeat:3000 over the edge network (ADR 0004).
     expose:
       - "3000"

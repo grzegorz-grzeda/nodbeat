@@ -74,15 +74,16 @@ chmod 600 .env
 
 Fill it in:
 
-| Variable                  | Value                                                      |
-| ------------------------- | ---------------------------------------------------------- |
-| `MONGODB_URI`             | the string from step 1                                     |
-| `PUBLIC_BASE_URL`         | `https://nodbeat.g2labs.pl`                                |
-| `SESSION_SECRET`          | `openssl rand -base64 48`                                  |
-| `TELEGRAM_BOT_TOKEN`      | from step 2                                                |
-| `TELEGRAM_WEBHOOK_SECRET` | from step 2                                                |
-| `TRUSTED_PROXY_IP`        | the edge Caddy's fixed IP from step 4 (e.g. `172.30.0.10`) |
-| `SELF_HEARTBEAT_URL`      | from step 9 (leave empty for now; set it and restart then) |
+| Variable                  | Value                                                       |
+| ------------------------- | ----------------------------------------------------------- |
+| `MONGODB_URI`             | the string from step 1                                      |
+| `PUBLIC_BASE_URL`         | `https://nodbeat.g2labs.pl`                                 |
+| `SESSION_SECRET`          | `openssl rand -base64 48`                                   |
+| `TELEGRAM_BOT_TOKEN`      | from step 2                                                 |
+| `TELEGRAM_WEBHOOK_SECRET` | from step 2                                                 |
+| `TRUSTED_PROXY_IP`        | the edge Caddy's fixed IP from step 4 (e.g. `172.30.0.10`)  |
+| `SELF_HEARTBEAT_URL`      | from step 9 (leave empty for now; set it and restart then)  |
+| `LEGAL_DIR`               | `/legal` once step 10's files exist (empty: no legal pages) |
 
 ## 6. Start
 
@@ -161,7 +162,37 @@ nodbeat can't alert about its own death, so something outside must watch it.
 
 nodbeat sends a GET to that URL at startup and every 60 s. Failures are only logged. Within a minute the check should turn green.
 
-## 10. Releases (ADR 0005, ADR 0006)
+## 10. Terms and Privacy policy (spec 0014, ADR 0008)
+
+The Operator writes the legal text; it isn't in the repo or the image. `compose.yaml` mounts `~/nodbeat/legal` read-only at `/legal` (`legal/` is git- and docker-ignored). Put three files there:
+
+- `terms.md` and `privacy.md`, each starting with front-matter:
+
+  ```markdown
+  ---
+  version: 2026-12-01
+  summary: One line on what changed, shown when Users are asked to accept it.
+  ---
+
+  # Terms
+  ```
+
+  `version` is a date (`YYYY-MM-DD`); bump it when the text changes. The body may use `#` headings, paragraphs, `-` or `1.` lists and `[text](https://...)` links; anything else (bold, raw HTML) shows as plain text.
+
+- `operator.md`, front-matter only:
+
+  ```markdown
+  ---
+  name: Your Name or Company
+  nip: "0000000000"
+  address: ul. Example 1, 00-000 Warszawa
+  email: contact@example.com
+  ---
+  ```
+
+Set `LEGAL_DIR=/legal` in `.env` and `docker compose up -d`. `/terms` (starting with the Operator's details) and `/privacy` appear, and every page's footer links to both and names the Operator. The files are read at startup: restart after editing them. A malformed file stops startup with its name in the error. With `LEGAL_DIR` unset or any of the three files missing, there are no legal pages, footer links or Operator details (a self-hosted instance without its own).
+
+## 11. Releases (ADR 0005, ADR 0006)
 
 Pushing a tag `vX.Y.Z` runs `.github/workflows/release.yml`:
 

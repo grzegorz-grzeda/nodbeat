@@ -160,6 +160,7 @@ export const testConfig: Config = {
   telegramWebhookSecret: "test-webhook-secret",
   selfHeartbeatUrl: undefined,
   trustedProxyIp: "172.18.0.2",
+  legalDir: undefined,
 };
 
 /** The Content-Security-Policy sent on every response. */
@@ -178,6 +179,7 @@ export interface TestContext {
   db: Db;
   /** Warnings and errors the app logged, parsed. */
   logs: Array<Record<string, unknown>>;
+  config: Config;
 }
 
 /** Fastify logger options that collect warnings and errors into `logs`. */
@@ -196,9 +198,12 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-/** Builds the full app on a fresh, isolated database. `logLevel` "info" also records request logs. */
+/**
+ * Builds the full app on a fresh, isolated database. `logLevel` "info" also records request logs; `legalDir` is
+ * `LEGAL_DIR` (a fixture directory: the repo holds no real legal text).
+ */
 export async function buildTestApp(
-  options: { logLevel?: "warn" | "info" } = {},
+  options: { logLevel?: "warn" | "info"; legalDir?: string } = {},
 ): Promise<TestContext> {
   const client = new MongoClient(inject("mongoUri"));
   await client.connect();
@@ -207,21 +212,26 @@ export async function buildTestApp(
   const telegram = new RecordingTelegram();
   const http = new RecordingHttp();
   const logs: TestContext["logs"] = [];
+  const config: Config = { ...testConfig, legalDir: options.legalDir };
   const app = await createApp({
     db,
     clock,
     telegram,
     http,
     resolveHost: http.resolve,
-    config: testConfig,
+    config,
     build: testBuild,
     logger: recordingLogger(logs, options.logLevel),
+  }).catch(async (err: unknown) => {
+    // e.g. malformed legal files: don't leak the connection.
+    await client.close();
+    throw err;
   });
   cleanups.push(async () => {
     await app.close();
     await client.close();
   });
-  return { app, clock, telegram, http, client, db, logs };
+  return { app, clock, telegram, http, client, db, logs, config };
 }
 
 /** Simulates a nodbeat restart: a fresh `createApp` on the same database and clock. */
@@ -233,7 +243,7 @@ export async function restartApp(ctx: TestContext): Promise<App> {
     telegram: ctx.telegram,
     http: ctx.http,
     resolveHost: ctx.http.resolve,
-    config: testConfig,
+    config: ctx.config,
     build: testBuild,
     logger: recordingLogger(ctx.logs),
   });

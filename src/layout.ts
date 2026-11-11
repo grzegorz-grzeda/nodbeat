@@ -4,6 +4,7 @@ import type { Auth } from "./auth.js";
 import type { BuildInfo } from "./build-info.js";
 import { takeFlash } from "./flash.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
+import { operatorDetails, type LegalDocs, type Operator } from "./legal.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
 import { DEFAULT_THEME, THEMES, themeOf, type Theme } from "./users.js";
 
@@ -137,6 +138,8 @@ export function renderPage(
     user?: NavUser | undefined;
     /** One-time message from the previous action, shown above the body. */
     flash?: string | undefined;
+    /** Links the Terms and Privacy policy and names the Operator; nothing when the instance has none. */
+    operator?: Operator | undefined;
   },
 ): string {
   const { build, user } = options;
@@ -173,6 +176,12 @@ export function renderPage(
           >
           · <a href="/docs">API docs</a> ·
           <a href="${REPO_URL}/issues">Feedback</a>
+          ${
+            options.operator &&
+            html`· <a href="/terms">Terms</a> ·
+              <a href="/privacy">Privacy</a>
+              ${operatorDetails(options.operator)}`
+          }
         </footer>
       </body>
     </html> `.value;
@@ -181,9 +190,10 @@ export function renderPage(
 /** Serves `/assets/*` and adds `reply.page()`. */
 export function registerLayout(
   app: FastifyInstance,
-  deps: { auth: Auth; build: BuildInfo },
+  deps: { auth: Auth; build: BuildInfo; legal: LegalDocs | undefined },
 ): void {
   const { auth, build } = deps;
+  const operator = deps.legal?.operator;
   const assets = loadAssets();
   const cacheControl = assetCacheControl(build);
 
@@ -209,7 +219,13 @@ export function registerLayout(
         }
       : undefined;
     return this.type("text/html; charset=utf-8").send(
-      renderPage({ ...options, build, user, flash: takeFlash(req, this) }),
+      renderPage({
+        ...options,
+        build,
+        user,
+        flash: takeFlash(req, this),
+        operator,
+      }),
     );
   });
 }
