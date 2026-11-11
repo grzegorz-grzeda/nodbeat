@@ -9,6 +9,8 @@ import { stateBadge } from "./layout.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
 import { listMonitors } from "./monitors.js";
 import { formatUptime, sevenDayUptime } from "./uptime.js";
+import { listAlertChannels } from "./alert-channels.js";
+import { channelsOfMonitor } from "./monitor-alert-channels.js";
 
 /** One Monitor as the Dashboard JSON reports it. The `*Text` fields are ready to display. */
 export interface DashboardMonitor {
@@ -29,6 +31,8 @@ export interface DashboardMonitor {
   /** 0..1, null when the Monitor was neither Up nor Down in the last 7 days. */
   uptime7d: number | null;
   uptime7dText: string;
+  /** The Monitor has no Alert channels: its Alerts go nowhere. */
+  alertsGoNowhere: boolean;
 }
 
 async function dashboardMonitors(
@@ -36,7 +40,10 @@ async function dashboardMonitors(
   user: { _id: ObjectId; timeZone: string },
   now: Date,
 ): Promise<DashboardMonitor[]> {
-  const list = await listMonitors(db, user._id);
+  const [list, channels] = await Promise.all([
+    listMonitors(db, user._id),
+    listAlertChannels(db, user._id),
+  ]);
   return Promise.all(
     list.map(async (m) => {
       const uptime = await sevenDayUptime(db, m, now);
@@ -55,6 +62,7 @@ async function dashboardMonitors(
         lastRunDurationText: formatDurationOrEmpty(m.lastRunDurationSec),
         uptime7d: uptime,
         uptime7dText: formatUptime(uptime),
+        alertsGoNowhere: channelsOfMonitor(m, channels).length === 0,
       };
     }),
   );
@@ -63,7 +71,10 @@ async function dashboardMonitors(
 /** `data-label` heads each cell when the table turns into cards on a phone. */
 function row(m: DashboardMonitor): SafeHtml {
   return html`<tr>
-    <td class="cell-name"><a href="/monitors/${m.id}">${m.name}</a></td>
+    <td class="cell-name">
+      <a href="/monitors/${m.id}">${m.name}</a>
+      ${m.alertsGoNowhere && html`<small class="warning">Alerts go nowhere</small>`}
+    </td>
     <td data-label="State">${stateBadge(m.state)}</td>
     <td data-label="Last Heartbeat" title="${m.lastHeartbeatTitle}">
       ${m.lastHeartbeatText}

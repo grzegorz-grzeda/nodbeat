@@ -254,12 +254,20 @@ export class Browser {
   async submit(
     formPage: string,
     action: string,
-    fields: Record<string, string> = {},
+    fields: Record<string, string | string[]> = {},
     options: { csrf?: string | null; headers?: Record<string, string> } = {},
   ): Promise<InjectResponse> {
     if (options.csrf === undefined) await this.get(formPage);
     const csrf = options.csrf === undefined ? this.#csrf : options.csrf;
-    const form = new URLSearchParams(fields);
+    // An array is sent as the field repeated, like checkboxes of the same name.
+    const form = new URLSearchParams(
+      Object.entries(fields).flatMap(([k, v]) =>
+        (Array.isArray(v) ? v : [v]).map((value): [string, string] => [
+          k,
+          value,
+        ]),
+      ),
+    );
     if (csrf !== null && csrf !== undefined) form.set("_csrf", csrf);
     return this.#send({
       method: "POST",

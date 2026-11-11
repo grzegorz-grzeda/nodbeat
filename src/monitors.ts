@@ -28,8 +28,14 @@ import {
 } from "./limits.js";
 import type { MonitorState, MonitorStateFields } from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
+import { listAlertChannels } from "./alert-channels.js";
+import {
+  channelsOfMonitor,
+  choiceOf,
+  type AlertChannelChoice,
+} from "./monitor-alert-channels.js";
 
-export interface MonitorDoc extends MonitorStateFields {
+export interface MonitorDoc extends MonitorStateFields, AlertChannelChoice {
   _id: ObjectId;
   ownerId: ObjectId;
   name: string;
@@ -210,6 +216,7 @@ export function registerMonitors(
         csrf: auth.csrfToken(req, reply),
         form: readForm({}),
         limits: limitsFor(req.user!),
+        channels: await listAlertChannels(db, req.user!._id),
       }),
     }),
   );
@@ -218,7 +225,8 @@ export function registerMonitors(
     const user = req.user!;
     const limits = limitsFor(user);
     const form = readForm(req.body);
-    const result = validate(form, limits);
+    const channels = await listAlertChannels(db, user._id);
+    const result = validate(form, limits, channels);
     const errors = "errors" in result ? result.errors : [];
     // Count and insert under the owner's lock, so parallel requests can't all pass the limit check.
     const monitor = await ownerLock.run(String(user._id), async () => {
@@ -255,6 +263,7 @@ export function registerMonitors(
           csrf: auth.csrfToken(req, reply),
           form,
           limits,
+          channels,
           errors,
         }),
       });
@@ -274,7 +283,7 @@ export function registerMonitors(
       const url = heartbeatUrl(monitor);
       const now = clock.now();
       // One extra row tells whether there is more than fits, i.e. whether to link the full log.
-      const [incidentList, heartbeatList] = await Promise.all([
+      const [incidentList, heartbeatList, ownerChannels] = await Promise.all([
         listIncidents(db, monitor._id, MONITOR_PAGE_LOG_ROWS + 1),
         listHeartbeatsSince(
           db,
@@ -282,7 +291,9 @@ export function registerMonitors(
           heartbeatWindowStart(now),
           MONITOR_PAGE_LOG_ROWS + 1,
         ),
+        listAlertChannels(db, monitor.ownerId),
       ]);
+      const alerted = channelsOfMonitor(monitor, ownerChannels);
       const timeZone = req.user!.timeZone;
       const csrf = auth.csrfToken(req, reply);
       const curlGet = `curl -fsS -m 10 --retry 3 ${url}`;
@@ -320,7 +331,23 @@ export function registerMonitors(
                 ${monitor.alertsEnabled ? "Turn Alerts off" : "Turn Alerts on"}
               </button>
             </form>
+            ${
+              alerted.length === 0 &&
+              html`<p class="warning">
+                Alerts go nowhere: this Monitor has no Alert channels.
+              </p>`
+            }
             <ul class="plain">
+              <li>
+                Alert channels:
+                ${
+                  choiceOf(monitor) === "all"
+                    ? "All"
+                    : alerted.length === 0
+                      ? "none"
+                      : alerted.map((c) => c.name).join(", ")
+                }
+              </li>
               <li>Interval: ${formatDuration(monitor.intervalSec)}</li>
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
               ${

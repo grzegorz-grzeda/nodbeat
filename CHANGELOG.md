@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Each Monitor chooses its Alert channels on the create and edit forms: "All Alert channels" (the default, including ones added later; existing Monitors keep it) or a chosen few. Only the User's own channels are accepted. Alerts go only to the chosen channels, and `/status` in a Telegram chat lists only the Monitors whose Alert channels include that chat ("No Monitors alert this chat." otherwise). The Monitor page shows the Monitor's Alert channels.
+- Removing an Alert channel takes it out of every Monitor's chosen list; an emptied list stays chosen. A Monitor with no Alert channels shows "Alerts go nowhere" on its page and the Dashboard (`alertsGoNowhere` in `/dashboard.json`).
 - "Send test" on every Alert channel in Settings sends a test Alert at once (not queued, no retries) and shows in a Flash message whether it got through, with the error if not. A test that gets through clears Failing. At most 5 tests per User per minute.
 
 ### Changed

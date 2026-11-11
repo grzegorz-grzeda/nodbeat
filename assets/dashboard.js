@@ -24,6 +24,12 @@
     link.href = "/monitors/" + encodeURIComponent(m.id);
     link.textContent = m.name;
     name.append(link);
+    if (m.alertsGoNowhere) {
+      const warning = document.createElement("small");
+      warning.className = "warning";
+      warning.textContent = "Alerts go nowhere";
+      name.append(" ", warning);
+    }
     const state = document.createElement("td");
     state.dataset.label = "State";
     const badge = document.createElement("span");
