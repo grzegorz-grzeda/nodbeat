@@ -188,6 +188,23 @@ export async function setUserTheme(
   await users(db).updateOne({ _id: id }, { $set: { theme } });
 }
 
+/** Records that the User accepted these versions now; documents not given keep their earlier acceptance. */
+export async function recordAcceptance(
+  db: Db,
+  id: ObjectId,
+  versions: Partial<LegalVersions>,
+  at: Date,
+): Promise<void> {
+  const $set = Object.fromEntries(
+    Object.entries(versions).map(([kind, version]) => [
+      `accepted.${kind}`,
+      { version, at },
+    ]),
+  );
+  if (Object.keys($set).length === 0) return;
+  await users(db).updateOne({ _id: id }, { $set });
+}
+
 /** The emails of these Users, keyed by id; deleted Users are absent. */
 export async function emailsByUserId(
   db: Db,

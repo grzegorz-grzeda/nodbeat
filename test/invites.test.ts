@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  acceptTerms,
   Browser,
   buildTestApp,
   createUser,
@@ -22,6 +23,8 @@ async function withAdmin(options: { legalDir?: string } = {}) {
     admin: true,
   });
   const admin = await login(ctx.app, "admin@example.com", PASSWORD);
+  // A CLI-created Admin has accepted nothing yet.
+  if (options.legalDir) await acceptTerms(admin);
   return { ...ctx, admin };
 }
 

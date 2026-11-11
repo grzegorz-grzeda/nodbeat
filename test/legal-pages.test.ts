@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { buildTestApp, createUser, login } from "./helpers.js";
+import { acceptTerms, buildTestApp, createUser, login } from "./helpers.js";
 
 const fixture = (name: string) =>
   fileURLToPath(new URL(`./fixtures/${name}/`, import.meta.url));
@@ -88,6 +88,7 @@ describe("footer", () => {
     const { app, db } = await buildTestApp({ legalDir: LEGAL_DIR });
     await createUser(db, { email: "me@example.com", password: "pw-123456" });
     const browser = await login(app, "me@example.com", "pw-123456");
+    await acceptTerms(browser);
 
     for (const url of ["/", "/settings", "/terms"]) {
       const body = (await browser.get(url)).body;
