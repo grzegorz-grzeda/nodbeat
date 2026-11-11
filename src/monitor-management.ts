@@ -10,6 +10,7 @@ import { deleteIncidentsOf } from "./incidents.js";
 import { limitsFor } from "./limits.js";
 import { applyEffects } from "./effects.js";
 import { deleteAlertsOf } from "./alerts.js";
+import { listAlertChannels } from "./alert-channels.js";
 import type { KeyedLock } from "./keyed-lock.js";
 import { transition, type MonitorEvent } from "./monitor-state.js";
 import { deleteStatePeriodsOf } from "./state-periods.js";
@@ -78,7 +79,7 @@ export function registerMonitorManagement(
     },
   });
 
-  const sendEditPage = (
+  const sendEditPage = async (
     req: IdRequest,
     reply: FastifyReply,
     options: { form: MonitorForm; errors?: string[] },
@@ -89,6 +90,7 @@ export function registerMonitorManagement(
       body: monitorFormBody({
         csrf,
         limits: limitsFor(req.user!),
+        channels: await listAlertChannels(db, req.user!._id),
         editing: req.params.id,
         ...options,
       }),
@@ -106,7 +108,11 @@ export function registerMonitorManagement(
     "/monitors/:id/edit",
     ownMonitorRoute(async (monitor, req, reply) => {
       const form = readForm(req.body);
-      const result = validate(form, limitsFor(req.user!));
+      const result = validate(
+        form,
+        limitsFor(req.user!),
+        await listAlertChannels(db, req.user!._id),
+      );
       if ("errors" in result) {
         reply.code(400);
         return sendEditPage(req, reply, { form, errors: result.errors });

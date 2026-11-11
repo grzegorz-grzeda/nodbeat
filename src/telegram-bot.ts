@@ -4,16 +4,17 @@ import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { formatAgo, formatDuration } from "./format.js";
-import { AlertChannelLimitError } from "./alert-channels.js";
+import { AlertChannelLimitError, listAlertChannels } from "./alert-channels.js";
 import { migrateChat } from "./alerts.js";
 import type { KeyedLock } from "./keyed-lock.js";
 import { limitsFor } from "./limits.js";
 import {
   linkChat,
-  ownersOfChat,
+  linksOfChat,
   redeemLinkCode,
   unlinkChat,
 } from "./linked-chats.js";
+import { channelsOfMonitor } from "./monitor-alert-channels.js";
 import { STATE_LABELS } from "./monitor-state.js";
 import { listMonitors } from "./monitors.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
@@ -169,12 +170,20 @@ export function registerTelegramBot(
     return "This chat is now linked to your nodbeat account. Alerts will arrive here.";
   };
 
+  /** The owner's Monitors whose Alert channels include `channelId` (the chat's Linked chat of this owner). */
   const monitorStatesOf = async (
-    ownerId: ObjectId,
+    { ownerId, channelId }: { ownerId: ObjectId; channelId: ObjectId },
     now: Date,
   ): Promise<string> => {
-    const list = await listMonitors(db, ownerId);
-    if (list.length === 0) return "No Monitors yet.";
+    const [all, channels] = await Promise.all([
+      listMonitors(db, ownerId),
+      listAlertChannels(db, ownerId),
+    ]);
+    if (all.length === 0) return "No Monitors yet.";
+    const list = all.filter((m) =>
+      channelsOfMonitor(m, channels).some((c) => c._id.equals(channelId)),
+    );
+    if (list.length === 0) return "No Monitors alert this chat.";
     return list
       .map(
         (m) =>
@@ -184,15 +193,15 @@ export function registerTelegramBot(
   };
 
   const statusCommand: Command = async ({ chat }) => {
-    const owners = await ownersOfChat(db, chat.id);
+    const owners = await linksOfChat(db, chat.id);
     if (owners.length === 0) return notLinked;
     const now = clock.now();
     if (owners.length === 1) return monitorStatesOf(owners[0]!, now);
     // A group linked by several Users: one numbered section per User, never labelled by email.
     const sections = await Promise.all(
       owners.map(
-        async (ownerId, i) =>
-          `Account ${i + 1}\n${await monitorStatesOf(ownerId, now)}`,
+        async (link, i) =>
+          `Account ${i + 1}\n${await monitorStatesOf(link, now)}`,
       ),
     );
     return sections.join("\n\n");
