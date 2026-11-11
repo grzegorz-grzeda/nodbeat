@@ -1,6 +1,6 @@
 # Spec 0007: Start and Fail signals
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

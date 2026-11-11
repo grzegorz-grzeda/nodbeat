@@ -1,7 +1,7 @@
 # 0038: Start signal and Run duration
 
 Spec: 0007
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** `GET|POST /hb/:token/start` begins a Run; the next Heartbeat or Fail signal ends it and records its Run duration, shown in the Heartbeats log, on the Monitor page and on the Dashboard.
 

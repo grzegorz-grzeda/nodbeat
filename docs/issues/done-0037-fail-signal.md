@@ -1,7 +1,7 @@
 # 0037: Fail signal
 
 Spec: 0007
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** `GET|POST /hb/:token/fail` makes a New or Up Monitor Down at once and sends a Down Alert that says it reported a failure, with the message.
 
