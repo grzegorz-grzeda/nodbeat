@@ -7,6 +7,8 @@ export interface Limits {
   maxAlertChannels: number;
   minIntervalSec: number;
   maxIntervalSec: number;
+  /** Closest two scheduled times of a Schedule may be. */
+  minScheduleGapSec: number;
   minGraceSec: number;
   maxGraceSec: number;
   /** Bounds of a Monitor's Max run time (which is optional). */
@@ -30,6 +32,7 @@ const DEFAULT_LIMITS: Limits = {
   maxAlertChannels: 10,
   minIntervalSec: 30,
   maxIntervalSec: 7 * DAY_SEC,
+  minScheduleGapSec: 5 * 60,
   minGraceSec: 0,
   maxGraceSec: DAY_SEC,
   minMaxRunTimeSec: 60,
@@ -49,7 +52,8 @@ export function instanceLimits(): Limits {
 }
 
 /**
- * The Grace period a Monitor gets when none is given: half its Interval, clamped to the Grace bounds. Half of a long
+ * The Grace period a Monitor gets when none is given: half its Interval (for a Schedule: half the shortest gap between
+ * its scheduled times), clamped to the Grace bounds. Half of a long
  * Interval can exceed the bound (7 d → 3.5 d > 1 d); clamping beats blaming a field left blank.
  */
 export function defaultGraceSec(intervalSec: number, limits: Limits): number {

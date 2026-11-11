@@ -21,6 +21,7 @@
     "@fastify/cookie": "^11.1.5",
     "@fastify/formbody": "^9.0.1",
     "@node-rs/argon2": "^2.2.2",
+    "croner": "11.0.0",
     "fastify": "^5.12.8",
     "mongodb": "^7.8.0",
     "swagger-ui-dist": "^5.34.1",

@@ -23,7 +23,14 @@ import {
 import { copyButton, csrfField, html, type SafeHtml } from "./html.js";
 import { KeyedLock } from "./keyed-lock.js";
 import { stateBadge } from "./layout.js";
-import { monitorFormBody, readForm, validate } from "./monitor-form.js";
+import {
+  MONITOR_FORM_SCRIPT,
+  monitorFormBody,
+  readForm,
+  schedulePreview,
+  validate,
+} from "./monitor-form.js";
+import { shortestGapSec, type Schedule } from "./schedule.js";
 import {
   defaultGraceSec,
   limitsFor,
@@ -49,7 +56,10 @@ export interface MonitorDoc extends MonitorStateFields, AlertChannelChoice {
   ownerId: ObjectId;
   name: string;
   notes: string;
-  intervalSec: number;
+  /** Exactly one of `intervalSec` and `schedule` is set. */
+  intervalSec: number | null;
+  /** Absent on Monitors stored before Schedules existed (= none: they have an Interval). */
+  schedule?: Schedule | null;
   graceSec: number;
   /** Absent on Monitors stored before Max run times existed (= none). */
   maxRunTimeSec?: number | null;
@@ -137,9 +147,12 @@ const INTERVAL_GROUPS: Array<{ label: string; maxSec: number }> = [
   { label: "> 1 day", maxSec: Infinity },
 ];
 
+/** Schedule Monitors are a group of their own, after the Interval groups. */
+const SCHEDULE_GROUP = "Schedule";
+
 export interface MonitorSetup {
   total: number;
-  /** Shortest Intervals first. */
+  /** Shortest Intervals first, then Schedule Monitors. */
   byInterval: Array<{ label: string; count: number }>;
   customGrace: number;
   withNotes: number;
@@ -151,10 +164,12 @@ export interface MonitorSetup {
 export async function summarizeMonitorSetup(
   db: Db,
   limits: Limits,
+  now: Date,
 ): Promise<MonitorSetup> {
   const rows = await monitors(db)
     .aggregate<{
-      intervalSec: number;
+      intervalSec: number | null;
+      schedule?: Schedule | null;
       graceSec: number;
       hasNotes: boolean;
       alertsEnabled: boolean;
@@ -164,6 +179,7 @@ export async function summarizeMonitorSetup(
         $project: {
           _id: 0,
           intervalSec: 1,
+          schedule: 1,
           graceSec: 1,
           hasNotes: { $gt: [{ $strLenCP: { $ifNull: ["$notes", ""] } }, 0] },
           alertsEnabled: 1,
@@ -174,16 +190,27 @@ export async function summarizeMonitorSetup(
     .toArray();
   const setup: MonitorSetup = {
     total: rows.length,
-    byInterval: INTERVAL_GROUPS.map(({ label }) => ({ label, count: 0 })),
+    byInterval: [...INTERVAL_GROUPS, { label: SCHEDULE_GROUP }].map(
+      ({ label }) => ({ label, count: 0 }),
+    ),
     customGrace: 0,
     withNotes: 0,
     alertsOff: 0,
     paused: 0,
   };
   for (const m of rows) {
-    const group = INTERVAL_GROUPS.findIndex((g) => m.intervalSec <= g.maxSec);
-    setup.byInterval[group]!.count++;
-    if (m.graceSec !== defaultGraceSec(m.intervalSec, limits)) {
+    // Half the period is the default Grace period: the Interval, or a Schedule's shortest gap.
+    let periodSec: number;
+    if (m.schedule) {
+      setup.byInterval[INTERVAL_GROUPS.length]!.count++;
+      periodSec = shortestGapSec(m.schedule, now) ?? Infinity;
+    } else {
+      const intervalSec = m.intervalSec ?? 0;
+      const group = INTERVAL_GROUPS.findIndex((g) => intervalSec <= g.maxSec);
+      setup.byInterval[group]!.count++;
+      periodSec = intervalSec;
+    }
+    if (m.graceSec !== defaultGraceSec(periodSec, limits)) {
       setup.customGrace++;
     }
     if (m.hasNotes) setup.withNotes++;
@@ -239,21 +266,39 @@ export function registerMonitors(
   app.get("/monitors/new", { preHandler: requireUser }, async (req, reply) =>
     reply.page({
       title: "New Monitor",
+      scripts: [MONITOR_FORM_SCRIPT],
       body: monitorFormBody({
         csrf: auth.csrfToken(req, reply),
-        form: readForm({}),
+        form: readForm({}, req.user!.timeZone),
         limits: limitsFor(req.user!),
         channels: await listAlertChannels(db, req.user!._id),
+        now: clock.now(),
       }),
     }),
+  );
+
+  // The form's Schedule preview as the User types (`assets/schedule.js`).
+  app.get<{ Querystring: { cron?: unknown; timeZone?: unknown } }>(
+    "/monitors/schedule-preview",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const { cron, timeZone } = req.query;
+      const preview = schedulePreview(
+        typeof cron === "string" ? cron : "",
+        typeof timeZone === "string" ? timeZone : req.user!.timeZone,
+        limitsFor(req.user!),
+        clock.now(),
+      );
+      return reply.header("cache-control", "no-store").send(preview);
+    },
   );
 
   app.post("/monitors", { preHandler: requireUser }, async (req, reply) => {
     const user = req.user!;
     const limits = limitsFor(user);
-    const form = readForm(req.body);
+    const form = readForm(req.body, user.timeZone);
     const channels = await listAlertChannels(db, user._id);
-    const result = validate(form, limits, channels);
+    const result = validate(form, limits, channels, clock.now());
     const errors = "errors" in result ? result.errors : [];
     // Count and insert under the owner's lock, so parallel requests can't all pass the limit check.
     const monitor = await ownerLock.run(String(user._id), async () => {
@@ -286,11 +331,13 @@ export function registerMonitors(
     if (!monitor) {
       return reply.code(400).page({
         title: "New Monitor",
+        scripts: [MONITOR_FORM_SCRIPT],
         body: monitorFormBody({
           csrf: auth.csrfToken(req, reply),
           form,
           limits,
           channels,
+          now: clock.now(),
           errors,
         }),
       });
@@ -329,6 +376,11 @@ export function registerMonitors(
       const due = nextExpected(monitor, startedAt, now, timeZone).text;
       // Start signal, then the job; success or Fail signal ends the Run.
       const cronRun = `curl -fsS -m 10 ${url}/start; /path/to/job.sh && curl -fsS -m 10 ${url} || curl -fsS -m 10 ${url}/fail`;
+      // The Schedule's own expression, so the crontab line matches it; its time zone has to match the server's too.
+      const cronTimes = monitor.schedule?.cron ?? "*/5 * * * *";
+      const cronZone = monitor.schedule
+        ? `\n# Times in ${monitor.schedule.timeZone}: the server's time zone (or CRON_TZ) must match`
+        : "";
       return reply.page({
         title: monitor.name,
         // Enhances the copy buttons; without JS they stay hidden and the text is still selectable.
@@ -376,7 +428,16 @@ export function registerMonitors(
                       : alerted.map((c) => c.name).join(", ")
                 }
               </li>
-              <li>Interval: ${formatDuration(monitor.intervalSec)}</li>
+              ${
+                monitor.schedule
+                  ? html`<li>
+                      Schedule: <code>${monitor.schedule.cron}</code>
+                      (${monitor.schedule.timeZone})
+                    </li>`
+                  : html`<li>
+                      Interval: ${formatDuration(monitor.intervalSec ?? 0)}
+                    </li>`
+              }
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
               ${
                 monitor.maxRunTimeSec != null &&
@@ -432,11 +493,11 @@ export function registerMonitors(
                 ${copyButton("curl-post")}
               </div>
               <h3>cron</h3>
-              <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded
-*/5 * * * * /path/to/job.sh &amp;&amp; curl -fsS -m 10 --retry 3 ${url} &gt; /dev/null</code></pre>
+              <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded${cronZone}
+${cronTimes} /path/to/job.sh &amp;&amp; curl -fsS -m 10 --retry 3 ${url} &gt; /dev/null</code></pre>
               <h3>cron with Start and Fail signals</h3>
               <pre><code># Times the job and reports a failure at once
-*/5 * * * * ${cronRun}</code></pre>
+${cronTimes} ${cronRun}</code></pre>
               <h3>ESP32 / Arduino</h3>
               <pre><code>#include &lt;WiFi.h&gt;
 #include &lt;WiFiClientSecure.h&gt;

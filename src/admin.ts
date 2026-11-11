@@ -167,7 +167,7 @@ export function registerAdmin(
       listUserActivity(db, daysAgo(7)),
       countMonitorsByState(db),
       // Per-User limits are the same for everyone until Plans exist.
-      summarizeMonitorSetup(db, instanceLimits()),
+      summarizeMonitorSetup(db, instanceLimits(), new Date(nowMs)),
       countLinkedChats(db),
       summarizeHeartbeatTraffic(db, daysAgo(7)),
       countIncidentsSince(db, daysAgo(7)),
@@ -196,7 +196,7 @@ export function registerAdmin(
           STATES.map((s) => [STATE_LABELS[s], byState[s]]),
         )}
         ${shareTable(
-          "Monitors by Interval",
+          "Monitors by Interval or Schedule",
           "Monitors",
           setup.total,
           setup.byInterval.map((g) => [g.label, g.count]),
