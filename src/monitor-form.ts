@@ -1,7 +1,11 @@
 import { formatDateTime, formatDuration } from "./format.js";
 import { csrfField, html, timeZoneOptions, type SafeHtml } from "./html.js";
 import { defaultGraceSec, type Limits } from "./limits.js";
-import type { MonitorTiming } from "./monitor-state.js";
+import {
+  periodSec,
+  type MonitorPeriod,
+  type MonitorTiming,
+} from "./monitor-state.js";
 import type { ObjectId } from "mongodb";
 import {
   choiceOf,
@@ -9,30 +13,26 @@ import {
   type MonitorAlertChannels,
 } from "./monitor-alert-channels.js";
 import {
-  cronError,
-  normalizeCron,
+  checkSchedule,
+  MAX_CRON_LENGTH,
   scheduledTimesAfter,
-  shortestGapSec,
-  type Schedule,
 } from "./schedule.js";
-import { isValidTimeZone } from "./users.js";
 
 const MAX_NAME_LENGTH = 100;
 const MAX_NOTES_LENGTH = 2000;
-const MAX_CRON_LENGTH = 200;
 const UNIT_SEC = { s: 1, m: 60, h: 60 * 60, d: 24 * 60 * 60 } as const;
 type Unit = keyof typeof UNIT_SEC;
 
 /** Shows the Interval or Schedule fields as chosen and previews the Schedule; the form works without it. */
-export const MONITOR_FORM_SCRIPT = "schedule.js";
+export const MONITOR_FORM_SCRIPT = "monitor-form.js";
 
 /** Scheduled times the form shows for a Schedule. */
 export const SCHEDULE_PREVIEW_COUNT = 3;
 
 export interface MonitorForm {
   name: string;
-  /** "interval", or "schedule" for `cron` in `timeZone`. */
-  timing: string;
+  /** "schedule": `cron` in `timeZone`. */
+  timing: "interval" | "schedule";
   interval: string;
   intervalUnit: string;
   cron: string;
@@ -57,12 +57,12 @@ export interface ChannelOption {
  * What the form edits. `validate` always sets `maxRunTimeSec` (null: none) and both `intervalSec` and `schedule` (one
  * of them null), so saving clears a removed one.
  */
-export interface MonitorSettings extends MonitorTiming, AlertChannelChoice {
-  name: string;
-  notes: string;
-  schedule: Schedule | null;
-  alertChannels: MonitorAlertChannels;
-}
+export type MonitorSettings = MonitorTiming &
+  AlertChannelChoice & {
+    name: string;
+    notes: string;
+    alertChannels: MonitorAlertChannels;
+  };
 
 /** The submitted form; `defaultTimeZone` (the owner's) when no time zone was sent. */
 export function readForm(body: unknown, defaultTimeZone: string): MonitorForm {
@@ -104,8 +104,9 @@ export function formFor(
       ) ?? "s";
     return [String(sec / UNIT_SEC[unit]), unit];
   };
-  const [interval, intervalUnit] =
-    monitor.intervalSec != null ? split(monitor.intervalSec) : ["", "s"];
+  const [interval, intervalUnit] = monitor.schedule
+    ? ["", "s"]
+    : split(monitor.intervalSec);
   const [grace, graceUnit] = split(monitor.graceSec);
   const [maxRunTime, maxRunTimeUnit] =
     monitor.maxRunTimeSec != null ? split(monitor.maxRunTimeSec) : ["", "m"];
@@ -136,39 +137,6 @@ function alertChannelsForm(
 function toSeconds(value: string, unit: string): number | null {
   if (!/^\d+$/.test(value.trim()) || !(unit in UNIT_SEC)) return null;
   return Number(value.trim()) * UNIT_SEC[unit as Unit];
-}
-
-/**
- * Checks a Schedule: a valid expression in a known time zone that runs, with no two scheduled times closer than the
- * limit. Returns the Schedule as stored and its shortest gap (null if it runs less than twice a year), or the errors.
- */
-export function checkSchedule(
-  cron: string,
-  timeZone: string,
-  limits: Limits,
-  now: Date,
-): { schedule: Schedule; gapSec: number | null } | { errors: string[] } {
-  if (!isValidTimeZone(timeZone)) return { errors: ["Unknown time zone."] };
-  if (cron.length > MAX_CRON_LENGTH) {
-    return {
-      errors: [`Schedule can be at most ${MAX_CRON_LENGTH} characters.`],
-    };
-  }
-  const error = cronError(cron);
-  if (error) return { errors: [error] };
-  const schedule = { cron: normalizeCron(cron), timeZone };
-  if (scheduledTimesAfter(schedule, now, 1).length === 0) {
-    return { errors: ["Schedule never runs."] };
-  }
-  const gapSec = shortestGapSec(schedule, now);
-  if (gapSec !== null && gapSec < limits.minScheduleGapSec) {
-    return {
-      errors: [
-        `Schedule runs too often: its scheduled times must be at least ${formatDuration(limits.minScheduleGapSec)} apart, and some are ${formatDuration(gapSec)} apart.`,
-      ],
-    };
-  }
-  return { schedule, gapSec };
 }
 
 /** The next scheduled times of a Schedule as the form shows them ("2026-01-02 02:00", in its time zone), or errors. */
@@ -207,21 +175,16 @@ export function validate(
     errors.push(`Notes can be at most ${MAX_NOTES_LENGTH} characters.`);
   }
 
-  let intervalSec: number | null = null;
-  let schedule: Schedule | null = null;
-  // What the default Grace period is half of; null when the timing is invalid.
-  let periodSec: number | null = null;
+  let period: MonitorPeriod | null = null;
   if (form.timing === "schedule") {
     const result = checkSchedule(form.cron, form.timeZone, limits, now);
     if ("errors" in result) {
       errors.push(...result.errors);
     } else {
-      schedule = result.schedule;
-      // Less than twice a year: the Grace period default is clamped anyway.
-      periodSec = result.gapSec ?? Infinity;
+      period = { intervalSec: null, schedule: result.schedule };
     }
   } else {
-    intervalSec = toSeconds(form.interval, form.intervalUnit);
+    const intervalSec = toSeconds(form.interval, form.intervalUnit);
     if (
       intervalSec === null ||
       intervalSec < limits.minIntervalSec ||
@@ -231,13 +194,17 @@ export function validate(
         `Interval must be between ${formatDuration(limits.minIntervalSec)} and ${formatDuration(limits.maxIntervalSec)}.`,
       );
     } else {
-      periodSec = intervalSec;
+      period = { intervalSec, schedule: null };
     }
   }
 
   let graceSec: number | null;
   if (form.grace.trim() === "") {
-    graceSec = periodSec === null ? null : defaultGraceSec(periodSec, limits);
+    // Fewer than two scheduled times a year: the default is clamped anyway.
+    graceSec =
+      period === null
+        ? null
+        : defaultGraceSec(periodSec(period, now) ?? Infinity, limits);
   } else {
     graceSec = toSeconds(form.grace, form.graceUnit);
     if (
@@ -276,15 +243,14 @@ export function validate(
     }
   }
 
-  if (errors.length > 0 || periodSec === null || graceSec === null) {
+  if (errors.length > 0 || period === null || graceSec === null) {
     return { errors };
   }
   return {
     settings: {
       name,
       notes,
-      intervalSec,
-      schedule,
+      ...period,
       graceSec,
       maxRunTimeSec,
       alertChannels,
@@ -478,7 +444,7 @@ ${form.notes}</textarea>
     </form>`;
 }
 
-/** The preview's content; `assets/schedule.js` builds the same markup from `/monitors/schedule-preview`. */
+/** The preview's content; `assets/monitor-form.js` builds the same markup from `/monitors/schedule-preview`. */
 function schedulePreviewBody(
   preview: { times: string[] } | { errors: string[] } | null,
 ): SafeHtml {

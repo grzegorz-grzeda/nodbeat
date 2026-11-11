@@ -44,6 +44,10 @@ _Avoid_: Period, frequency
 The times of day and week a Monitor is expected to send a Heartbeat (e.g. 02:00 on weekdays), read in the Monitor's own time zone. An alternative to an Interval for jobs that run at fixed times.
 _Avoid_: Cron, timetable, plan
 
+**Scheduled time**:
+One of the times a Schedule expects a Heartbeat. A Heartbeat counts for the coming scheduled time if it is at most 1 h before it (or half the gap from the scheduled time before, if that is shorter), otherwise for the one before it. The Monitor then waits for the scheduled time after that, + Grace period.
+_Avoid_: Run, occurrence, firing
+
 **Grace period**:
 Extra time allowed after the Interval or the scheduled time before a missing Heartbeat makes the Monitor Down.
 _Avoid_: Tolerance, timeout

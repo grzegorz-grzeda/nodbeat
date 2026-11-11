@@ -25,6 +25,12 @@ export const MAX_HEARTBEAT_MESSAGE_LENGTH = 200;
 /** Longest Heartbeat User-Agent kept, in characters. Instance-wide. */
 export const MAX_USER_AGENT_LENGTH = 200;
 
+/**
+ * Longest a Heartbeat may come before a Schedule's scheduled time and still count for it (e.g. a 02:00 job that sends
+ * at 01:58). Shorter when scheduled times are closer: at most half the gap to the scheduled time before. Instance-wide.
+ */
+export const MAX_EARLY_HEARTBEAT_SEC = 60 * 60;
+
 const DAY_SEC = 24 * 60 * 60;
 
 const DEFAULT_LIMITS: Limits = {
@@ -56,9 +62,9 @@ export function instanceLimits(): Limits {
  * its scheduled times), clamped to the Grace bounds. Half of a long
  * Interval can exceed the bound (7 d → 3.5 d > 1 d); clamping beats blaming a field left blank.
  */
-export function defaultGraceSec(intervalSec: number, limits: Limits): number {
+export function defaultGraceSec(periodSec: number, limits: Limits): number {
   return Math.min(
-    Math.max(Math.floor(intervalSec / 2), limits.minGraceSec),
+    Math.max(Math.floor(periodSec / 2), limits.minGraceSec),
     limits.maxGraceSec,
   );
 }

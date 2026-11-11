@@ -10,7 +10,9 @@ const NOW = new Date("2026-01-01T00:00:40Z");
 
 function monitor(
   fields: Partial<MonitorStateFields> = {},
-  settings: Partial<MonitorSettings> = {},
+  settings: Partial<Omit<MonitorSettings, "schedule">> & {
+    intervalSec?: number;
+  } = {},
 ): MonitorStateFields & MonitorSettings {
   return {
     state: "up",

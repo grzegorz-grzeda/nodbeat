@@ -1,10 +1,50 @@
-import type { Db } from "mongodb";
+import type { Db, Filter } from "mongodb";
 import type { Clock } from "./clock.js";
 import { applyEffects } from "./effects.js";
 import type { LogPruner } from "./log-pruner.js";
 import type { KeyedLock } from "./keyed-lock.js";
 import { nextDueAt, runDeadline, transition } from "./monitor-state.js";
-import { monitors } from "./monitors.js";
+import { monitors, type MonitorDoc } from "./monitors.js";
+
+/**
+ * Up Monitors that may be overdue: Interval Monitors past nextDueAt() or with a Run past runDeadline(), the same
+ * rules written as a query, and every Schedule Monitor (scheduled times can't be worked out in a query).
+ */
+export function maybeOverdueQuery(
+  startedAt: Date,
+  now: Date,
+): Filter<MonitorDoc> {
+  /** Whether `amount` seconds after the latest of `from`, the last unpause or edit, and startedAt have passed. */
+  const passed = (from: string, amount: unknown) => ({
+    $expr: {
+      $lte: [
+        {
+          $dateAdd: {
+            startDate: { $max: [from, "$watchedSince", startedAt] },
+            unit: "second",
+            amount,
+          },
+        },
+        now,
+      ],
+    },
+  });
+  return {
+    state: "up",
+    $or: [
+      { schedule: { $ne: null } },
+      {
+        intervalSec: { $ne: null },
+        ...passed("$lastHeartbeatAt", { $add: ["$intervalSec", "$graceSec"] }),
+      },
+      {
+        runStartedAt: { $ne: null },
+        maxRunTimeSec: { $ne: null },
+        ...passed("$runStartedAt", "$maxRunTimeSec"),
+      },
+    ],
+  } as Filter<MonitorDoc>;
+}
 
 /**
  * Moves Up Monitors past their deadline, or with a Run past their Max run time, to Down. `startedAt` is when this
@@ -22,30 +62,28 @@ export function createDownChecker(deps: {
   const { db, clock, startedAt, lock, pruner, publicBaseUrl } = deps;
   return async () => {
     const now = clock.now();
-    // Up Monitors with just the fields the deadlines read. nextDueAt() and runDeadline() pick the overdue ones here,
-    // in code, so the rule lives in one place (a Schedule can't be computed in a query); transition() decides.
-    const up = await monitors(db)
-      .find(
-        { state: "up" },
-        {
-          projection: {
-            state: 1,
-            lastHeartbeatAt: 1,
-            watchedSince: 1,
-            createdAt: 1,
-            intervalSec: 1,
-            schedule: 1,
-            graceSec: 1,
-            runStartedAt: 1,
-            maxRunTimeSec: 1,
-          },
+    const candidates = await monitors(db)
+      .find(maybeOverdueQuery(startedAt, now), {
+        projection: {
+          state: 1,
+          lastHeartbeatAt: 1,
+          watchedSince: 1,
+          createdAt: 1,
+          intervalSec: 1,
+          schedule: 1,
+          graceSec: 1,
+          runStartedAt: 1,
+          maxRunTimeSec: 1,
         },
-      )
+      })
       .toArray();
-    const overdue = up.filter((m) =>
-      [nextDueAt(m, startedAt), runDeadline(m, startedAt)].some(
-        (d) => d !== null && d <= now,
-      ),
+    // The query picked the overdue Interval Monitors; Schedule Monitors are checked here. transition() decides.
+    const overdue = candidates.filter(
+      (m) =>
+        !m.schedule ||
+        [nextDueAt(m, startedAt), runDeadline(m, startedAt)].some(
+          (d) => d !== null && d <= now,
+        ),
     );
 
     for (const { _id } of overdue) {

@@ -248,6 +248,13 @@ describe("Admin page", () => {
     expect(stat(body, "Schedule")).toBe(2);
     expect(share(body, "Schedule")).toBe("67%");
     expect(stat(body, "Custom Grace period")).toBe(1);
+
+    // Monitors saved before the shortest gap was stored get it worked out.
+    await ctx.db
+      .collection("monitors")
+      .updateMany({}, { $unset: { "schedule.shortestGapSec": "" } });
+    const older = (await ctx.admin.get("/admin")).body;
+    expect(stat(older, "Custom Grace period")).toBe(1);
   });
 
   it("shows how Heartbeats arrive", async () => {

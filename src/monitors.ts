@@ -30,7 +30,6 @@ import {
   schedulePreview,
   validate,
 } from "./monitor-form.js";
-import { shortestGapSec, type Schedule } from "./schedule.js";
 import {
   defaultGraceSec,
   limitsFor,
@@ -39,9 +38,12 @@ import {
 } from "./limits.js";
 import {
   nextDueAt,
+  periodSec,
   type DueFields,
+  type MonitorPeriod,
   type MonitorState,
   type MonitorStateFields,
+  type MonitorTiming,
 } from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
 import { listAlertChannels } from "./alert-channels.js";
@@ -51,23 +53,18 @@ import {
   type AlertChannelChoice,
 } from "./monitor-alert-channels.js";
 
-export interface MonitorDoc extends MonitorStateFields, AlertChannelChoice {
-  _id: ObjectId;
-  ownerId: ObjectId;
-  name: string;
-  notes: string;
-  /** Exactly one of `intervalSec` and `schedule` is set. */
-  intervalSec: number | null;
-  /** Absent on Monitors stored before Schedules existed (= none: they have an Interval). */
-  schedule?: Schedule | null;
-  graceSec: number;
-  /** Absent on Monitors stored before Max run times existed (= none). */
-  maxRunTimeSec?: number | null;
-  /** Secret part of the Heartbeat URL. */
-  token: string;
-  alertsEnabled: boolean;
-  createdAt: Date;
-}
+export type MonitorDoc = MonitorStateFields &
+  AlertChannelChoice &
+  MonitorTiming & {
+    _id: ObjectId;
+    ownerId: ObjectId;
+    name: string;
+    notes: string;
+    /** Secret part of the Heartbeat URL. */
+    token: string;
+    alertsEnabled: boolean;
+    createdAt: Date;
+  };
 
 export const monitors = (db: Db) => db.collection<MonitorDoc>("monitors");
 
@@ -167,14 +164,14 @@ export async function summarizeMonitorSetup(
   now: Date,
 ): Promise<MonitorSetup> {
   const rows = await monitors(db)
-    .aggregate<{
-      intervalSec: number | null;
-      schedule?: Schedule | null;
-      graceSec: number;
-      hasNotes: boolean;
-      alertsEnabled: boolean;
-      state: MonitorState;
-    }>([
+    .aggregate<
+      MonitorPeriod & {
+        graceSec: number;
+        hasNotes: boolean;
+        alertsEnabled: boolean;
+        state: MonitorState;
+      }
+    >([
       {
         $project: {
           _id: 0,
@@ -199,18 +196,16 @@ export async function summarizeMonitorSetup(
     paused: 0,
   };
   for (const m of rows) {
-    // Half the period is the default Grace period: the Interval, or a Schedule's shortest gap.
-    let periodSec: number;
     if (m.schedule) {
       setup.byInterval[INTERVAL_GROUPS.length]!.count++;
-      periodSec = shortestGapSec(m.schedule, now) ?? Infinity;
     } else {
-      const intervalSec = m.intervalSec ?? 0;
+      const { intervalSec } = m;
       const group = INTERVAL_GROUPS.findIndex((g) => intervalSec <= g.maxSec);
       setup.byInterval[group]!.count++;
-      periodSec = intervalSec;
     }
-    if (m.graceSec !== defaultGraceSec(periodSec, limits)) {
+    // Half the period is the default Grace period.
+    const period = periodSec(m, now) ?? Infinity;
+    if (m.graceSec !== defaultGraceSec(period, limits)) {
       setup.customGrace++;
     }
     if (m.hasNotes) setup.withNotes++;
@@ -277,7 +272,7 @@ export function registerMonitors(
     }),
   );
 
-  // The form's Schedule preview as the User types (`assets/schedule.js`).
+  // The form's Schedule preview as the User types (`assets/monitor-form.js`).
   app.get<{ Querystring: { cron?: unknown; timeZone?: unknown } }>(
     "/monitors/schedule-preview",
     { preHandler: requireUser },
@@ -435,7 +430,7 @@ export function registerMonitors(
                       (${monitor.schedule.timeZone})
                     </li>`
                   : html`<li>
-                      Interval: ${formatDuration(monitor.intervalSec ?? 0)}
+                      Interval: ${formatDuration(monitor.intervalSec)}
                     </li>`
               }
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
