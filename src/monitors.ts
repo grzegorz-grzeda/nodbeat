@@ -5,7 +5,11 @@ import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { parseObjectId } from "./ids.js";
-import { formatDuration, formatDurationOrEmpty } from "./format.js";
+import {
+  formatDueTime,
+  formatDuration,
+  formatDurationOrEmpty,
+} from "./format.js";
 import { setFlash } from "./flash.js";
 import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
 import { listIncidents, type IncidentDoc } from "./incidents.js";
@@ -19,14 +23,28 @@ import {
 import { copyButton, csrfField, html, type SafeHtml } from "./html.js";
 import { KeyedLock } from "./keyed-lock.js";
 import { stateBadge } from "./layout.js";
-import { monitorFormBody, readForm, validate } from "./monitor-form.js";
+import {
+  MONITOR_FORM_SCRIPT,
+  monitorFormBody,
+  readForm,
+  schedulePreview,
+  validate,
+} from "./monitor-form.js";
 import {
   defaultGraceSec,
   limitsFor,
   MAX_HEARTBEAT_MESSAGE_LENGTH,
   type Limits,
 } from "./limits.js";
-import type { MonitorState, MonitorStateFields } from "./monitor-state.js";
+import {
+  nextDueAt,
+  periodSec,
+  type DueFields,
+  type MonitorPeriod,
+  type MonitorState,
+  type MonitorStateFields,
+  type MonitorTiming,
+} from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
 import { listAlertChannels } from "./alert-channels.js";
 import {
@@ -35,20 +53,18 @@ import {
   type AlertChannelChoice,
 } from "./monitor-alert-channels.js";
 
-export interface MonitorDoc extends MonitorStateFields, AlertChannelChoice {
-  _id: ObjectId;
-  ownerId: ObjectId;
-  name: string;
-  notes: string;
-  intervalSec: number;
-  graceSec: number;
-  /** Absent on Monitors stored before Max run times existed (= none). */
-  maxRunTimeSec?: number | null;
-  /** Secret part of the Heartbeat URL. */
-  token: string;
-  alertsEnabled: boolean;
-  createdAt: Date;
-}
+export type MonitorDoc = MonitorStateFields &
+  AlertChannelChoice &
+  MonitorTiming & {
+    _id: ObjectId;
+    ownerId: ObjectId;
+    name: string;
+    notes: string;
+    /** Secret part of the Heartbeat URL. */
+    token: string;
+    alertsEnabled: boolean;
+    createdAt: Date;
+  };
 
 export const monitors = (db: Db) => db.collection<MonitorDoc>("monitors");
 
@@ -128,9 +144,12 @@ const INTERVAL_GROUPS: Array<{ label: string; maxSec: number }> = [
   { label: "> 1 day", maxSec: Infinity },
 ];
 
+/** Schedule Monitors are a group of their own, after the Interval groups. */
+const SCHEDULE_GROUP = "Schedule";
+
 export interface MonitorSetup {
   total: number;
-  /** Shortest Intervals first. */
+  /** Shortest Intervals first, then Schedule Monitors. */
   byInterval: Array<{ label: string; count: number }>;
   customGrace: number;
   withNotes: number;
@@ -142,19 +161,22 @@ export interface MonitorSetup {
 export async function summarizeMonitorSetup(
   db: Db,
   limits: Limits,
+  now: Date,
 ): Promise<MonitorSetup> {
   const rows = await monitors(db)
-    .aggregate<{
-      intervalSec: number;
-      graceSec: number;
-      hasNotes: boolean;
-      alertsEnabled: boolean;
-      state: MonitorState;
-    }>([
+    .aggregate<
+      MonitorPeriod & {
+        graceSec: number;
+        hasNotes: boolean;
+        alertsEnabled: boolean;
+        state: MonitorState;
+      }
+    >([
       {
         $project: {
           _id: 0,
           intervalSec: 1,
+          schedule: 1,
           graceSec: 1,
           hasNotes: { $gt: [{ $strLenCP: { $ifNull: ["$notes", ""] } }, 0] },
           alertsEnabled: 1,
@@ -165,16 +187,25 @@ export async function summarizeMonitorSetup(
     .toArray();
   const setup: MonitorSetup = {
     total: rows.length,
-    byInterval: INTERVAL_GROUPS.map(({ label }) => ({ label, count: 0 })),
+    byInterval: [...INTERVAL_GROUPS, { label: SCHEDULE_GROUP }].map(
+      ({ label }) => ({ label, count: 0 }),
+    ),
     customGrace: 0,
     withNotes: 0,
     alertsOff: 0,
     paused: 0,
   };
   for (const m of rows) {
-    const group = INTERVAL_GROUPS.findIndex((g) => m.intervalSec <= g.maxSec);
-    setup.byInterval[group]!.count++;
-    if (m.graceSec !== defaultGraceSec(m.intervalSec, limits)) {
+    if (m.schedule) {
+      setup.byInterval[INTERVAL_GROUPS.length]!.count++;
+    } else {
+      const { intervalSec } = m;
+      const group = INTERVAL_GROUPS.findIndex((g) => intervalSec <= g.maxSec);
+      setup.byInterval[group]!.count++;
+    }
+    // Half the period is the default Grace period.
+    const period = periodSec(m, now) ?? Infinity;
+    if (m.graceSec !== defaultGraceSec(period, limits)) {
       setup.customGrace++;
     }
     if (m.hasNotes) setup.withNotes++;
@@ -194,15 +225,33 @@ export async function findOwnMonitor(
   return _id ? monitors(db).findOne({ _id, ownerId }) : null;
 }
 
+/** When a Monitor's next Heartbeat is expected by, as nextDueAt() decides; null and empty for Paused and Down. */
+export function nextExpected(
+  monitor: DueFields,
+  startedAt: Date,
+  now: Date,
+  timeZone: string,
+): { at: Date | null; text: string } {
+  const at = nextDueAt(monitor, startedAt);
+  return { at, text: at ? formatDueTime(at, now, timeZone) : "" };
+}
+
 export function sendMonitorNotFound(reply: FastifyReply): FastifyReply {
   return reply.errorPage(404, { message: "No such Monitor." });
 }
 
 export function registerMonitors(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; config: Config; auth: Auth },
+  deps: {
+    db: Db;
+    clock: Clock;
+    config: Config;
+    auth: Auth;
+    /** When this nodbeat process started, for nextDueAt()'s startup grace. */
+    startedAt: Date;
+  },
 ): void {
-  const { db, clock, config, auth } = deps;
+  const { db, clock, config, auth, startedAt } = deps;
   // Keyed by owner: it guards the per-User Monitor limit.
   const ownerLock = new KeyedLock();
 
@@ -212,21 +261,39 @@ export function registerMonitors(
   app.get("/monitors/new", { preHandler: requireUser }, async (req, reply) =>
     reply.page({
       title: "New Monitor",
+      scripts: [MONITOR_FORM_SCRIPT],
       body: monitorFormBody({
         csrf: auth.csrfToken(req, reply),
-        form: readForm({}),
+        form: readForm({}, req.user!.timeZone),
         limits: limitsFor(req.user!),
         channels: await listAlertChannels(db, req.user!._id),
+        now: clock.now(),
       }),
     }),
+  );
+
+  // The form's Schedule preview as the User types (`assets/monitor-form.js`).
+  app.get<{ Querystring: { cron?: unknown; timeZone?: unknown } }>(
+    "/monitors/schedule-preview",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const { cron, timeZone } = req.query;
+      const preview = schedulePreview(
+        typeof cron === "string" ? cron : "",
+        typeof timeZone === "string" ? timeZone : req.user!.timeZone,
+        limitsFor(req.user!),
+        clock.now(),
+      );
+      return reply.header("cache-control", "no-store").send(preview);
+    },
   );
 
   app.post("/monitors", { preHandler: requireUser }, async (req, reply) => {
     const user = req.user!;
     const limits = limitsFor(user);
-    const form = readForm(req.body);
+    const form = readForm(req.body, user.timeZone);
     const channels = await listAlertChannels(db, user._id);
-    const result = validate(form, limits, channels);
+    const result = validate(form, limits, channels, clock.now());
     const errors = "errors" in result ? result.errors : [];
     // Count and insert under the owner's lock, so parallel requests can't all pass the limit check.
     const monitor = await ownerLock.run(String(user._id), async () => {
@@ -259,11 +326,13 @@ export function registerMonitors(
     if (!monitor) {
       return reply.code(400).page({
         title: "New Monitor",
+        scripts: [MONITOR_FORM_SCRIPT],
         body: monitorFormBody({
           csrf: auth.csrfToken(req, reply),
           form,
           limits,
           channels,
+          now: clock.now(),
           errors,
         }),
       });
@@ -299,8 +368,14 @@ export function registerMonitors(
       const curlGet = `curl -fsS -m 10 --retry 3 ${url}`;
       const curlPost = `curl -fsS -m 10 --retry 3 --data-raw "battery 3.7V" ${url}`;
       const lastRun = formatDurationOrEmpty(monitor.lastRunDurationSec);
+      const due = nextExpected(monitor, startedAt, now, timeZone).text;
       // Start signal, then the job; success or Fail signal ends the Run.
       const cronRun = `curl -fsS -m 10 ${url}/start; /path/to/job.sh && curl -fsS -m 10 ${url} || curl -fsS -m 10 ${url}/fail`;
+      // The Schedule's own expression, so the crontab line matches it; its time zone has to match the server's too.
+      const cronTimes = monitor.schedule?.cron ?? "*/5 * * * *";
+      const cronZone = monitor.schedule
+        ? `\n# Times in ${monitor.schedule.timeZone}: the server's time zone (or CRON_TZ) must match`
+        : "";
       return reply.page({
         title: monitor.name,
         // Enhances the copy buttons; without JS they stay hidden and the text is still selectable.
@@ -348,7 +423,16 @@ export function registerMonitors(
                       : alerted.map((c) => c.name).join(", ")
                 }
               </li>
-              <li>Interval: ${formatDuration(monitor.intervalSec)}</li>
+              ${
+                monitor.schedule
+                  ? html`<li>
+                      Schedule: <code>${monitor.schedule.cron}</code>
+                      (${monitor.schedule.timeZone})
+                    </li>`
+                  : html`<li>
+                      Interval: ${formatDuration(monitor.intervalSec)}
+                    </li>`
+              }
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
               ${
                 monitor.maxRunTimeSec != null &&
@@ -357,6 +441,7 @@ export function registerMonitors(
                 </li>`
               }
               ${lastRun && html`<li>Last Run duration: ${lastRun}</li>`}
+              ${due && html`<li>Next expected by: ${due}</li>`}
             </ul>
             ${monitor.notes ? html`<p class="notes">${monitor.notes}</p>` : ""}
           </div>
@@ -403,11 +488,11 @@ export function registerMonitors(
                 ${copyButton("curl-post")}
               </div>
               <h3>cron</h3>
-              <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded
-*/5 * * * * /path/to/job.sh &amp;&amp; curl -fsS -m 10 --retry 3 ${url} &gt; /dev/null</code></pre>
+              <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded${cronZone}
+${cronTimes} /path/to/job.sh &amp;&amp; curl -fsS -m 10 --retry 3 ${url} &gt; /dev/null</code></pre>
               <h3>cron with Start and Fail signals</h3>
               <pre><code># Times the job and reports a failure at once
-*/5 * * * * ${cronRun}</code></pre>
+${cronTimes} ${cronRun}</code></pre>
               <h3>ESP32 / Arduino</h3>
               <pre><code>#include &lt;WiFi.h&gt;
 #include &lt;WiFiClientSecure.h&gt;

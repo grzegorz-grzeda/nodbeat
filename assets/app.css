@@ -352,19 +352,22 @@ form.inline {
   font-weight: 500;
 }
 
-fieldset.alert-channels {
+fieldset.alert-channels,
+fieldset.timing {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--space-2) var(--space-3);
   margin: var(--space-3) 0;
 }
 
-fieldset.alert-channels label {
+fieldset.alert-channels label,
+fieldset.timing label {
   font-weight: 400;
   margin: var(--space-2) 0;
 }
 
-fieldset.alert-channels .channel-choice {
+fieldset.alert-channels .channel-choice,
+fieldset.timing .timing-detail {
   margin-left: var(--space-4);
 }
 

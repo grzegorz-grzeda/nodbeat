@@ -2,13 +2,14 @@
 
 A heartbeat for every service and device.
 
-nodbeat is a small, self-hosted dead-man's switch. Each thing you want to watch (a cron job, a Raspberry Pi, an ESP32 sensor, a web service) gets a **Monitor** with a secret **Heartbeat URL**. The thing calls that URL every **Interval**. When no Heartbeat arrives within Interval + **Grace period**, the Monitor goes **Down** and nodbeat sends a Telegram **Alert**. When Heartbeats come back, it's **Up** again and you get a second Alert with how long the **Incident** lasted.
+nodbeat is a small, self-hosted dead-man's switch. Each thing you want to watch (a cron job, a Raspberry Pi, an ESP32 sensor, a web service) gets a **Monitor** with a secret **Heartbeat URL**. The thing calls that URL every **Interval**, or on a **Schedule** (a cron expression such as `0 2 * * *`). When no Heartbeat arrives within Interval (or by the scheduled time) + **Grace period**, the Monitor goes **Down** and nodbeat sends a Telegram **Alert**. When Heartbeats come back, it's **Up** again and you get a second Alert with how long the **Incident** lasted.
 
 Heartbeats are push-only (ADR 0001): nodbeat never connects to what it watches, so devices behind NAT work fine. Terms are defined in [GLOSSARY.md](GLOSSARY.md).
 
 ## Features
 
-- **Monitors** with a name, notes, Interval (30 s – 7 days) and Grace period (0 – 1 day, defaults to half the Interval). Up to 50 per User.
+- **Monitors** with a name, notes, an Interval (30 s – 7 days) or a Schedule, and a Grace period (0 – 1 day, defaults to half the Interval or half the shortest gap between scheduled times). Up to 50 per User.
+- **Schedules**: a 5-field cron expression (ranges, lists, steps, `MON`/`JAN` names; no seconds, `@` names or `L`/`W`/`#`) in a time zone per Monitor, DST included. The form previews the next three scheduled times; scheduled times must be at least 5 min apart. A Heartbeat counts for the coming scheduled time if it is at most 1 h before it (less when scheduled times are closer), otherwise for the one before: a job that sends at 01:58 for 02:00 is fine, a rerun by hand in the afternoon doesn't excuse the next night, and a weekday job stays Up at the weekend.
 - **States**: New (no Heartbeat yet), Up, Down, Paused. New and Paused Monitors never go Down.
 - **Pause / unpause** for maintenance. Pausing a Down Monitor closes its Incident without an Up Alert; unpausing gives a fresh Interval + Grace period.
 - **Alerts on/off per Monitor**: state and Incidents are still tracked when off.

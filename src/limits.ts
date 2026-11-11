@@ -7,6 +7,8 @@ export interface Limits {
   maxAlertChannels: number;
   minIntervalSec: number;
   maxIntervalSec: number;
+  /** Closest two scheduled times of a Schedule may be. */
+  minScheduleGapSec: number;
   minGraceSec: number;
   maxGraceSec: number;
   /** Bounds of a Monitor's Max run time (which is optional). */
@@ -23,6 +25,12 @@ export const MAX_HEARTBEAT_MESSAGE_LENGTH = 200;
 /** Longest Heartbeat User-Agent kept, in characters. Instance-wide. */
 export const MAX_USER_AGENT_LENGTH = 200;
 
+/**
+ * Longest a Heartbeat may come before a Schedule's scheduled time and still count for it (e.g. a 02:00 job that sends
+ * at 01:58). Shorter when scheduled times are closer: at most half the gap to the scheduled time before. Instance-wide.
+ */
+export const MAX_EARLY_HEARTBEAT_SEC = 60 * 60;
+
 const DAY_SEC = 24 * 60 * 60;
 
 const DEFAULT_LIMITS: Limits = {
@@ -30,6 +38,7 @@ const DEFAULT_LIMITS: Limits = {
   maxAlertChannels: 10,
   minIntervalSec: 30,
   maxIntervalSec: 7 * DAY_SEC,
+  minScheduleGapSec: 5 * 60,
   minGraceSec: 0,
   maxGraceSec: DAY_SEC,
   minMaxRunTimeSec: 60,
@@ -49,12 +58,13 @@ export function instanceLimits(): Limits {
 }
 
 /**
- * The Grace period a Monitor gets when none is given: half its Interval, clamped to the Grace bounds. Half of a long
+ * The Grace period a Monitor gets when none is given: half its Interval (for a Schedule: half the shortest gap between
+ * its scheduled times), clamped to the Grace bounds. Half of a long
  * Interval can exceed the bound (7 d → 3.5 d > 1 d); clamping beats blaming a field left blank.
  */
-export function defaultGraceSec(intervalSec: number, limits: Limits): number {
+export function defaultGraceSec(periodSec: number, limits: Limits): number {
   return Math.min(
-    Math.max(Math.floor(intervalSec / 2), limits.minGraceSec),
+    Math.max(Math.floor(periodSec / 2), limits.minGraceSec),
     limits.maxGraceSec,
   );
 }

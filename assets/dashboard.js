@@ -45,6 +45,7 @@
       }),
       cell(m.lastMessage ?? "", { "data-label": "Last message" }),
       cell(m.lastRunDurationText, { "data-label": "Last Run" }),
+      cell(m.nextExpectedText, { "data-label": "Next expected by" }),
       cell(m.uptime7dText, { "data-label": "7-day Uptime" }),
     );
     return tr;
