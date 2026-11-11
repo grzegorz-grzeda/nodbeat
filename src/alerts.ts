@@ -59,9 +59,9 @@ export interface AlertDetails {
   monitorName: string;
   /** The Monitor page. */
   monitorUrl: string;
-  /** When the Monitor went Down (Incident start) or came Up (Incident end). */
+  /** When the Monitor went Down (Incident start; also on a Reminder) or came Up (Incident end). */
   at: Date;
-  /** A Down Alert's last Heartbeat or Fail signal message; null on Up Alerts or when there's none. */
+  /** A Down Alert's or Reminder's last Heartbeat or Fail signal message; null on Up Alerts or when there's none. */
   message: string | null;
   /** Monitor name and state in plain text, e.g. "Garden sensor is Down". */
   title: string;
@@ -77,8 +77,8 @@ interface LegacyAlertDoc extends Omit<AlertDoc, "channelIds" | "retries"> {
   nextAttemptAt: Date;
 }
 
-/** What a Monitor's Alert says happened. */
-export type AlertKind = "down" | "up";
+/** What a Monitor's Alert says happened: it went Down, came Up, or is still Down (a Reminder). */
+export type AlertKind = "down" | "up" | "reminder";
 /** Any Alert sent: a Monitor's, or a test Alert (sent from Settings, never queued). */
 export type SentAlertKind = AlertKind | "test";
 
@@ -203,15 +203,15 @@ export async function enqueueAlert(
   if (channels.length === 0) return;
   const timeZone = owner?.timeZone ?? DEFAULT_TIME_ZONE;
   const url = monitorUrl(publicBaseUrl, monitor);
-  const parts = alertParts(monitor, kind, incident, timeZone);
+  const parts = alertParts(monitor, kind, incident, timeZone, now);
   const details: AlertDetails = {
     monitorName: monitor.name,
     monitorUrl: url,
     at:
-      kind === "down"
-        ? incident.startedAt
-        : (incident.endedAt ?? incident.startedAt),
-    message: kind === "down" ? monitor.lastMessage : null,
+      kind === "up"
+        ? (incident.endedAt ?? incident.startedAt)
+        : incident.startedAt,
+    message: kind === "up" ? null : monitor.lastMessage,
     title: `${monitor.name} ${parts.state}`,
     summary: parts.lines.join("\n"),
   };
@@ -267,18 +267,29 @@ function alertParts(
   kind: AlertKind,
   incident: IncidentDoc,
   timeZone: string,
+  now: Date,
 ): AlertParts {
   const at = (date: Date) => `${formatDateTime(date, timeZone)} (${timeZone})`;
-  if (kind === "down") {
+  if (kind !== "up") {
     // Missing on Incidents stored before causes existed: those are missed deadlines.
     const cause = incident.cause ?? "missed";
-    const lines = [`Since ${at(incident.startedAt)}`];
+    const since = at(incident.startedAt);
+    const downFor = formatDuration(
+      (now.getTime() - incident.startedAt.getTime()) / 1000,
+    );
+    const lines = [
+      kind === "reminder"
+        ? `Down for ${downFor}, since ${since}`
+        : `Since ${since}`,
+    ];
     if (monitor.lastMessage) {
       // A failure's message is the Fail signal's own.
       const label = cause === "failed" ? "Message" : "Last message";
       lines.push(`${label}: ${monitor.lastMessage}`);
     }
-    return { emoji: "🔴", state: DOWN_HEADLINES[cause](incident), lines };
+    const state =
+      kind === "reminder" ? "is still Down" : DOWN_HEADLINES[cause](incident);
+    return { emoji: "🔴", state, lines };
   }
   const endedAt = incident.endedAt ?? incident.startedAt;
   const duration = formatDuration(
@@ -333,12 +344,23 @@ export async function migrateChat(
   }
 }
 
-/** A Down Alert not yet delivered when its Incident closes is stale: the Up Alert says it all. */
-export async function dropPendingDownAlert(
+/** A Down Alert or Reminder not yet delivered when its Incident closes is stale: the Up Alert says it all. */
+export async function dropPendingDownAlerts(
   db: Db,
   incidentId: ObjectId,
 ): Promise<void> {
-  await outbox(db).deleteMany({ incidentId, kind: "down" });
+  await outbox(db).deleteMany({
+    incidentId,
+    kind: { $in: ["down", "reminder"] },
+  });
+}
+
+/** Drops the Monitor's Reminders still waiting to be sent (its Alerts were switched off). */
+export async function dropPendingReminders(
+  db: Db,
+  monitorId: ObjectId,
+): Promise<void> {
+  await outbox(db).deleteMany({ monitorId, kind: "reminder" });
 }
 
 /** Removes all of the Monitor's pending Alerts (when the Monitor is deleted). */

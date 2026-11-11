@@ -46,6 +46,7 @@ import {
   type MonitorTiming,
 } from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
+import { reminderText, type ReminderEverySec } from "./reminders.js";
 import { listAlertChannels } from "./alert-channels.js";
 import {
   channelsOfMonitor,
@@ -63,6 +64,9 @@ export type MonitorDoc = MonitorStateFields &
     /** Secret part of the Heartbeat URL. */
     token: string;
     alertsEnabled: boolean;
+    /** How often a Reminder repeats the Down Alert while Down; null: never. Absent on Monitors stored before
+     * Reminders existed: never. */
+    reminderEverySec?: ReminderEverySec | null;
     createdAt: Date;
   };
 
@@ -423,6 +427,7 @@ export function registerMonitors(
                       : alerted.map((c) => c.name).join(", ")
                 }
               </li>
+              <li>Reminders: ${reminderText(monitor)}</li>
               ${
                 monitor.schedule
                   ? html`<li>

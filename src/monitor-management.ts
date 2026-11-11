@@ -6,10 +6,11 @@ import { setFlash } from "./flash.js";
 import { deleteHeartbeatsOf } from "./heartbeats.js";
 import { sendConfirmPage } from "./confirm.js";
 import { html } from "./html.js";
-import { deleteIncidentsOf } from "./incidents.js";
+import { deleteIncidentsOf, setNextReminder } from "./incidents.js";
+import { firstReminderAt } from "./reminders.js";
 import { limitsFor } from "./limits.js";
 import { applyEffects } from "./effects.js";
-import { deleteAlertsOf } from "./alerts.js";
+import { deleteAlertsOf, dropPendingReminders } from "./alerts.js";
 import { listAlertChannels } from "./alert-channels.js";
 import type { KeyedLock } from "./keyed-lock.js";
 import { transition, type MonitorEvent } from "./monitor-state.js";
@@ -62,6 +63,14 @@ export function registerMonitorManagement(
         { $set: { ...fields, ...extra } },
       );
       await applyEffects(db, current, effects, now, publicBaseUrl);
+      // A changed cadence counts from the change; the open Incident, if any, is reminded on the new one.
+      const updated = { ...current, ...fields, ...extra };
+      if (
+        (updated.reminderEverySec ?? null) !==
+        (current.reminderEverySec ?? null)
+      ) {
+        await setNextReminder(db, current._id, firstReminderAt(updated, now));
+      }
     });
 
   /** A route on one of the logged-in User's Monitors; 404 for anyone else's. */
@@ -188,10 +197,23 @@ export function registerMonitorManagement(
       if (value !== "true" && value !== "false") {
         return reply.errorPage(400);
       }
-      await monitors(db).updateOne(
-        { _id: monitor._id },
-        { $set: { alertsEnabled: value === "true" } },
-      );
+      const alertsEnabled = value === "true";
+      await lock.run(String(monitor._id), async () => {
+        const current = await monitors(db).findOne({ _id: monitor._id });
+        if (!current || current.alertsEnabled === alertsEnabled) return;
+        await monitors(db).updateOne(
+          { _id: current._id },
+          { $set: { alertsEnabled } },
+        );
+        // Off stops Reminders and drops a queued one; on while Down counts them from now.
+        const now = clock.now();
+        await setNextReminder(
+          db,
+          current._id,
+          firstReminderAt({ ...current, alertsEnabled }, now),
+        );
+        if (!alertsEnabled) await dropPendingReminders(db, current._id);
+      });
       setFlash(reply, value === "true" ? "Alerts on." : "Alerts off.");
       return reply.redirect(`/monitors/${monitor._id}`, 303);
     }),

@@ -12,12 +12,24 @@ export interface IncidentDoc {
   maxRunTimeSec?: number;
   endedAt: Date | null;
   endReason: "heartbeat" | "paused" | null;
+  /** When the next Reminder is due; null when none is (no Reminders, Alerts off, or closed). Absent on Incidents
+   * stored before Reminders existed. */
+  nextReminderAt?: Date | null;
+  /** Reminders sent so far. Absent on Incidents stored before Reminders existed: none. */
+  remindersSent?: number;
 }
 
 const incidents = (db: Db) => db.collection<IncidentDoc>("incidents");
 
 export async function ensureIncidentIndexes(db: Db): Promise<void> {
-  await incidents(db).createIndex({ monitorId: 1, startedAt: -1 });
+  await Promise.all([
+    incidents(db).createIndex({ monitorId: 1, startedAt: -1 }),
+    // The Down checker's look for due Reminders: only open Incidents with one due have a date here.
+    incidents(db).createIndex(
+      { nextReminderAt: 1 },
+      { partialFilterExpression: { nextReminderAt: { $type: "date" } } },
+    ),
+  ]);
 }
 
 export async function openIncident(
@@ -25,6 +37,7 @@ export async function openIncident(
   monitor: { _id: ObjectId; ownerId: ObjectId },
   startedAt: Date,
   why: Pick<IncidentDoc, "cause" | "maxRunTimeSec">,
+  nextReminderAt: Date | null,
 ): Promise<IncidentDoc> {
   const incident: IncidentDoc = {
     _id: new ObjectId(),
@@ -34,9 +47,47 @@ export async function openIncident(
     ...why,
     endedAt: null,
     endReason: null,
+    nextReminderAt,
+    remindersSent: 0,
   };
   await incidents(db).insertOne(incident);
   return incident;
+}
+
+/** Sets when the Monitor's open Incident, if it has one, sends its next Reminder; null: none. */
+export async function setNextReminder(
+  db: Db,
+  monitorId: ObjectId,
+  nextReminderAt: Date | null,
+): Promise<void> {
+  await incidents(db).updateOne(
+    { monitorId, endedAt: null },
+    { $set: { nextReminderAt } },
+  );
+}
+
+/** Open Incidents whose next Reminder is due at `now`. */
+export function listDueReminders(db: Db, now: Date): Promise<IncidentDoc[]> {
+  return incidents(db)
+    .find({ endedAt: null, nextReminderAt: { $type: "date", $lte: now } })
+    .toArray();
+}
+
+/**
+ * Counts the Reminder due at `due` as sent and moves the next one to `next`, in one update: a second tick that read
+ * the same due time gets null and sends nothing. Returns the Incident as updated.
+ */
+export function claimReminder(
+  db: Db,
+  incidentId: ObjectId,
+  due: Date,
+  next: Date,
+): Promise<IncidentDoc | null> {
+  return incidents(db).findOneAndUpdate(
+    { _id: incidentId, endedAt: null, nextReminderAt: due },
+    { $set: { nextReminderAt: next }, $inc: { remindersSent: 1 } },
+    { returnDocument: "after" },
+  );
 }
 
 /** Ends the Monitor's open Incident, if it has one, and returns it as closed. */
@@ -48,7 +99,7 @@ export function closeOpenIncident(
 ): Promise<IncidentDoc | null> {
   return incidents(db).findOneAndUpdate(
     { monitorId, endedAt: null },
-    { $set: { endedAt, endReason } },
+    { $set: { endedAt, endReason, nextReminderAt: null } },
     { returnDocument: "after" },
   );
 }
