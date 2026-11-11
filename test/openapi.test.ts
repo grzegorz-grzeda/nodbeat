@@ -21,15 +21,17 @@ describe("GET /openapi.yaml", () => {
     expect(doc.openapi).toMatch(/^3\./);
   });
 
-  it("describes both Heartbeat URL operations and /health", async () => {
+  it("describes the Heartbeat URL and Fail signal operations and /health", async () => {
     const { app } = await buildTestApp();
 
     const res = await app.inject({ method: "GET", url: "/openapi.yaml" });
     const doc = parse(res.body) as OpenApiDoc;
 
-    expect(Object.keys(doc.paths["/hb/{token}"] ?? {}).sort()).toEqual(
-      expect.arrayContaining(["get", "post"]),
-    );
+    for (const path of ["/hb/{token}", "/hb/{token}/fail"]) {
+      expect(Object.keys(doc.paths[path] ?? {}).sort()).toEqual(
+        expect.arrayContaining(["get", "post"]),
+      );
+    }
     expect(doc.paths["/health"]).toHaveProperty("get");
   });
 

@@ -33,6 +33,8 @@ export interface MonitorSettings extends MonitorTiming {
 
 export type MonitorEvent =
   | { kind: "heartbeat"; message: string | null }
+  /** A Fail signal: the job reported a failure. */
+  | { kind: "fail"; message: string | null }
   /** The Down checker's look at the Monitor. `startedAt` is when this nodbeat process started (startup grace). */
   | { kind: "deadline-check"; startedAt: Date }
   | { kind: "pause" }
@@ -40,9 +42,12 @@ export type MonitorEvent =
   /** New settings saved. Only the timing matters to the state machine. */
   | { kind: "edit"; timing: MonitorTiming };
 
+/** Why an Incident opened: a missed deadline or a Fail signal. */
+export type IncidentCause = "missed" | "failed";
+
 export type Effect =
-  /** The Incident starts at the deadline, not when the checker noticed. */
-  | { kind: "open-incident"; startedAt: Date }
+  /** A missed deadline's Incident starts at the deadline, not when the checker noticed. */
+  | { kind: "open-incident"; startedAt: Date; cause: IncidentCause }
   | { kind: "close-incident"; reason: "heartbeat" | "paused" }
   /** New and pause periods are left out of Uptime. */
   | { kind: "start-period"; state: UncountedState }
@@ -90,6 +95,8 @@ export function transition(
   switch (event.kind) {
     case "heartbeat":
       return onHeartbeat(current, event.message, now);
+    case "fail":
+      return onFail(current, event.message, now);
     case "deadline-check":
       return onDeadlineCheck(current, event.startedAt, now);
     case "pause":
@@ -149,6 +156,33 @@ function onHeartbeat(
   }
 }
 
+/** New or Up goes Down at once; Down and Paused only record it. Either way the device was heard from. */
+function onFail(
+  current: MonitorStateFields & MonitorSettings,
+  message: string | null,
+  now: Date,
+): Transition {
+  const seen = {
+    ...stateFields(current),
+    lastHeartbeatAt: now,
+    lastMessage: message,
+  };
+  const { state } = current;
+  if (state === "down" || state === "paused") {
+    return { fields: seen, effects: [] };
+  }
+  return {
+    fields: { ...seen, state: "down" },
+    effects: [
+      ...(state === "new"
+        ? [{ kind: "end-period", state: "new" } as const]
+        : []),
+      { kind: "open-incident", startedAt: now, cause: "failed" },
+      ...alertEffects(current, "down"),
+    ],
+  };
+}
+
 function onDeadlineCheck(
   current: MonitorStateFields & MonitorSettings,
   startedAt: Date,
@@ -161,7 +195,7 @@ function onDeadlineCheck(
   return {
     fields: { ...fields, state: "down" },
     effects: [
-      { kind: "open-incident", startedAt: deadline },
+      { kind: "open-incident", startedAt: deadline, cause: "missed" },
       ...alertEffects(current, "down"),
     ],
   };

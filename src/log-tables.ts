@@ -1,5 +1,5 @@
 import { formatDateTime, formatDuration } from "./format.js";
-import type { HeartbeatDoc } from "./heartbeats.js";
+import type { HeartbeatDoc, SignalKind } from "./heartbeats.js";
 import { html, type SafeHtml } from "./html.js";
 import type { IncidentDoc } from "./incidents.js";
 import { instanceLimits } from "./limits.js";
@@ -53,6 +53,11 @@ export function incidentsTable(
   </div>`;
 }
 
+const SIGNAL_LABELS: Record<SignalKind, string> = {
+  success: "✓",
+  fail: "Fail",
+};
+
 export function heartbeatsTable(
   list: HeartbeatDoc[],
   timeZone: string,
@@ -62,6 +67,7 @@ export function heartbeatsTable(
       <thead>
         <tr>
           <th>Received</th>
+          <th>Signal</th>
           <th>Message</th>
         </tr>
       </thead>
@@ -70,6 +76,7 @@ export function heartbeatsTable(
           (h) =>
             html`<tr>
               <td>${formatDateTime(h.receivedAt, timeZone)}</td>
+              <td>${SIGNAL_LABELS[h.kind ?? "success"]}</td>
               <td>${h.message ?? ""}</td>
             </tr>`,
         )}

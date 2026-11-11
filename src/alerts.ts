@@ -117,9 +117,15 @@ function alertText(
   const url = `${publicBaseUrl}/monitors/${String(monitor._id)}`;
   const link = `<a href="${escapeTelegramHtml(url)}">Open Monitor</a>`;
   if (kind === "down") {
-    const lines = [`🔴 ${name} is Down`, `Since ${at(incident.startedAt)}`];
+    const failed = incident.cause === "failed";
+    const lines = [
+      failed ? `🔴 ${name} reported a failure` : `🔴 ${name} is Down`,
+      `Since ${at(incident.startedAt)}`,
+    ];
     if (monitor.lastMessage) {
-      lines.push(`Last message: ${escapeTelegramHtml(monitor.lastMessage)}`);
+      // A failure's message is the Fail signal's own.
+      const label = failed ? "Message" : "Last message";
+      lines.push(`${label}: ${escapeTelegramHtml(monitor.lastMessage)}`);
     }
     return [...lines, link].join("\n");
   }
