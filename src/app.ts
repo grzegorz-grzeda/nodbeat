@@ -47,6 +47,7 @@ import type { TelegramClient } from "./telegram.js";
 import { registerTelegramBot } from "./telegram-bot.js";
 import { createTelegramSender } from "./telegram-sender.js";
 import type { HostResolver, HttpClient } from "./outbound-http.js";
+import { createNtfySender } from "./ntfy-sender.js";
 import { createWebhookSender } from "./webhook-sender.js";
 import { ensureUserIndexes } from "./users.js";
 
@@ -54,7 +55,7 @@ export interface AppDeps {
   db: Db;
   clock: Clock;
   telegram: TelegramClient;
-  /** Sends HTTP Alert channels' requests (Webhooks). */
+  /** Sends HTTP Alert channels' requests (Webhooks, ntfy topics). */
   http: HttpClient;
   /** Resolves the hosts of Alert channel URLs for the SSRF guard. */
   resolveHost: HostResolver;
@@ -170,6 +171,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
       http: deps.http,
       resolveHost: deps.resolveHost,
     }),
+    ntfy: createNtfySender({ http: deps.http, resolveHost: deps.resolveHost }),
   };
   registerSettings(app, {
     db,

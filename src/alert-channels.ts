@@ -28,8 +28,17 @@ export interface WebhookChannelDoc extends AlertChannelBase {
   secret: string | null;
 }
 
+/** An ntfy topic: Alerts are POSTed to the topic `url`, with `Authorization: Bearer <token>` when one is set. */
+export interface NtfyChannelDoc extends AlertChannelBase {
+  kind: "ntfy";
+  url: string;
+  /** Never shown again after saving. */
+  token: string | null;
+}
+
 /** One document of `alertChannels`. New kinds join this union and `CHANNEL_KIND_LABELS`. */
-export type AlertChannelDoc = TelegramChannelDoc | WebhookChannelDoc;
+export type AlertChannelDoc =
+  TelegramChannelDoc | WebhookChannelDoc | NtfyChannelDoc;
 
 export type AlertChannelKind = AlertChannelDoc["kind"];
 
@@ -43,6 +52,7 @@ export type AlertChannelOf<K extends AlertChannelKind> = Extract<
 export const CHANNEL_KIND_LABELS: Record<AlertChannelKind, string> = {
   telegram: "Telegram",
   webhook: "Webhook",
+  ntfy: "ntfy topic",
 };
 
 /** Longest Alert channel name, in characters. */
