@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-11-11
+
 ### Added
 
 - Reminders: on the create and edit forms a Monitor can choose "Remind me every 1 h / 6 h / 24 h while Down" or "Never" (the default; existing Monitors keep it). While the Monitor stays Down, each Reminder repeats the Down Alert to the same Alert channels ("is still Down", how long it has been Down and the last Heartbeat message), as loud as a Down Alert: with sound on Telegram, priority 5 on ntfy, `kind: "reminder"` on Webhooks (documented in `/openapi.yaml`). Reminders count from going Down, or from switching them (or Alerts) on while already Down; changing the cadence while Down counts the next one from the change. A tick missed while nodbeat wasn't running sends one Reminder, never a burst. Fail signals during the Down don't change the timing. Up, pause or Alerts off stop Reminders and drop a queued one. The Monitor page shows the cadence, and the Incidents log how many Reminders each Incident sent.
@@ -226,7 +228,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.22.0...v0.23.0
