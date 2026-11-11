@@ -24,8 +24,8 @@ const UNKNOWN_TOKEN_WINDOW_MS = 60 * 1000;
 /** A message is at most 200 characters; anything much bigger is not a Heartbeat. */
 const BODY_LIMIT_BYTES = 8 * 1024;
 
-/** Which request to the Heartbeat URL: a plain Heartbeat (success) or a Fail signal. */
-export type SignalKind = "success" | "fail";
+/** Which request to the Heartbeat URL: a plain Heartbeat (success), a Start signal or a Fail signal. */
+export type SignalKind = "success" | "start" | "fail";
 
 export interface HeartbeatDoc {
   monitorId: ObjectId;
@@ -33,6 +33,8 @@ export interface HeartbeatDoc {
   kind?: SignalKind;
   receivedAt: Date;
   message: string | null;
+  /** The Run this signal ended, in seconds; null if it ended none. Missing on Heartbeats stored before Runs existed. */
+  runDurationSec?: number | null;
   method: string;
   sourceIp: string;
   /** The `User-Agent` header, trimmed to 200 characters. Missing on Heartbeats stored before it was recorded. */
@@ -177,9 +179,15 @@ export async function registerHeartbeatIntake(
       const now = clock.now();
       const { fields, effects } = transition(
         current,
-        { kind: kind === "fail" ? "fail" : "heartbeat", message },
+        kind === "success"
+          ? { kind: "heartbeat", message }
+          : kind === "fail"
+            ? { kind: "fail", message }
+            : { kind: "start" },
         now,
       );
+      // A Heartbeat or Fail signal that ended an open Run carries the Run duration the transition just recorded.
+      const endedRun = kind !== "start" && Boolean(current.runStartedAt);
       await Promise.all([
         monitors(db).updateOne({ _id: current._id }, { $set: fields }),
         heartbeats(db).insertOne({
@@ -187,6 +195,7 @@ export async function registerHeartbeatIntake(
           kind,
           receivedAt: now,
           message,
+          runDurationSec: endedRun ? (fields.lastRunDurationSec ?? null) : null,
           method: req.method,
           sourceIp: req.ip,
           userAgent: readUserAgent(req),
@@ -234,6 +243,7 @@ export async function registerHeartbeatIntake(
     });
     const signals: Array<[string, SignalKind]> = [
       ["/hb/:token", "success"],
+      ["/hb/:token/start", "start"],
       ["/hb/:token/fail", "fail"],
     ];
     for (const [url, kind] of signals) {

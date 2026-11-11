@@ -10,7 +10,9 @@ info:
     Each Monitor has a secret **Heartbeat URL**, `/hb/{token}`. Send a
     Heartbeat to it at least once per Interval; if none arrives within the
     Interval plus the Grace period, the Monitor goes Down and you get an Alert.
-    A **Fail signal** to `/hb/{token}/fail` makes it Down at once.
+    A **Fail signal** to `/hb/{token}/fail` makes it Down at once. A
+    **Start signal** to `/hb/{token}/start` says a job began: the next
+    Heartbeat or Fail signal ends the **Run** and records its Run duration.
 
     Keep the Heartbeat URL secret: anyone who has it can send Heartbeats for
     the Monitor. Copy it from the Monitor page.
@@ -67,6 +69,54 @@ paths:
         Monitor is accepted, and the same per-IP limit on unknown Heartbeat
         URLs as for GET applies.
       operationId: sendHeartbeatWithBody
+      requestBody:
+        $ref: "#/components/requestBodies/Message"
+      responses:
+        "200":
+          $ref: "#/components/responses/Recorded"
+        "404":
+          $ref: "#/components/responses/UnknownToken"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyHeartbeats"
+  /hb/{token}/start:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+      - $ref: "#/components/parameters/Msg"
+    get:
+      tags: [Heartbeat]
+      summary: Send a Start signal
+      description: |
+        Says the job began, starting a Run. The next Heartbeat or Fail signal
+        ends it, and its Run duration shows in the Heartbeats log, on the
+        Monitor page and on the Dashboard. A second Start signal before then
+        replaces the first. Its optional message is shown in the Heartbeats
+        log only; it does not change the Monitor's last message.
+
+        A Start signal is not a Heartbeat: it changes no Monitor state and does
+        not move the Interval deadline, so a job that starts but never finishes
+        still goes Down. A Start signal to a Paused Monitor is only recorded.
+
+        At most one Start signal per second per Monitor is accepted, counted
+        apart from Heartbeats and Fail signals, so a short job's Start signal
+        and Heartbeat in the same second both get through. The per-IP limit on
+        unknown Heartbeat URLs applies as for a Heartbeat.
+      operationId: sendStartSignal
+      responses:
+        "200":
+          $ref: "#/components/responses/Recorded"
+        "404":
+          $ref: "#/components/responses/UnknownToken"
+        "429":
+          $ref: "#/components/responses/TooManyHeartbeats"
+    post:
+      tags: [Heartbeat]
+      summary: Send a Start signal with a message
+      description: |
+        The same as GET, with the message read as for a Heartbeat's POST:
+        `?msg=` first, then the body. The body may be at most 8 KiB.
+      operationId: sendStartSignalWithBody
       requestBody:
         $ref: "#/components/requestBodies/Message"
       responses:

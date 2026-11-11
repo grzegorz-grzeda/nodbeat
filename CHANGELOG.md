@@ -9,11 +9,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - Fail signal: `GET|POST /hb/<token>/fail` (optional message, same rules as a Heartbeat) makes a New or Up Monitor Down at once. Its Down Alert says the Monitor "reported a failure" and includes the message. A Fail signal to a Down or Paused Monitor is only recorded. The next Heartbeat brings the Monitor Up.
-- The Heartbeats log has a "Signal" column (✓ / Fail).
+- Start signal: `GET|POST /hb/<token>/start` says a job began. The next Heartbeat or Fail signal ends the Run and records its Run duration, shown in the Heartbeats log ("Run duration" column), on the Monitor page and on the Dashboard ("Last Run" column; `lastRunDurationSec` and `lastRunDurationText` in `/dashboard.json`). A Start signal is not a Heartbeat: it changes no state and does not move the deadline. A Start signal to a Paused Monitor is only recorded.
+- The Monitor page has a cron example using Start, success and Fail.
+- The Heartbeats log has a "Signal" column (✓ / Start / Fail).
 
 ### Changed
 
-- The 1-per-second limit on a Heartbeat URL is counted per signal kind, so a Fail signal and a Heartbeat in the same second both get through.
+- The 1-per-second limit on a Heartbeat URL is counted per signal kind, so a Start signal, a Fail signal and a Heartbeat in the same second all get through.
 
 ## [0.22.0] - 2026-11-11
 

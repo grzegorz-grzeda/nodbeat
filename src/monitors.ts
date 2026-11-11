@@ -239,6 +239,8 @@ export function registerMonitors(
         lastMessage: null,
         pausedAt: null,
         watchedSince: null,
+        runStartedAt: null,
+        lastRunDurationSec: null,
         createdAt: clock.now(),
       };
       await monitors(db).insertOne(doc);
@@ -283,6 +285,12 @@ export function registerMonitors(
       const csrf = auth.csrfToken(req, reply);
       const curlGet = `curl -fsS -m 10 --retry 3 ${url}`;
       const curlPost = `curl -fsS -m 10 --retry 3 --data-raw "battery 3.7V" ${url}`;
+      const lastRun =
+        monitor.lastRunDurationSec != null
+          ? formatDuration(monitor.lastRunDurationSec)
+          : null;
+      // Start signal, then the job; success or Fail signal ends the Run.
+      const cronRun = `curl -fsS -m 10 ${url}/start; /path/to/job.sh && curl -fsS -m 10 ${url} || curl -fsS -m 10 ${url}/fail`;
       return reply.page({
         title: monitor.name,
         // Enhances the copy buttons; without JS they stay hidden and the text is still selectable.
@@ -316,6 +324,7 @@ export function registerMonitors(
             <ul class="plain">
               <li>Interval: ${formatDuration(monitor.intervalSec)}</li>
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
+              ${lastRun && html`<li>Last Run duration: ${lastRun}</li>`}
             </ul>
             ${monitor.notes ? html`<p class="notes">${monitor.notes}</p>` : ""}
           </div>
@@ -364,6 +373,9 @@ export function registerMonitors(
               <h3>cron</h3>
               <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded
 */5 * * * * /path/to/job.sh &amp;&amp; curl -fsS -m 10 --retry 3 ${url} &gt; /dev/null</code></pre>
+              <h3>cron with Start and Fail signals</h3>
+              <pre><code># Times the job and reports a failure at once
+*/5 * * * * ${cronRun}</code></pre>
               <h3>ESP32 / Arduino</h3>
               <pre><code>#include &lt;WiFi.h&gt;
 #include &lt;WiFiClientSecure.h&gt;

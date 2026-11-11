@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
-import { formatAgo, formatDateTime } from "./format.js";
+import { formatAgo, formatDateTime, formatDuration } from "./format.js";
 import { html, type SafeHtml } from "./html.js";
 import { landingBody } from "./landing.js";
 import { stateBadge } from "./layout.js";
@@ -22,6 +22,10 @@ export interface DashboardMonitor {
   /** The last Heartbeat's time in the User's time zone; empty if never. */
   lastHeartbeatTitle: string;
   lastMessage: string | null;
+  /** The last finished Run's duration in seconds; null if none. */
+  lastRunDurationSec: number | null;
+  /** "42 s", or empty if no Run has ended. */
+  lastRunDurationText: string;
   /** 0..1, null when the Monitor was neither Up nor Down in the last 7 days. */
   uptime7d: number | null;
   uptime7dText: string;
@@ -47,6 +51,11 @@ async function dashboardMonitors(
           ? formatDateTime(m.lastHeartbeatAt, user.timeZone)
           : "",
         lastMessage: m.lastMessage,
+        lastRunDurationSec: m.lastRunDurationSec ?? null,
+        lastRunDurationText:
+          m.lastRunDurationSec != null
+            ? formatDuration(m.lastRunDurationSec)
+            : "",
         uptime7d: uptime,
         uptime7dText: formatUptime(uptime),
       };
@@ -63,6 +72,7 @@ function row(m: DashboardMonitor): SafeHtml {
       ${m.lastHeartbeatText}
     </td>
     <td data-label="Last message">${m.lastMessage ?? ""}</td>
+    <td data-label="Last Run">${m.lastRunDurationText}</td>
     <td data-label="7-day Uptime">${m.uptime7dText}</td>
   </tr>`;
 }
@@ -116,6 +126,7 @@ export function registerDashboard(
                 <th>State</th>
                 <th>Last Heartbeat</th>
                 <th>Last message</th>
+                <th>Last Run</th>
                 <th>7-day Uptime</th>
               </tr>
             </thead>

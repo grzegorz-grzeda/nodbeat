@@ -17,6 +17,10 @@ export interface MonitorStateFields {
    * the earliest. Null if never; absent on Monitors stored before pausing existed.
    */
   watchedSince?: Date | null;
+  /** When the open Run began (its Start signal); null if none. Absent on Monitors stored before Start signals existed. */
+  runStartedAt?: Date | null;
+  /** The last finished Run's duration in seconds; null if none. Absent on Monitors stored before Start signals existed. */
+  lastRunDurationSec?: number | null;
 }
 
 /** A Monitor's Interval and Grace period. */
@@ -35,6 +39,8 @@ export type MonitorEvent =
   | { kind: "heartbeat"; message: string | null }
   /** A Fail signal: the job reported a failure. */
   | { kind: "fail"; message: string | null }
+  /** A Start signal: a job began. Not a Heartbeat. */
+  | { kind: "start" }
   /** The Down checker's look at the Monitor. `startedAt` is when this nodbeat process started (startup grace). */
   | { kind: "deadline-check"; startedAt: Date }
   | { kind: "pause" }
@@ -97,6 +103,8 @@ export function transition(
       return onHeartbeat(current, event.message, now);
     case "fail":
       return onFail(current, event.message, now);
+    case "start":
+      return onStart(current, now);
     case "deadline-check":
       return onDeadlineCheck(current, event.startedAt, now);
     case "pause":
@@ -113,15 +121,58 @@ function alertEffects(current: MonitorSettings, kind: AlertKind): Effect[] {
 }
 
 function stateFields(current: MonitorStateFields): MonitorStateFields {
-  const { state, lastHeartbeatAt, lastMessage, pausedAt, watchedSince } =
-    current;
+  const {
+    state,
+    lastHeartbeatAt,
+    lastMessage,
+    pausedAt,
+    watchedSince,
+    runStartedAt,
+    lastRunDurationSec,
+  } = current;
   return {
     state,
     lastHeartbeatAt,
     lastMessage,
     pausedAt,
     watchedSince: watchedSince ?? null,
+    runStartedAt: runStartedAt ?? null,
+    lastRunDurationSec: lastRunDurationSec ?? null,
   };
+}
+
+/** The fields after a Heartbeat or Fail signal: the device was heard from, and an open Run ends. */
+function heardFrom(
+  current: MonitorStateFields,
+  message: string | null,
+  now: Date,
+): MonitorStateFields {
+  const fields = {
+    ...stateFields(current),
+    lastHeartbeatAt: now,
+    lastMessage: message,
+  };
+  if (!fields.runStartedAt) return fields;
+  return {
+    ...fields,
+    runStartedAt: null,
+    lastRunDurationSec: runDurationSec(fields.runStartedAt, now),
+  };
+}
+
+/** Whole seconds from a Run's Start signal to its end. */
+export function runDurationSec(runStartedAt: Date, endedAt: Date): number {
+  return Math.max(
+    0,
+    Math.round((endedAt.getTime() - runStartedAt.getTime()) / 1000),
+  );
+}
+
+/** Begins a Run (replacing any open one). No state change and no deadline move: a Start signal is not a Heartbeat. */
+function onStart(current: MonitorStateFields, now: Date): Transition {
+  const fields = stateFields(current);
+  if (fields.state === "paused") return { fields, effects: [] };
+  return { fields: { ...fields, runStartedAt: now }, effects: [] };
 }
 
 function onHeartbeat(
@@ -129,11 +180,7 @@ function onHeartbeat(
   message: string | null,
   now: Date,
 ): Transition {
-  const seen = {
-    ...stateFields(current),
-    lastHeartbeatAt: now,
-    lastMessage: message,
-  };
+  const seen = heardFrom(current, message, now);
   const { state } = current;
   switch (state) {
     case "new":
@@ -162,11 +209,7 @@ function onFail(
   message: string | null,
   now: Date,
 ): Transition {
-  const seen = {
-    ...stateFields(current),
-    lastHeartbeatAt: now,
-    lastMessage: message,
-  };
+  const seen = heardFrom(current, message, now);
   const { state } = current;
   if (state === "down" || state === "paused") {
     return { fields: seen, effects: [] };

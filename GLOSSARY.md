@@ -20,6 +20,18 @@ _Avoid_: Ping URL, endpoint, webhook
 A request to `<Heartbeat URL>/fail` saying a job failed. Makes the Monitor Down at once. It may carry a short text message, which the Down Alert includes.
 _Avoid_: Error ping, failure Heartbeat
 
+**Start signal**:
+A request to `<Heartbeat URL>/start` saying a job began. Not a Heartbeat: it changes no Monitor state and does not move the deadline.
+_Avoid_: Start ping, begin Heartbeat
+
+**Run**:
+One job execution, from a Start signal to the next Heartbeat or Fail signal. A second Start signal before then replaces the first.
+_Avoid_: Job, execution
+
+**Run duration**:
+How long a Run took: from its Start signal to the Heartbeat or Fail signal that ended it, in whole seconds.
+_Avoid_: Runtime, elapsed time
+
 **Interval**:
 How often a Monitor is expected to send a Heartbeat. A Monitor has either an Interval or a Schedule, never both.
 _Avoid_: Period, frequency
