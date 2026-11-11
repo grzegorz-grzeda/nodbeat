@@ -16,6 +16,10 @@ _Avoid_: Ping, check-in, beat
 The secret, unguessable address a Monitor's Heartbeats are sent to. Anyone who knows it can send Heartbeats for that Monitor.
 _Avoid_: Ping URL, endpoint, webhook
 
+**Fail signal**:
+A request to `<Heartbeat URL>/fail` saying a job failed. Makes the Monitor Down at once. It may carry a short text message, which the Down Alert includes.
+_Avoid_: Error ping, failure Heartbeat
+
 **Interval**:
 How often a Monitor is expected to send a Heartbeat. A Monitor has either an Interval or a Schedule, never both.
 _Avoid_: Period, frequency
@@ -29,7 +33,7 @@ Extra time allowed after the Interval or the scheduled time before a missing Hea
 _Avoid_: Tolerance, timeout
 
 **Monitor state**:
-One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval or scheduled time + Grace period passed with no Heartbeat) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
+One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval or scheduled time + Grace period passed with no Heartbeat, or a Fail signal) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
 _Avoid_: Status, health
 
 **New period**:

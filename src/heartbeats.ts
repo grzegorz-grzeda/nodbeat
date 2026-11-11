@@ -24,8 +24,13 @@ const UNKNOWN_TOKEN_WINDOW_MS = 60 * 1000;
 /** A message is at most 200 characters; anything much bigger is not a Heartbeat. */
 const BODY_LIMIT_BYTES = 8 * 1024;
 
+/** Which request to the Heartbeat URL: a plain Heartbeat (success) or a Fail signal. */
+export type SignalKind = "success" | "fail";
+
 export interface HeartbeatDoc {
   monitorId: ObjectId;
+  /** Missing on Heartbeats stored before signals existed: those are successes. */
+  kind?: SignalKind;
   receivedAt: Date;
   message: string | null;
   method: string;
@@ -141,6 +146,7 @@ export async function registerHeartbeatIntake(
   );
 
   const handle = async (
+    kind: SignalKind,
     req: FastifyRequest<{ Params: { token: string } }>,
     reply: FastifyReply,
   ) => {
@@ -154,7 +160,8 @@ export async function registerHeartbeatIntake(
     const monitor = await monitors(db).findOne({ token: req.params.token });
     if (!monitor) return text(404, "Not Found");
     unknownTokens.release(req.ip);
-    if (!perMonitor.tryAcquire(monitor.token)) {
+    // Per signal kind, so a short job's Start and success (or a Fail and a retry's success) both get through.
+    if (!perMonitor.tryAcquire(`${kind}:${monitor.token}`)) {
       return text(429, "Too Many Requests");
     }
 
@@ -170,13 +177,14 @@ export async function registerHeartbeatIntake(
       const now = clock.now();
       const { fields, effects } = transition(
         current,
-        { kind: "heartbeat", message },
+        { kind: kind === "fail" ? "fail" : "heartbeat", message },
         now,
       );
       await Promise.all([
         monitors(db).updateOne({ _id: current._id }, { $set: fields }),
         heartbeats(db).insertOne({
           monitorId: current._id,
+          kind,
           receivedAt: now,
           message,
           method: req.method,
@@ -184,7 +192,14 @@ export async function registerHeartbeatIntake(
           userAgent: readUserAgent(req),
         }),
       ]);
-      await applyEffects(db, current, effects, now, publicBaseUrl);
+      // The updated fields, so a Fail signal's Down Alert carries its own message.
+      await applyEffects(
+        db,
+        { ...current, ...fields },
+        effects,
+        now,
+        publicBaseUrl,
+      );
       pruner.mark(current._id);
       return true;
     });
@@ -217,15 +232,21 @@ export async function registerHeartbeatIntake(
       }
       throw error;
     });
-    scope.route<{ Params: { token: string } }>({
-      method: ["GET", "POST"],
-      url: "/hb/:token",
-      // GET and POST only: link previewers send HEAD on their own, which must not count as a Heartbeat.
-      exposeHeadRoute: false,
-      bodyLimit: BODY_LIMIT_BYTES,
-      config: { csrf: false },
-      handler: handle,
-    });
+    const signals: Array<[string, SignalKind]> = [
+      ["/hb/:token", "success"],
+      ["/hb/:token/fail", "fail"],
+    ];
+    for (const [url, kind] of signals) {
+      scope.route<{ Params: { token: string } }>({
+        method: ["GET", "POST"],
+        url,
+        // GET and POST only: link previewers send HEAD on their own, which must not count as a Heartbeat.
+        exposeHeadRoute: false,
+        bodyLimit: BODY_LIMIT_BYTES,
+        config: { csrf: false },
+        handler: (req, reply) => handle(kind, req, reply),
+      });
+    }
   });
 }
 

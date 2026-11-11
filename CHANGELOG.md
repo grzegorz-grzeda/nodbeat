@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Fail signal: `GET|POST /hb/<token>/fail` (optional message, same rules as a Heartbeat) makes a New or Up Monitor Down at once. Its Down Alert says the Monitor "reported a failure" and includes the message. A Fail signal to a Down or Paused Monitor is only recorded. The next Heartbeat brings the Monitor Up.
+- The Heartbeats log has a "Signal" column (✓ / Fail).
+
+### Changed
+
+- The 1-per-second limit on a Heartbeat URL is counted per signal kind, so a Fail signal and a Heartbeat in the same second both get through.
+
 ## [0.22.0] - 2026-11-11
 
 ### Added

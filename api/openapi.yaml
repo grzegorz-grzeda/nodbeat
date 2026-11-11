@@ -10,6 +10,7 @@ info:
     Each Monitor has a secret **Heartbeat URL**, `/hb/{token}`. Send a
     Heartbeat to it at least once per Interval; if none arrives within the
     Interval plus the Grace period, the Monitor goes Down and you get an Alert.
+    A **Fail signal** to `/hb/{token}/fail` makes it Down at once.
 
     Keep the Heartbeat URL secret: anyone who has it can send Heartbeats for
     the Monitor. Copy it from the Monitor page.
@@ -67,31 +68,50 @@ paths:
         URLs as for GET applies.
       operationId: sendHeartbeatWithBody
       requestBody:
-        required: false
-        content:
-          text/plain:
-            schema:
-              type: string
-              description: The message. Any other or no Content-Type is read the same way.
-            example: backup finished in 42 s
-          application/json:
-            schema:
-              type: object
-              properties:
-                msg:
-                  type: string
-                  description: The message.
-            example:
-              msg: backup finished in 42 s
-          application/x-www-form-urlencoded:
-            schema:
-              type: object
-              properties:
-                msg:
-                  type: string
-                  description: The message.
-            example:
-              msg: backup finished in 42 s
+        $ref: "#/components/requestBodies/Message"
+      responses:
+        "200":
+          $ref: "#/components/responses/Recorded"
+        "404":
+          $ref: "#/components/responses/UnknownToken"
+        "413":
+          $ref: "#/components/responses/BodyTooLarge"
+        "429":
+          $ref: "#/components/responses/TooManyHeartbeats"
+  /hb/{token}/fail:
+    parameters:
+      - $ref: "#/components/parameters/Token"
+      - $ref: "#/components/parameters/Msg"
+    get:
+      tags: [Heartbeat]
+      summary: Send a Fail signal
+      description: |
+        Says the job failed. A New or Up Monitor goes Down at once and a Down
+        Alert says it reported a failure, with the message if there is one.
+        A Fail signal to a Down or Paused Monitor is only recorded: no second
+        Alert. Like a Heartbeat it shows the device is alive, so the Interval
+        deadline counts from it; the next Heartbeat brings the Monitor Up.
+
+        At most one Fail signal per second per Monitor is accepted, counted
+        apart from Heartbeats. The per-IP limit on unknown Heartbeat URLs
+        applies as for a Heartbeat.
+      operationId: sendFailSignal
+      responses:
+        "200":
+          $ref: "#/components/responses/Recorded"
+        "404":
+          $ref: "#/components/responses/UnknownToken"
+        "429":
+          $ref: "#/components/responses/TooManyHeartbeats"
+    post:
+      tags: [Heartbeat]
+      summary: Send a Fail signal with a message
+      description: |
+        The same as GET, with the message read as for a Heartbeat's POST:
+        `?msg=` first, then the body. The body may be at most 8 KiB.
+      operationId: sendFailSignalWithBody
+      requestBody:
+        $ref: "#/components/requestBodies/Message"
       responses:
         "200":
           $ref: "#/components/responses/Recorded"
@@ -146,6 +166,33 @@ components:
       schema:
         type: string
       example: backup finished in 42 s
+  requestBodies:
+    Message:
+      required: false
+      content:
+        text/plain:
+          schema:
+            type: string
+            description: The message. Any other or no Content-Type is read the same way.
+          example: backup finished in 42 s
+        application/json:
+          schema:
+            type: object
+            properties:
+              msg:
+                type: string
+                description: The message.
+          example:
+            msg: backup finished in 42 s
+        application/x-www-form-urlencoded:
+          schema:
+            type: object
+            properties:
+              msg:
+                type: string
+                description: The message.
+          example:
+            msg: backup finished in 42 s
   responses:
     Recorded:
       description: Heartbeat recorded.
