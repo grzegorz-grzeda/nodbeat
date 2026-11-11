@@ -14,3 +14,4 @@ Status: ready-for-agent
 - [ ] On first start with Plans enabled, every existing User gets Pro, `source: "comp"`, until now + 6 months, once; new Users start Free
 - [ ] Plans off → today's limits, all features on, no Plan UI anywhere
 - [ ] Tests for each point
+- [ ] If "Download my data" (issue 0075) exists, the export includes the new User data

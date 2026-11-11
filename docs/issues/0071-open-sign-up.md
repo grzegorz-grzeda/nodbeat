@@ -5,7 +5,7 @@ Status: ready-for-agent
 
 **What to build:** With `SIGNUP_OPEN=true`, anyone signs up with Google or GitHub, accepts the Terms and picks a time zone on one screen, and lands on Free with an empty Dashboard and a "Create your first Monitor" hint.
 
-**Blocked by:** 0052, 0053, 0057, 0060, 0042
+**Blocked by:** 0052, 0053, 0057, 0060, 0042, 0079 (signed-up Users have no password)
 
 - [ ] `SIGNUP_OPEN` env var, default `false`; off → no sign-up buttons and `intent=signup` refused, Invites still work
 - [ ] `intent=signup`: an unknown `(kind, subject)` with a verified email not used by any User creates a signed short-lived pending sign-up cookie and shows `/signup/finish`

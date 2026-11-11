@@ -1,6 +1,6 @@
 # Spec 0019: Compliance basics
 
-Status: needs-triage
+Status: ready-for-agent
 
 Blocked by: none
 

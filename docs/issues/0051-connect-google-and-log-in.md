@@ -15,3 +15,4 @@ Status: ready-for-agent
 - [ ] `state` mismatch or missing PKCE cookie → refused with a Flash message on the login page
 - [ ] Callbacks share the per-IP login limiter; the User's `email` is never overwritten by later logins
 - [ ] Tests through the HTTP seam with the fake provider and fake clock cover every point above
+- [ ] If "Download my data" (issue 0075) exists, the export includes the new User data

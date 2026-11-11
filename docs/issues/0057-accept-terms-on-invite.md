@@ -12,3 +12,4 @@ Status: ready-for-agent
 - [ ] `users.accepted: { terms: { version, at }, privacy: { version, at } }` recorded at creation
 - [ ] Legal files missing → no checkbox
 - [ ] Tests: without the checkbox → error; with it → versions recorded; both Invite paths
+- [ ] If "Download my data" (issue 0075) exists, the export includes the new User data

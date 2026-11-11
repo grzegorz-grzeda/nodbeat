@@ -1,6 +1,6 @@
 # Spec 0014: Terms and Privacy
 
-Status: needs-triage
+Status: ready-for-agent
 
 Blocked by: none
 

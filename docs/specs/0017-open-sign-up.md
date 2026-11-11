@@ -1,8 +1,8 @@
 # Spec 0017: Open sign-up
 
-Status: needs-triage
+Status: ready-for-agent
 
-Blocked by: spec 0012 (Account deletion), spec 0013 (Google and GitHub login), spec 0014 (Terms and Privacy), spec 0016 (Stripe billing)
+Blocked by: spec 0012 (Account deletion), spec 0013 (Google and GitHub login), spec 0014 (Terms and Privacy), spec 0015 (Plans and limits), spec 0016 (Stripe billing)
 
 ## Problem Statement
 
@@ -22,7 +22,7 @@ Anyone can sign up with Google or GitHub (no password sign-up) and lands on Free
 6. As a visitor whose verified email matches an existing User but whose Google/GitHub account isn't connected, I want "an account with this email exists; log in and connect it in Settings", so that I'm not given a duplicate.
 7. As the Admin, I want at most 5 sign-ups per IP per hour, so that one host can't mass-create Users.
 8. As the Admin, I want a switch to close sign-up again (back to invite-only), so that I can react to abuse.
-9. As the Admin, I want the Admin page to show sign-ups per day, so that I see growth and spikes.
+9. As the Admin, I want the Admin page to show sign-ups per day (open sign-ups and Invites counted apart), so that I see growth and spikes.
 
 ## Implementation Decisions
 
@@ -31,7 +31,7 @@ Anyone can sign up with Google or GitHub (no password sign-up) and lands on Free
 - **Rate limit**: `SlidingWindowLimiter`, 5 per IP per hour on `POST /signup/finish`, plus the login limiter on callbacks.
 - **No password sign-up, no email verification**: Google/GitHub verified emails only.
 - **Landing page**: the "invite-only for now" line goes; pricing taken from spec 0016's Stripe prices at startup.
-- **Infrastructure prerequisites** (owner's checklist, not code): Atlas upgraded from M0 to a paid tier with backups; a public status page; capacity check against spec 0015's log sizes.
+- **Infrastructure prerequisites** (the Operator's checklist, not code; issue 0074): Atlas upgraded from M0 to a paid tier with backups; a public status page; capacity check against spec 0015's log sizes; OAuth apps, Stripe and env vars set up; the VPS host in the EU with a signed DPA; DPAs with every subprocessor and a record of processing activities (ADR 0008); edge Caddy logs kept at most 14 days; legal text reviewed by a lawyer.
 
 ## Testing Decisions
 

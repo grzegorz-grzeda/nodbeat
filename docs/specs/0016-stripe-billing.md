@@ -1,6 +1,6 @@
 # Spec 0016: Stripe billing
 
-Status: needs-triage
+Status: ready-for-agent
 
 Blocked by: spec 0014 (Terms and Privacy), spec 0015 (Plans and limits), spec 0018 (Download my data), spec 0019 (Compliance basics)
 
@@ -22,7 +22,7 @@ Pro is sold through Stripe directly (ADR 0007): about €4/month or €40/year, 
 6. As a Pro User whose payment fails, I want Pro to stay while Stripe retries, and Stripe's emails telling me, so that a card expiry doesn't cut me off at once.
 7. As a comped Pro User (spec 0015), I want to subscribe before my comp ends, starting billing when the comp ends, so that there's no gap and no double time.
 8. As the Admin, I want the Admin page to show paying Users and monthly recurring revenue, so that I know if this works.
-9. As the owner, I want every Stripe event handled idempotently and verified by signature, so that replays or forged requests can't change Plans.
+9. As the Operator, I want every Stripe event handled idempotently and verified by signature, so that replays or forged requests can't change Plans.
 
 ## Implementation Decisions
 
@@ -34,7 +34,8 @@ Pro is sold through Stripe directly (ADR 0007): about €4/month or €40/year, 
 - **Reconcile**: once a day the tick re-reads subscriptions of Pro Users with `source: "stripe"`, in case a webhook was missed.
 - **Account deletion** (spec 0012): cancels the subscription first, no proration.
 - **CSP**: no Stripe scripts; only redirects to Stripe-hosted pages.
-- **KSeF / Polish B2B invoices**: out of nodbeat; the owner issues them in the accounting tool from Stripe's payout reports.
+- **Refunds**: a consumer's full refund within 14 days (spec 0014 Terms) is done by hand in the Stripe Dashboard (runbook, spec 0019); cancelling the subscription there ends Pro through `customer.subscription.deleted`. No refund code in nodbeat.
+- **KSeF / Polish B2B invoices**: out of nodbeat; the Operator issues them in the accounting tool from Stripe's payout reports.
 
 ## Testing Decisions
 

@@ -1,6 +1,6 @@
 # Spec 0018: Download my data
 
-Status: needs-triage
+Status: ready-for-agent
 
 Blocked by: none
 
@@ -24,6 +24,7 @@ GDPR gives every User the right to a copy of their data (Art. 15) in a machine-r
 
 - **Route**: `POST /settings/export` (CSRF) streams `nodbeat-export-<date>.json` with `Content-Disposition: attachment`. Built synchronously from the database; no background job or stored file.
 - **Shape**: `{ version: 1, exportedAt, user, monitors: [{ ...settings, heartbeatUrl, incidents, heartbeats }], alertChannels }`. Internal ids are kept so the parts reference each other; password hash, session ids, Stripe ids and channel secrets are left out (a `secretSet: true` flag instead).
+- **Fields from later specs**: Login methods, accepted Terms versions and Plan are exported when those specs have shipped; whichever of this spec and specs 0013–0016 lands later adds its User data to the export.
 - **Limit**: `SlidingWindowLimiter`, 1 per User per hour → `429` with a Flash message saying when it's possible again.
 - **Size**: Pro at 100 Monitors × 1000 Heartbeats is ~100k rows; streamed as a cursor per Monitor, never all in memory.
 - **Privacy policy**: names the export as how to exercise access and portability (spec 0014).

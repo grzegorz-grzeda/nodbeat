@@ -1,6 +1,6 @@
 # Spec 0013: Google and GitHub login
 
-Status: needs-triage
+Status: ready-for-agent
 
 Blocked by: none
 

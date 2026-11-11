@@ -1,6 +1,6 @@
 # Spec 0015: Plans and limits
 
-Status: needs-triage
+Status: ready-for-agent
 
 Blocked by: none
 
@@ -35,7 +35,7 @@ Each User is on a **Plan**: **Free** or **Pro**. The Plan decides the limits bel
 9. As a User 14 days after Pro ended, I want Webhooks shown "Needs Pro" (no longer sent to, but not deleted), Reminders off, and 30 s Monitors moved to 1 min, so that I can get everything back by upgrading.
 10. As a User whose logs were trimmed after Pro ended, I want Uptime unchanged, so that history I see stays honest.
 11. As the Admin, I want the Admin page to count Users per Plan, so that I see how many pay.
-12. As a self-hosting owner without billing configured, I want no Plans anywhere in the UI and the current limits, so that the open-source version isn't crippled.
+12. As a self-hosting Operator without billing configured, I want no Plans anywhere in the UI and the current limits, so that the open-source version isn't crippled.
 
 ## Implementation Decisions
 

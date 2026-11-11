@@ -3,7 +3,7 @@
 Spec: 0017
 Status: ready-for-human
 
-**What to build:** The owner prepares the infrastructure before open sign-up ships. This is a checklist, not code.
+**What to build:** The Operator prepares the infrastructure before open sign-up ships. This is a checklist, not code.
 
 **Blocked by:** None (can start immediately).
 
