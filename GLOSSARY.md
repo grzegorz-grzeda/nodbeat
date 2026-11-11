@@ -17,15 +17,19 @@ The secret, unguessable address a Monitor's Heartbeats are sent to. Anyone who k
 _Avoid_: Ping URL, endpoint, webhook
 
 **Interval**:
-How often a Monitor is expected to send a Heartbeat.
+How often a Monitor is expected to send a Heartbeat. A Monitor has either an Interval or a Schedule, never both.
 _Avoid_: Period, frequency
 
+**Schedule**:
+The times of day and week a Monitor is expected to send a Heartbeat (e.g. 02:00 on weekdays), read in the Monitor's own time zone. An alternative to an Interval for jobs that run at fixed times.
+_Avoid_: Cron, timetable, plan
+
 **Grace period**:
-Extra time allowed after the Interval before a missing Heartbeat makes the Monitor Down.
+Extra time allowed after the Interval or the scheduled time before a missing Heartbeat makes the Monitor Down.
 _Avoid_: Tolerance, timeout
 
 **Monitor state**:
-One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval + Grace period passed with no Heartbeat) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
+One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval or scheduled time + Grace period passed with no Heartbeat) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
 _Avoid_: Status, health
 
 **New period**:
@@ -49,16 +53,36 @@ _Avoid_: Overview, home, status page
 ## Notifications
 
 **Alert**:
-A Telegram message sent to a Monitor's Alert chats when it goes Down or comes back Up. Not sent while the Monitor's Alerts are switched off.
+A message sent to a Monitor's Alert channels when it goes Down or comes back Up. Not sent while the Monitor's Alerts are switched off.
 _Avoid_: Notification, ping
 
-**Alert chats**:
-The Linked chats a Monitor's Alerts go to. Today that is always every Linked chat of its owner at the moment the Alert is raised. Planned (issue 0031): either all of them, including ones linked later, or a chosen few; a Monitor whose chosen chats were all removed has no Alert chats and alerts nowhere.
-_Avoid_: Recipients, routes, targets
+**Reminder**:
+An Alert repeated at a fixed cadence while a Monitor stays Down, for Monitors that ask for one. Stops when the Monitor comes back Up or is paused.
+_Avoid_: Re-alert, escalation, nag
+
+**Alert channel**:
+A place a User has set up to receive Alerts: a Linked chat, a Webhook or an ntfy topic.
+_Avoid_: Integration, destination, target, notifier
+
+**Alert channels** (of a Monitor):
+The Alert channels a Monitor's Alerts go to: either all of its owner's Alert channels, including ones added later, or a chosen few. A Monitor whose chosen channels were all removed alerts nowhere.
+_Avoid_: Recipients, routes, Alert chats
+
+**Webhook**:
+An Alert channel that delivers each Alert as an HTTP request to an address the User gives.
+_Avoid_: Callback, hook, endpoint
+
+**ntfy topic**:
+An Alert channel that delivers each Alert as a push notification through an ntfy server (ntfy.sh or self-hosted).
+_Avoid_: Push channel
+
+**Failing**:
+An Alert channel whose recent Alerts could not be delivered. It keeps receiving Alerts; it is only flagged so its User can fix it.
+_Avoid_: Broken, dead, disabled
 
 **Linked chat**:
-A Telegram chat (private or group) that a User has connected to their account to receive Alerts.
-_Avoid_: Subscriber, channel
+An Alert channel that is a Telegram chat (private or group) a User has connected to their account.
+_Avoid_: Subscriber, Telegram channel
 
 **Link code**:
 A short one-time code a User sends to the nodbeat bot to create a Linked chat.
@@ -67,7 +91,7 @@ _Avoid_: Pairing code, token
 ## Accounts
 
 **User**:
-A person with a nodbeat account who owns Monitors and Linked chats.
+A person with a nodbeat account who owns Monitors and Alert channels. A User may delete their own account, which removes everything they own.
 _Avoid_: Account, customer, member
 
 **Admin**:

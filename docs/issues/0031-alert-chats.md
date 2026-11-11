@@ -1,7 +1,9 @@
 # 0031: Alert chats
 
 Spec: 0005
-Status: ready-for-agent
+Status: wontfix
+
+Superseded by spec 0009 (Alert channels): channel choice covers every Alert channel kind, not only Linked chats.
 
 **What to build:** Each Monitor chooses its Alert chats: all of the owner's Linked chats (default, including chats linked later) or a chosen few. Alerts and a chat's `/status` follow that choice.
 
