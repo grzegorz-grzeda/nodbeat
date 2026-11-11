@@ -17,7 +17,8 @@ Heartbeats are push-only (ADR 0001): nodbeat never connects to what it watches, 
 - **Monitor page**: settings, Heartbeat URL with copy buttons, curl / cron / ESP32 examples, the 20 newest Incidents and Heartbeats, and full logs of everything kept.
 - **Telegram**: link private or group chats with a one-time Link code; `/status` and `/unlink` in the bot. Alerts go to every Linked chat of the Monitor's owner, in order per Monitor, retried with backoff for up to 1 hour.
 - **Time zone** per User for Alerts and the UI; light / dark / system theme.
-- **Admin page** at `/admin`: instance-wide counts only, never what Users watch.
+- **Admin page** at `/admin`: instance-wide counts and a per-User activity table, never what Users watch.
+- **Invites**: the Admin creates single-use links (7 days) that let someone create their own User; listed and revocable at `/admin/invites`.
 - **Public API docs** at `/docs` (Swagger UI) and `/openapi.yaml`.
 - **Startup grace**: after nodbeat restarts, no Monitor goes Down before it has had a full Interval + Grace period, so a deploy never floods you with false Alerts (ADR 0002).
 
@@ -79,13 +80,15 @@ The server listens on port 3000. `GET /health` answers `{"status":"ok","version"
 
 ## Creating a User
 
-There is no registration. Create Users (the first one with `--admin`) from the CLI. The password is read from stdin (prompted, hidden, when interactive), so it never lands in shell history:
+There is no public registration. Create the first User, the Admin, from the CLI; then invite others from **Admin → Invites**, or create them from the CLI too. The password is read from stdin (prompted, hidden, when interactive), so it never lands in shell history:
 
 ```sh
 docker compose exec -it nodbeat node dist/cli-main.js create-user --email you@example.com --admin [--time-zone Europe/Warsaw]
 ```
 
 Only `MONGODB_URI` is needed by the CLI. The time zone defaults to `Europe/Warsaw` and can be changed later in Settings.
+
+An Invite link works once and expires after 7 days. Whoever opens it picks their email, password and time zone, and is logged in as a regular User (never an Admin). Only a hash of the link's code is stored, so the link is shown once, right after creating it.
 
 ## Linking Telegram
 

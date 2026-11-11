@@ -39,3 +39,27 @@ export function html(
 export function csrfField(token: string): SafeHtml {
   return html`<input type="hidden" name="_csrf" value="${token}" />`;
 }
+
+/** Every IANA time zone the runtime knows, plus `current` in case it's an alias missing from that list. */
+export function timeZoneOptions(current: string): SafeHtml[] {
+  const zones = Intl.supportedValuesOf("timeZone");
+  if (!zones.includes(current)) zones.unshift(current);
+  return zones.map(
+    (z) =>
+      html`<option value="${z}" ${z === current && html`selected`}>
+        ${z}
+      </option>`,
+  );
+}
+
+/** Copies the text of the element with this id; `assets/copy.js` reveals and wires it. */
+export function copyButton(target: string): SafeHtml {
+  return html`<button
+    type="button"
+    class="secondary copy"
+    data-copy="${target}"
+    hidden
+  >
+    Copy
+  </button>`;
+}

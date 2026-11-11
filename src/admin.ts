@@ -182,6 +182,7 @@ export function registerAdmin(
           Usage of this nodbeat instance. Counts and User emails only: nothing
           here shows what Users watch.
         </p>
+        <p><a href="/admin/invites">Invites</a></p>
         ${statTable("Totals", [
           ["Users", userActivity.length],
           ["Monitors", monitorCount],

@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Invites: the Admin creates a single-use link at `/admin/invites` (optional note, expires after 7 days, shown once with a copy button). Whoever opens it chooses email, password and time zone and is logged in as a regular User. Accepting is atomic, so one link makes one User; the accept page is limited to 10 requests per IP per 15 minutes.
+- The Invite list shows each Invite's note, created and expiry times and status (pending, expired, revoked, or used by whom and when); a pending Invite can be revoked after confirming.
+- The landing page says nodbeat is invite-only for now.
+
 ## [0.18.0] - 2026-11-11
 
 ### Added

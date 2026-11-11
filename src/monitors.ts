@@ -16,7 +16,7 @@ import {
   incidentsTable,
   MONITOR_PAGE_LOG_ROWS,
 } from "./log-tables.js";
-import { csrfField, html, type SafeHtml } from "./html.js";
+import { copyButton, csrfField, html, type SafeHtml } from "./html.js";
 import { stateBadge } from "./layout.js";
 import { monitorFormBody, readForm, validate } from "./monitor-form.js";
 import {
@@ -379,18 +379,6 @@ void sendHeartbeat(const String&amp; message) {
       });
     },
   );
-}
-
-/** Copies the text of the element with this id; `assets/copy.js` reveals and wires it. */
-function copyButton(target: string): SafeHtml {
-  return html`<button
-    type="button"
-    class="secondary copy"
-    data-copy="${target}"
-    hidden
-  >
-    Copy
-  </button>`;
 }
 
 /** Edit and Delete links and the Pause/Unpause button. */

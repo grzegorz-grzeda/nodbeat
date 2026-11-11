@@ -151,6 +151,18 @@ export async function setUserTheme(
   await users(db).updateOne({ _id: id }, { $set: { theme } });
 }
 
+/** The emails of these Users, keyed by id; deleted Users are absent. */
+export async function emailsByUserId(
+  db: Db,
+  ids: ObjectId[],
+): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const found = await users(db)
+    .find({ _id: { $in: ids } }, { projection: { email: 1 } })
+    .toArray();
+  return new Map(found.map((u) => [String(u._id), u.email]));
+}
+
 /** Every User's id and email (the Admin page). */
 export function listUserEmails(
   db: Db,

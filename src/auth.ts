@@ -81,6 +81,12 @@ export async function requireAdmin(
 export interface Auth {
   /** Returns the CSRF token for forms on the page being rendered, issuing its cookie if needed. */
   csrfToken(req: FastifyRequest, reply: FastifyReply): string;
+  /** Logs this browser in as the User, like a successful login: a fresh session and CSRF secret. */
+  startSession(
+    req: FastifyRequest,
+    reply: FastifyReply,
+    userId: ObjectId,
+  ): Promise<void>;
 }
 
 export function registerAuth(
@@ -128,6 +134,25 @@ export function registerAuth(
   const revokeSession = async (req: FastifyRequest): Promise<void> => {
     const token = req.cookies[SESSION_COOKIE];
     if (token) await sessions(db).deleteOne({ _id: sha256(token) });
+  };
+
+  const startSession = async (
+    req: FastifyRequest,
+    reply: FastifyReply,
+    userId: ObjectId,
+  ): Promise<void> => {
+    // Nothing set before authentication carries over.
+    await revokeSession(req);
+    reply.clearCookie(CSRF_COOKIE, cookieOptions);
+    const token = newToken();
+    const now = clock.now();
+    await sessions(db).insertOne({
+      _id: sha256(token),
+      userId,
+      createdAt: now,
+      expiresAt: sessionExpiry(now),
+    });
+    setSessionCookie(reply, token);
   };
 
   app.decorateRequest("user", null);
@@ -234,18 +259,7 @@ export function registerAuth(
       });
     }
 
-    // Fresh session and CSRF secret on login: nothing set before authentication carries over.
-    await revokeSession(req);
-    reply.clearCookie(CSRF_COOKIE, cookieOptions);
-    const token = newToken();
-    const now = clock.now();
-    await sessions(db).insertOne({
-      _id: sha256(token),
-      userId: user._id,
-      createdAt: now,
-      expiresAt: sessionExpiry(now),
-    });
-    setSessionCookie(reply, token);
+    await startSession(req, reply, user._id);
     return reply.redirect("/", 303);
   });
 
@@ -255,5 +269,5 @@ export function registerAuth(
     return reply.redirect("/login", 303);
   });
 
-  return { csrfToken };
+  return { csrfToken, startSession };
 }

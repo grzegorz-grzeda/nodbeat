@@ -5,7 +5,7 @@ import type { Clock } from "./clock.js";
 import { sendConfirmPage } from "./confirm.js";
 import { setFlash } from "./flash.js";
 import { formatDateTime } from "./format.js";
-import { csrfField, html, type SafeHtml } from "./html.js";
+import { csrfField, html, timeZoneOptions } from "./html.js";
 import {
   createLinkCode,
   findActiveLinkCode,
@@ -18,18 +18,6 @@ import { isTheme, setUserTheme, setUserTimeZone } from "./users.js";
 /** Only same-site paths, so the switch can't be turned into an open redirect. */
 function localPath(value: unknown): string {
   return typeof value === "string" && /^\/(?![/\\])/.test(value) ? value : "/";
-}
-
-/** Every IANA time zone the runtime knows, plus `current` in case it's an alias missing from that list. */
-function timeZoneOptions(current: string): SafeHtml[] {
-  const zones = Intl.supportedValuesOf("timeZone");
-  if (!zones.includes(current)) zones.unshift(current);
-  return zones.map(
-    (z) =>
-      html`<option value="${z}" ${z === current && html`selected`}>
-        ${z}
-      </option>`,
-  );
 }
 
 export function registerSettings(

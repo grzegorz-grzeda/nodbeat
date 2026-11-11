@@ -73,3 +73,7 @@ _Avoid_: Account, customer, member
 **Admin**:
 A User who can manage the whole nodbeat instance, not just their own Monitors.
 _Avoid_: Superuser, root, owner
+
+**Invite**:
+A single-use link from the Admin that lets one person create a User. It expires after 7 days and can be revoked.
+_Avoid_: Registration, sign-up code, token

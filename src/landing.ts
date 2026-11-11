@@ -34,6 +34,7 @@ export function landingBody(publicBaseUrl: string): SafeHtml {
         on Telegram when one goes silent.
       </p>
       <a href="/login" class="button">Log in</a>
+      <p>nodbeat is invite-only for now.</p>
     </section>
     <section aria-labelledby="how">
       <h2 id="how">How it works</h2>

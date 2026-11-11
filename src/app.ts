@@ -13,6 +13,7 @@ import { registerAdmin } from "./admin.js";
 import { createAlertDispatcher, ensureAlertIndexes } from "./alerts.js";
 import { ensureSessionIndexes, registerAuth } from "./auth.js";
 import { registerDashboard } from "./dashboard.js";
+import { ensureInviteIndexes, registerInvites } from "./invites.js";
 import { registerDocs } from "./docs.js";
 import { registerErrorPages } from "./error-page.js";
 import { createDownChecker } from "./down-checker.js";
@@ -81,6 +82,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ensureLinkedChatIndexes(db),
     ensureStatePeriodIndexes(db),
     ensureAlertIndexes(db),
+    ensureInviteIndexes(db),
   ]);
 
   // Signs Flash cookies. A key derived for that purpose alone, so a signature never doubles as a CSRF token.
@@ -100,6 +102,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   await registerHeartbeatIntake(app, { db, clock, lock, pruner });
   registerSettings(app, { db, clock, auth });
   registerAdmin(app, { db, clock });
+  registerInvites(app, { db, clock, config, auth });
   registerTelegramBot(app, { db, clock, telegram: deps.telegram, config });
   registerOpenApi(app, {
     build: deps.build,
