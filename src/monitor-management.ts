@@ -33,9 +33,15 @@ type IdRequest = FastifyRequest<{ Params: { id: string } }>;
 /** Editing, pausing, unpausing, regenerating the Heartbeat URL, the Alerts switch and deleting a Monitor. */
 export function registerMonitorManagement(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; auth: Auth; lock: KeyedLock },
+  deps: {
+    db: Db;
+    clock: Clock;
+    auth: Auth;
+    lock: KeyedLock;
+    publicBaseUrl: string;
+  },
 ): void {
-  const { db, clock, auth, lock } = deps;
+  const { db, clock, auth, lock, publicBaseUrl } = deps;
 
   /** Runs an event through the state machine under the Monitor's lock, also saving `extra` fields. */
   const runTransition = (
@@ -53,7 +59,7 @@ export function registerMonitorManagement(
         { _id: current._id },
         { $set: { ...fields, ...extra } },
       );
-      await applyEffects(db, current, effects, now);
+      await applyEffects(db, current, effects, now, publicBaseUrl);
     });
 
   /** A route on one of the logged-in User's Monitors; 404 for anyone else's. */

@@ -6,6 +6,7 @@ import { listLinkedChats, moveChatLinks, unlinkChat } from "./linked-chats.js";
 import {
   TelegramChatMigratedError,
   TelegramForbiddenError,
+  type SendMessageOptions,
   type TelegramClient,
 } from "./telegram.js";
 import { DEFAULT_TIME_ZONE, findUserById } from "./users.js";
@@ -19,6 +20,8 @@ export interface AlertDoc {
   incidentId: ObjectId;
   /** The message, formatted when the Alert was enqueued. */
   text: string;
+  /** How `text` is sent. Absent on Alerts enqueued before Alerts were Telegram HTML: those are plain text. */
+  options?: SendMessageOptions;
   /** Linked chats that still have to receive it. */
   chatIds: number[];
   attempts: number;
@@ -53,6 +56,8 @@ export interface AlertedMonitor {
   _id: ObjectId;
   ownerId: ObjectId;
   name: string;
+  /** The last Heartbeat's message; a Down Alert carries it. */
+  lastMessage: string | null;
 }
 
 /** Puts an Alert about `incident` in the outbox, addressed to the owner's Linked chats at this moment. */
@@ -62,6 +67,7 @@ export async function enqueueAlert(
   kind: AlertKind,
   incident: IncidentDoc,
   now: Date,
+  publicBaseUrl: string,
 ): Promise<void> {
   const [owner, chats] = await Promise.all([
     findUserById(db, monitor.ownerId),
@@ -75,7 +81,8 @@ export async function enqueueAlert(
     ownerId: monitor.ownerId,
     kind,
     incidentId: incident._id,
-    text: alertText(monitor.name, kind, incident, timeZone),
+    text: alertText(monitor, kind, incident, timeZone, publicBaseUrl),
+    options: { parseMode: "HTML" },
     chatIds: chats.map((c) => c.chatId),
     attempts: 0,
     createdAt: now,
@@ -84,21 +91,38 @@ export async function enqueueAlert(
   });
 }
 
+/** Escapes text from Users or devices for Telegram HTML. */
+const escapeTelegramHtml = (text: string) =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** The Alert in Telegram HTML: bold name, state, when, details, and a link to the Monitor page. */
 function alertText(
-  name: string,
+  monitor: AlertedMonitor,
   kind: AlertKind,
   incident: IncidentDoc,
   timeZone: string,
+  publicBaseUrl: string,
 ): string {
   const at = (date: Date) => `${formatDateTime(date, timeZone)} (${timeZone})`;
+  const name = `<b>${escapeTelegramHtml(monitor.name)}</b>`;
+  const url = `${publicBaseUrl}/monitors/${String(monitor._id)}`;
+  const link = `<a href="${escapeTelegramHtml(url)}">Open Monitor</a>`;
   if (kind === "down") {
-    return `🔴 ${name} is Down\nSince ${at(incident.startedAt)}`;
+    const lines = [`🔴 ${name} is Down`, `Since ${at(incident.startedAt)}`];
+    if (monitor.lastMessage) {
+      lines.push(`Last message: ${escapeTelegramHtml(monitor.lastMessage)}`);
+    }
+    return [...lines, link].join("\n");
   }
   const endedAt = incident.endedAt ?? incident.startedAt;
   const duration = formatDuration(
     (endedAt.getTime() - incident.startedAt.getTime()) / 1000,
   );
-  return `🟢 ${name} is Up again\nAt ${at(endedAt)}, after ${duration} Down`;
+  return [
+    `🟢 ${name} is Up again`,
+    `At ${at(endedAt)}, after ${duration} Down`,
+    link,
+  ].join("\n");
 }
 
 /** Follows a group upgraded to a supergroup: its Links and its pending Alerts move to the new chat id. */
@@ -192,11 +216,10 @@ export function createAlertDispatcher(deps: {
     /** Sends to one chat; a chat that moved is followed once, so two migration answers in a row can't loop. */
     const send = async (
       chatId: number,
-      text: string,
       followMigration = true,
     ): Promise<void> => {
       try {
-        await telegram.sendMessage(chatId, text);
+        await telegram.sendMessage(chatId, alert.text, alert.options ?? {});
       } catch (err) {
         if (err instanceof TelegramChatMigratedError && followMigration) {
           // The group became a supergroup: follow it and send to the new id at once.
@@ -205,7 +228,7 @@ export function createAlertDispatcher(deps: {
             { chatId, newChatId: err.newChatId },
             "Linked chat moved: the group was upgraded to a supergroup",
           );
-          await send(err.newChatId, text, false);
+          await send(err.newChatId, false);
         } else if (err instanceof TelegramForbiddenError) {
           // The bot was blocked or removed: retrying can't help, and the chat is gone for every owner.
           await unlinkChat(db, chatId);
@@ -219,7 +242,7 @@ export function createAlertDispatcher(deps: {
       }
     };
     for (const chatId of alert.chatIds.filter((id) => linked.has(id))) {
-      await send(chatId, alert.text);
+      await send(chatId);
     }
     const attempts = alert.attempts + 1;
     const firstFailedAt = alert.firstFailedAt ?? now;

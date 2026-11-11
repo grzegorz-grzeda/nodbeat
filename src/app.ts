@@ -123,9 +123,21 @@ export async function createApp(deps: AppDeps): Promise<App> {
   registerErrorPages(app);
   registerDashboard(app, { db, clock, config });
   registerMonitors(app, { db, clock, config, auth });
-  registerMonitorManagement(app, { db, clock, auth, lock });
+  registerMonitorManagement(app, {
+    db,
+    clock,
+    auth,
+    lock,
+    publicBaseUrl: config.publicBaseUrl,
+  });
   registerMonitorLogs(app, { db, clock });
-  await registerHeartbeatIntake(app, { db, clock, lock, pruner });
+  await registerHeartbeatIntake(app, {
+    db,
+    clock,
+    lock,
+    pruner,
+    publicBaseUrl: config.publicBaseUrl,
+  });
   registerSettings(app, { db, clock, auth });
   registerAdmin(app, { db, clock });
   registerInvites(app, { db, clock, config, auth });
@@ -153,6 +165,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     startedAt,
     lock,
     pruner,
+    publicBaseUrl: config.publicBaseUrl,
   });
   const dispatchAlerts = createAlertDispatcher({
     db,

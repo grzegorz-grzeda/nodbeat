@@ -10,6 +10,7 @@ import {
   TelegramChatMigratedError,
   TelegramForbiddenError,
   type ChatMemberStatus,
+  type SendMessageOptions,
   type TelegramClient,
 } from "../src/telegram.js";
 
@@ -32,6 +33,7 @@ export class FakeClock implements Clock {
 export interface SentMessage {
   chatId: number;
   text: string;
+  options: SendMessageOptions;
 }
 
 const memberKey = (chatId: number, userId: number) => `${chatId}:${userId}`;
@@ -49,7 +51,11 @@ export class RecordingTelegram implements TelegramClient {
   /** Sends to these chats fail with HTTP 400 and the new id: the group was upgraded to a supergroup. */
   readonly migratedChats = new Map<number, number>();
 
-  async sendMessage(chatId: number, text: string): Promise<void> {
+  async sendMessage(
+    chatId: number,
+    text: string,
+    options: SendMessageOptions = {},
+  ): Promise<void> {
     const newChatId = this.migratedChats.get(chatId);
     if (newChatId !== undefined) {
       throw new TelegramChatMigratedError("sendMessage", newChatId);
@@ -60,7 +66,7 @@ export class RecordingTelegram implements TelegramClient {
     if (this.failing || this.failingChats.has(chatId)) {
       throw new Error("telegram unavailable");
     }
-    this.sent.push({ chatId, text });
+    this.sent.push({ chatId, text, options });
   }
 
   readonly #memberStatuses = new Map<string, ChatMemberStatus>();

@@ -7,10 +7,10 @@ Status: ready-for-agent
 
 **Blocked by:** none.
 
-- [ ] `sendMessage` takes options; Alerts are sent with `parse_mode: "HTML"` (bot command replies stay plain text)
-- [ ] Monitor name and Heartbeat message escaped for Telegram HTML (`&`, `<`, `>`)
-- [ ] Down: bold name, "is Down", since when (User's time zone), last Heartbeat message if any
-- [ ] Up: bold name, "is Up again", when, how long it was Down
-- [ ] Both end with a link to `PUBLIC_BASE_URL/monitors/<id>`
-- [ ] The text is still built when the Alert is enqueued (not at send time)
-- [ ] Tests through the HTTP seam: the fake receives the HTML text with the message and link; a Monitor named `<b>&co</b>` arrives escaped
+- [x] `sendMessage` takes options; Alerts are sent with `parse_mode: "HTML"` (bot command replies stay plain text)
+- [x] Monitor name and Heartbeat message escaped for Telegram HTML (`&`, `<`, `>`)
+- [x] Down: bold name, "is Down", since when (User's time zone), last Heartbeat message if any
+- [x] Up: bold name, "is Up again", when, how long it was Down
+- [x] Both end with a link to `PUBLIC_BASE_URL/monitors/<id>`
+- [x] The text is still built when the Alert is enqueued (not at send time)
+- [x] Tests through the HTTP seam: the fake receives the HTML text with the message and link; a Monitor named `<b>&co</b>` arrives escaped
