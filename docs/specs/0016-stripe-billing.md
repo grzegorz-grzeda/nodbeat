@@ -2,7 +2,7 @@
 
 Status: needs-triage
 
-Blocked by: spec 0014 (Terms and Privacy), spec 0015 (Plans and limits)
+Blocked by: spec 0014 (Terms and Privacy), spec 0015 (Plans and limits), spec 0018 (Download my data), spec 0019 (Compliance basics)
 
 ## Problem Statement
 

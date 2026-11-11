@@ -134,6 +134,10 @@ _Avoid_: Tier, subscription, package, license
 A User who can manage the whole nodbeat instance, not just their own Monitors.
 _Avoid_: Superuser, root, owner
 
+**Operator**:
+The person or company that runs a nodbeat instance and answers for it to its Users: the seller in the Terms and the controller in the Privacy policy. G2Labs is the Operator of nodbeat.g2labs.pl; a self-hoster is the Operator of their own instance. The Operator usually acts through an Admin, but they're not the same thing.
+_Avoid_: Provider, owner, host, vendor
+
 **Invite**:
 A single-use link from the Admin that lets one person create a User. It expires after 7 days and can be revoked.
 _Avoid_: Registration, sign-up code, token

@@ -5,7 +5,7 @@ Status: ready-for-agent
 
 **What to build:** A Free User clicks "Upgrade to Pro" in Settings, pays monthly or yearly on Stripe Checkout, and Stripe's webhook makes them Pro. Billing config replaces `PLANS_ENABLED`.
 
-**Blocked by:** 0060, 0057 (Terms accepted before charging)
+**Blocked by:** 0060, 0057 (Terms accepted before charging), 0075, 0076, 0077, 0078 (compliance basics before charging, ADR 0008)
 
 - [ ] `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO_MONTHLY`, `STRIPE_PRICE_PRO_YEARLY`: all set → billing and Plans on; none → off; some → startup error
 - [ ] Injected `StripeClient` using plain `fetch`, fake in tests
