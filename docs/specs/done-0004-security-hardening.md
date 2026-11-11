@@ -1,6 +1,6 @@
 # Spec 0004: Security hardening
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 

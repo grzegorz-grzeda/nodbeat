@@ -1,7 +1,7 @@
 # 0025: Encrypted backups
 
 Spec: 0004
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** The nightly backup is encrypted with `age` on the VPS before it's uploaded, so Google Drive only ever holds ciphertext.
 
@@ -14,3 +14,7 @@ Status: ready-for-agent
 - [ ] Checked by running the script against a test database and restoring from its output
 
 Note: run against a throwaway `mongod` and restored with stand-ins for `age` and `rclone` (neither is installed on the dev machine): refusal without a recipient, the `mongodump | age | rclone rcat` pipeline, rename after success, cleanup of the partial upload on failure, and `age -d | mongorestore --archive --gzip` all worked. Still to do on a host with real `age` and `rclone`: one run plus a restore.
+
+## Comments
+
+- 2026-11-11: closed on request with the real-`age` run still unchecked; do one backup + restore on the VPS after deploy.
