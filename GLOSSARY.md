@@ -85,7 +85,7 @@ An Alert a User sends to one of their Alert channels from Settings, to check it 
 _Avoid_: Test notification, ping, Test message
 
 **Reminder**:
-An Alert repeated at a fixed cadence while a Monitor stays Down, for Monitors that ask for one. Stops when the Monitor comes back Up or is paused.
+An Alert repeated at a fixed cadence (1, 6 or 24 h) while a Monitor stays Down, for Monitors that ask for one. Stops when the Monitor comes back Up, is paused, or has its Alerts switched off.
 _Avoid_: Re-alert, escalation, nag
 
 **Alert channel**:

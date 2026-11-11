@@ -59,9 +59,9 @@ export interface AlertDetails {
   monitorName: string;
   /** The Monitor page. */
   monitorUrl: string;
-  /** When the Monitor went Down (Incident start) or came Up (Incident end). */
+  /** When the Monitor went Down (Incident start; also on a Reminder) or came Up (Incident end). */
   at: Date;
-  /** A Down Alert's last Heartbeat or Fail signal message; null on Up Alerts or when there's none. */
+  /** A Down Alert's or Reminder's last Heartbeat or Fail signal message; null on Up Alerts or when there's none. */
   message: string | null;
   /** Monitor name and state in plain text, e.g. "Garden sensor is Down". */
   title: string;
@@ -77,10 +77,55 @@ interface LegacyAlertDoc extends Omit<AlertDoc, "channelIds" | "retries"> {
   nextAttemptAt: Date;
 }
 
-/** What a Monitor's Alert says happened. */
-export type AlertKind = "down" | "up";
+/** What a Monitor's Alert says happened: it went Down, came Up, or is still Down (a Reminder). */
+export type AlertKind = "down" | "up" | "reminder";
 /** Any Alert sent: a Monitor's, or a test Alert (sent from Settings, never queued). */
 export type SentAlertKind = AlertKind | "test";
+
+/** How a kind of Alert behaves, on every Alert channel. */
+interface AlertKindTraits {
+  /** Says the Monitor is Down: dated from the Incident's start, carries the last message, dropped once it's Up. */
+  aboutDown: boolean;
+  /** Notifies with sound on Telegram. An Up Alert is good news: it shouldn't wake the User. */
+  loud: boolean;
+  /** Leads the Telegram text. */
+  emoji: string;
+  /** ntfy priority: urgent, low, or ntfy's default. */
+  ntfyPriority: "5" | "2" | "3";
+  /** ntfy tag shown as emoji, like the Telegram text's leading one. */
+  ntfyTag: string;
+}
+
+const DOWN_TRAITS: AlertKindTraits = {
+  aboutDown: true,
+  loud: true,
+  emoji: "🔴",
+  ntfyPriority: "5",
+  ntfyTag: "red_circle",
+};
+
+export const ALERT_KINDS: Record<SentAlertKind, AlertKindTraits> = {
+  down: DOWN_TRAITS,
+  reminder: DOWN_TRAITS,
+  up: {
+    aboutDown: false,
+    loud: false,
+    emoji: "🟢",
+    ntfyPriority: "2",
+    ntfyTag: "green_circle",
+  },
+  test: {
+    aboutDown: false,
+    loud: true,
+    emoji: "🔔",
+    ntfyPriority: "3",
+    ntfyTag: "bell",
+  },
+};
+
+const DOWN_KINDS = (Object.keys(ALERT_KINDS) as SentAlertKind[]).filter(
+  (kind) => ALERT_KINDS[kind].aboutDown,
+);
 
 /** The slice of a logger the dispatcher needs (Fastify's logger fits). */
 export interface AlertLog {
@@ -186,7 +231,10 @@ export interface AlertedMonitor extends AlertChannelChoice {
   lastMessage: string | null;
 }
 
-/** Puts an Alert about `incident` in the outbox, addressed to the Monitor's Alert channels at this moment; none → nothing. */
+/**
+ * Puts an Alert about `incident` in the outbox, addressed to the Monitor's Alert channels at this moment; none →
+ * nothing. Returns whether it was enqueued.
+ */
 export async function enqueueAlert(
   db: Db,
   monitor: AlertedMonitor,
@@ -194,24 +242,24 @@ export async function enqueueAlert(
   incident: IncidentDoc,
   now: Date,
   publicBaseUrl: string,
-): Promise<void> {
+): Promise<boolean> {
   const [owner, ownerChannels] = await Promise.all([
     findUserById(db, monitor.ownerId),
     listAlertChannels(db, monitor.ownerId),
   ]);
   const channels = channelsOfMonitor(monitor, ownerChannels);
-  if (channels.length === 0) return;
+  if (channels.length === 0) return false;
   const timeZone = owner?.timeZone ?? DEFAULT_TIME_ZONE;
   const url = monitorUrl(publicBaseUrl, monitor);
-  const parts = alertParts(monitor, kind, incident, timeZone);
+  const parts = alertParts(monitor, kind, incident, timeZone, now);
+  const { aboutDown, loud } = ALERT_KINDS[kind];
   const details: AlertDetails = {
     monitorName: monitor.name,
     monitorUrl: url,
-    at:
-      kind === "down"
-        ? incident.startedAt
-        : (incident.endedAt ?? incident.startedAt),
-    message: kind === "down" ? monitor.lastMessage : null,
+    at: aboutDown
+      ? incident.startedAt
+      : (incident.endedAt ?? incident.startedAt),
+    message: aboutDown ? monitor.lastMessage : null,
     title: `${monitor.name} ${parts.state}`,
     summary: parts.lines.join("\n"),
   };
@@ -222,13 +270,13 @@ export async function enqueueAlert(
     kind,
     incidentId: incident._id,
     text: alertText(monitor, parts, url),
-    // An Up Alert is good news: it shouldn't wake the User.
-    options: { parseMode: "HTML", disableNotification: kind === "up" },
+    options: { parseMode: "HTML", disableNotification: !loud },
     details,
     channelIds: channels.map((c) => c._id),
     createdAt: now,
     retries: {},
   });
+  return true;
 }
 
 const monitorUrl = (publicBaseUrl: string, monitor: AlertedMonitor) =>
@@ -267,25 +315,36 @@ function alertParts(
   kind: AlertKind,
   incident: IncidentDoc,
   timeZone: string,
+  now: Date,
 ): AlertParts {
   const at = (date: Date) => `${formatDateTime(date, timeZone)} (${timeZone})`;
-  if (kind === "down") {
+  if (ALERT_KINDS[kind].aboutDown) {
     // Missing on Incidents stored before causes existed: those are missed deadlines.
     const cause = incident.cause ?? "missed";
-    const lines = [`Since ${at(incident.startedAt)}`];
+    const since = at(incident.startedAt);
+    const downFor = formatDuration(
+      (now.getTime() - incident.startedAt.getTime()) / 1000,
+    );
+    const lines = [
+      kind === "reminder"
+        ? `Down for ${downFor}, since ${since}`
+        : `Since ${since}`,
+    ];
     if (monitor.lastMessage) {
       // A failure's message is the Fail signal's own.
       const label = cause === "failed" ? "Message" : "Last message";
       lines.push(`${label}: ${monitor.lastMessage}`);
     }
-    return { emoji: "🔴", state: DOWN_HEADLINES[cause](incident), lines };
+    const state =
+      kind === "reminder" ? "is still Down" : DOWN_HEADLINES[cause](incident);
+    return { emoji: ALERT_KINDS[kind].emoji, state, lines };
   }
   const endedAt = incident.endedAt ?? incident.startedAt;
   const duration = formatDuration(
     (endedAt.getTime() - incident.startedAt.getTime()) / 1000,
   );
   return {
-    emoji: "🟢",
+    emoji: ALERT_KINDS[kind].emoji,
     state: "is Up again",
     lines: [`At ${at(endedAt)}, after ${duration} Down`],
   };
@@ -333,12 +392,23 @@ export async function migrateChat(
   }
 }
 
-/** A Down Alert not yet delivered when its Incident closes is stale: the Up Alert says it all. */
-export async function dropPendingDownAlert(
+/** A Down Alert or Reminder not yet delivered when its Incident closes is stale: the Up Alert says it all. */
+export async function dropPendingDownAlerts(
   db: Db,
   incidentId: ObjectId,
 ): Promise<void> {
-  await outbox(db).deleteMany({ incidentId, kind: "down" });
+  await outbox(db).deleteMany({
+    incidentId,
+    kind: { $in: DOWN_KINDS },
+  });
+}
+
+/** Drops the Monitor's Reminders still waiting to be sent (its Alerts were switched off). */
+export async function dropPendingReminders(
+  db: Db,
+  monitorId: ObjectId,
+): Promise<void> {
+  await outbox(db).deleteMany({ monitorId, kind: "reminder" });
 }
 
 /** Removes all of the Monitor's pending Alerts (when the Monitor is deleted). */

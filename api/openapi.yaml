@@ -33,7 +33,7 @@ webhooks:
       tags: [Alerts]
       summary: Alert sent to a Webhook
       description: |
-        nodbeat POSTs each Down and Up Alert to every Webhook among the
+        nodbeat POSTs each Down Alert, Reminder and Up Alert to every Webhook among the
         Monitor's Alert channels (add one in Settings). Answer with any `2xx`
         within 5 s; anything else, including a redirect (never followed), is a
         failure. A failed Alert is retried with growing delays for 1 hour; then
@@ -78,6 +78,17 @@ webhooks:
                     name: Nightly backup
                     url: https://nodbeat.example.com/monitors/6730c1f2a4b5c6d7e8f90123
                   kind: down
+                  at: "2026-11-11T03:01:30.000Z"
+                  message: disk full
+                  incidentId: 6731a0b1c2d3e4f5a6b7c8d9
+              reminder:
+                summary: The Monitor is still Down (a Reminder)
+                value:
+                  monitor:
+                    id: 6730c1f2a4b5c6d7e8f90123
+                    name: Nightly backup
+                    url: https://nodbeat.example.com/monitors/6730c1f2a4b5c6d7e8f90123
+                  kind: reminder
                   at: "2026-11-11T03:01:30.000Z"
                   message: disk full
                   incidentId: 6731a0b1c2d3e4f5a6b7c8d9
@@ -392,15 +403,15 @@ components:
               description: The Monitor page in nodbeat.
         kind:
           type: string
-          enum: [down, up, test]
-          description: "`down`: the Monitor went Down (missed its deadline, sent a Fail signal or ran longer than its Max run time). `up`: it is Up again. `test`: a test Alert sent from Settings; it is about no Monitor (`monitor.id` and `incidentId` are made up, `monitor.url` is the Settings page)."
+          enum: [down, reminder, up, test]
+          description: "`down`: the Monitor went Down (missed its deadline, sent a Fail signal or ran longer than its Max run time). `reminder`: it is still Down; sent every 1, 6 or 24 h while Down when the Monitor asks for Reminders. `up`: it is Up again. `test`: a test Alert sent from Settings; it is about no Monitor (`monitor.id` and `incidentId` are made up, `monitor.url` is the Settings page)."
         at:
           type: string
           format: date-time
-          description: When the Monitor went Down (the Incident's start) or came Up (its end).
+          description: When the Monitor went Down (the Incident's start; also on a Reminder, so the Down duration is the time since) or came Up (its end).
         message:
           type: [string, "null"]
-          description: On a Down Alert, the last Heartbeat's or the Fail signal's message; null on Up Alerts or when there is none.
+          description: On a Down Alert or Reminder, the last Heartbeat's or Fail signal's message; null on Up Alerts or when there is none.
         incidentId:
           type: string
-          description: The Incident; a Down Alert and the Up Alert that ends it share it.
+          description: The Incident; a Down Alert, its Reminders and the Up Alert that ends it share it.

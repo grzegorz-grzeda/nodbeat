@@ -1,6 +1,6 @@
 # Spec 0011: Reminders
 
-Status: ready-for-agent
+Status: resolved
 
 Blocked by: spec 0009 (Alert channels)
 

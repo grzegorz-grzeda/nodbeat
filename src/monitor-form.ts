@@ -13,6 +13,13 @@ import {
   type MonitorAlertChannels,
 } from "./monitor-alert-channels.js";
 import {
+  cadenceText,
+  isReminderCadence,
+  REMINDER_CADENCES_SEC,
+  type ReminderEverySec,
+  type ReminderSettings,
+} from "./reminders.js";
+import {
   checkSchedule,
   MAX_CRON_LENGTH,
   scheduledTimesAfter,
@@ -45,6 +52,8 @@ export interface MonitorForm {
   /** "all", or "chosen" for the channels in `alertChannelIds`. */
   alertChannels: string;
   alertChannelIds: string[];
+  /** A Reminder cadence in seconds, or "" for never. */
+  reminderEvery: string;
 }
 
 /** An Alert channel the form offers. */
@@ -62,6 +71,7 @@ export type MonitorSettings = MonitorTiming &
     name: string;
     notes: string;
     alertChannels: MonitorAlertChannels;
+    reminderEverySec: ReminderEverySec | null;
   };
 
 /** The submitted form; `defaultTimeZone` (the owner's) when no time zone was sent. */
@@ -86,6 +96,7 @@ export function readForm(body: unknown, defaultTimeZone: string): MonitorForm {
       ? (b.alertChannelIds as unknown[])
       : [b.alertChannelIds]
     ).filter((v): v is string => typeof v === "string"),
+    reminderEvery: field("reminderEvery"),
   };
 }
 
@@ -94,7 +105,12 @@ export function readForm(body: unknown, defaultTimeZone: string): MonitorForm {
  * Monitor's Schedule fields start at the owner's time zone, ready for a switch.
  */
 export function formFor(
-  monitor: MonitorTiming & AlertChannelChoice & { name: string; notes: string },
+  monitor: MonitorTiming &
+    AlertChannelChoice &
+    Pick<ReminderSettings, "reminderEverySec"> & {
+      name: string;
+      notes: string;
+    },
   defaultTimeZone: string,
 ): MonitorForm {
   const split = (sec: number): [string, Unit] => {
@@ -123,6 +139,8 @@ export function formFor(
     maxRunTimeUnit,
     notes: monitor.notes,
     ...alertChannelsForm(choiceOf(monitor)),
+    reminderEvery:
+      monitor.reminderEverySec != null ? String(monitor.reminderEverySec) : "",
   };
 }
 
@@ -243,6 +261,13 @@ export function validate(
     }
   }
 
+  let reminderEverySec: ReminderEverySec | null = null;
+  if (form.reminderEvery !== "") {
+    const sec = Number(form.reminderEvery);
+    if (isReminderCadence(sec)) reminderEverySec = sec;
+    else errors.push("Reminders must be every 1 h, 6 h or 24 h, or never.");
+  }
+
   if (errors.length > 0 || period === null || graceSec === null) {
     return { errors };
   }
@@ -254,6 +279,7 @@ export function validate(
       graceSec,
       maxRunTimeSec,
       alertChannels,
+      reminderEverySec,
     },
   };
 }
@@ -440,6 +466,26 @@ ${form.notes}</textarea>
               )
         }
       </fieldset>
+      <label
+        >Reminders (repeat the Down Alert while the Monitor stays Down)
+        <select name="reminderEvery">
+          ${[
+            ["", "Never"],
+            ...REMINDER_CADENCES_SEC.map((sec) => [
+              String(sec),
+              `Remind me ${cadenceText(sec)}`,
+            ]),
+          ].map(
+            ([value, label]) =>
+              html`<option
+                value="${value!}"
+                ${value === form.reminderEvery ? html`selected` : ""}
+              >
+                ${label!}
+              </option>`,
+          )}
+        </select></label
+      >
       <button type="submit">${editing ? "Save" : "Create Monitor"}</button>
     </form>`;
 }

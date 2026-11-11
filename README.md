@@ -13,6 +13,7 @@ Heartbeats are push-only (ADR 0001): nodbeat never connects to what it watches, 
 - **States**: New (no Heartbeat yet), Up, Down, Paused. New and Paused Monitors never go Down.
 - **Pause / unpause** for maintenance. Pausing a Down Monitor closes its Incident without an Up Alert; unpausing gives a fresh Interval + Grace period.
 - **Alerts on/off per Monitor**: state and Incidents are still tracked when off.
+- **Reminders**: a Monitor can repeat its Down Alert every 1, 6 or 24 hours while it stays Down (off by default).
 - **Regenerate the Heartbeat URL** to revoke a leaked one.
 - **Dashboard** refreshing every 5 s: state, time since last Heartbeat, last message, 7-day Uptime (New and Paused time left out).
 - **Monitor page**: settings, Heartbeat URL with copy buttons, curl / cron / ESP32 examples, the 20 newest Incidents and Heartbeats, and full logs of everything kept.

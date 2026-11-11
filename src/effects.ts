@@ -1,6 +1,6 @@
 import type { Db } from "mongodb";
 import {
-  dropPendingDownAlert,
+  dropPendingDownAlerts,
   enqueueAlert,
   type AlertedMonitor,
 } from "./alerts.js";
@@ -10,12 +10,13 @@ import {
   type IncidentDoc,
 } from "./incidents.js";
 import type { Effect } from "./monitor-state.js";
+import { nextReminderFrom, type ReminderSettings } from "./reminders.js";
 import { endPeriod, startPeriod } from "./state-periods.js";
 
 /** Carries out the effects a state transition asked for, in order. */
 export async function applyEffects(
   db: Db,
-  monitor: AlertedMonitor,
+  monitor: AlertedMonitor & ReminderSettings,
   effects: Effect[],
   now: Date,
   publicBaseUrl: string,
@@ -26,16 +27,23 @@ export async function applyEffects(
   for (const effect of effects) {
     switch (effect.kind) {
       case "open-incident":
-        incident = await openIncident(db, monitor, effect.startedAt, {
-          cause: effect.cause,
-          ...(effect.maxRunTimeSec !== undefined && {
-            maxRunTimeSec: effect.maxRunTimeSec,
-          }),
-        });
+        incident = await openIncident(
+          db,
+          monitor,
+          effect.startedAt,
+          {
+            cause: effect.cause,
+            ...(effect.maxRunTimeSec !== undefined && {
+              maxRunTimeSec: effect.maxRunTimeSec,
+            }),
+          },
+          // Reminders count from going Down.
+          nextReminderFrom(monitor, effect.startedAt),
+        );
         break;
       case "close-incident":
         incident = await closeOpenIncident(db, monitor._id, now, effect.reason);
-        if (incident) await dropPendingDownAlert(db, incident._id);
+        if (incident) await dropPendingDownAlerts(db, incident._id);
         break;
       case "start-period":
         await startPeriod(db, effect.state, monitor, now);

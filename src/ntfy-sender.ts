@@ -1,15 +1,10 @@
 import type { NtfyChannelDoc } from "./alert-channels.js";
-import type { AlertSender } from "./alerts.js";
+import { ALERT_KINDS, type AlertSender } from "./alerts.js";
 import {
   HTTP_CHANNEL_TIMEOUT_MS,
   postAlert,
   type OutboundHttp,
 } from "./outbound-http.js";
-
-/** ntfy priorities: a Down Alert is urgent, an Up Alert shouldn't wake the User, a test Alert is ntfy's default. */
-const PRIORITY = { down: "5", up: "2", test: "3" } as const;
-/** ntfy tags shown as emoji, like the Telegram text's leading one. */
-const TAGS = { down: "red_circle", up: "green_circle", test: "bell" } as const;
 
 /** A header value as ntfy reads it: as is when ASCII, else an RFC 2047 encoded-word. */
 const headerValue = (value: string) =>
@@ -32,8 +27,8 @@ export function createNtfySender(
       "content-type": "text/plain; charset=utf-8",
       "user-agent": "nodbeat",
       title: headerValue(title),
-      priority: PRIORITY[alert.kind],
-      tags: TAGS[alert.kind],
+      priority: ALERT_KINDS[alert.kind].ntfyPriority,
+      tags: ALERT_KINDS[alert.kind].ntfyTag,
       click: alert.details.monitorUrl,
     };
     if (channel.token) headers.authorization = `Bearer ${channel.token}`;

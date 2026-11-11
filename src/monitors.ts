@@ -46,6 +46,7 @@ import {
   type MonitorTiming,
 } from "./monitor-state.js";
 import { startPeriod } from "./state-periods.js";
+import { reminderText, type ReminderSettings } from "./reminders.js";
 import { listAlertChannels } from "./alert-channels.js";
 import {
   channelsOfMonitor,
@@ -55,14 +56,14 @@ import {
 
 export type MonitorDoc = MonitorStateFields &
   AlertChannelChoice &
-  MonitorTiming & {
+  MonitorTiming &
+  ReminderSettings & {
     _id: ObjectId;
     ownerId: ObjectId;
     name: string;
     notes: string;
     /** Secret part of the Heartbeat URL. */
     token: string;
-    alertsEnabled: boolean;
     createdAt: Date;
   };
 
@@ -423,6 +424,7 @@ export function registerMonitors(
                       : alerted.map((c) => c.name).join(", ")
                 }
               </li>
+              <li>Reminders: ${reminderText(monitor)}</li>
               ${
                 monitor.schedule
                   ? html`<li>

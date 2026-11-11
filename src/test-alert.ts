@@ -4,6 +4,7 @@ import {
   type AlertChannelDoc,
 } from "./alert-channels.js";
 import {
+  ALERT_KINDS,
   sendTo,
   type AlertDoc,
   type AlertSenders,
@@ -25,7 +26,7 @@ function testAlert(
     ownerId: channel.ownerId,
     kind: "test",
     incidentId: new ObjectId(),
-    text: "🔔 <b>Test Alert</b> from nodbeat\nAlerts for your Monitors arrive here.",
+    text: `${ALERT_KINDS.test.emoji} <b>Test Alert</b> from nodbeat\nAlerts for your Monitors arrive here.`,
     options: { parseMode: "HTML" },
     // For HTTP channels: points at Settings, where the test was sent from.
     details: {
