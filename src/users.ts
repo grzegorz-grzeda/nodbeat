@@ -1,6 +1,7 @@
 import { hash, verify } from "@node-rs/argon2";
 import { MongoServerError, ObjectId, type Db } from "mongodb";
 import type { Clock } from "./clock.js";
+import { LEGAL_KINDS, type LegalKind, type LegalVersions } from "./legal.js";
 
 export const DEFAULT_TIME_ZONE = "Europe/Warsaw";
 
@@ -18,13 +19,25 @@ export interface UserDoc {
   /** Missing on Users created before themes existed: means `"system"`. */
   theme?: Theme;
   createdAt: Date;
+  /**
+   * The version of each legal document the User accepted, and when. Missing when they accepted none: created by the
+   * CLI, before the Terms existed, or on an instance without them. Compare with `currentVersions` to find what's due.
+   */
+  accepted?: Acceptance;
 }
+
+/** Per document, since each is accepted on its own: one may be recorded without the other. */
+export type Acceptance = Partial<
+  Record<LegalKind, { version: string; at: Date }>
+>;
 
 export interface NewUser {
   email: string;
   password: string;
   isAdmin: boolean;
   timeZone?: string;
+  /** The versions the new User accepted, recorded as accepted at creation. */
+  accepted?: LegalVersions;
 }
 
 export class UserError extends Error {
@@ -91,13 +104,15 @@ export async function createUser(
     throw new UserError(`Unknown time zone: ${timeZone}`);
   }
 
+  const now = clock.now();
   const doc: UserDoc = {
     _id: new ObjectId(),
     email,
     passwordHash: await hashPassword(input.password),
     isAdmin: input.isAdmin,
     timeZone,
-    createdAt: clock.now(),
+    createdAt: now,
+    ...(input.accepted && { accepted: acceptance(input.accepted, now) }),
   };
   try {
     await users(db).insertOne(doc);
@@ -108,6 +123,12 @@ export async function createUser(
     }
     throw err;
   }
+}
+
+function acceptance(versions: LegalVersions, at: Date): Acceptance {
+  return Object.fromEntries(
+    LEGAL_KINDS.map((kind) => [kind, { version: versions[kind], at }]),
+  );
 }
 
 export async function findUserById(
@@ -167,6 +188,23 @@ export async function setUserTheme(
   theme: Theme,
 ): Promise<void> {
   await users(db).updateOne({ _id: id }, { $set: { theme } });
+}
+
+/** Records that the User accepted these versions now; documents not given keep their earlier acceptance. */
+export async function recordAcceptance(
+  db: Db,
+  id: ObjectId,
+  versions: Partial<LegalVersions>,
+  at: Date,
+): Promise<void> {
+  const $set = Object.fromEntries(
+    Object.entries(versions).map(([kind, version]) => [
+      `accepted.${kind}`,
+      { version, at },
+    ]),
+  );
+  if (Object.keys($set).length === 0) return;
+  await users(db).updateOne({ _id: id }, { $set });
 }
 
 /** The emails of these Users, keyed by id; deleted Users are absent. */

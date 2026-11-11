@@ -4,6 +4,13 @@ import type { Auth } from "./auth.js";
 import type { BuildInfo } from "./build-info.js";
 import { takeFlash } from "./flash.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
+import type { PageGate } from "./accept-terms.js";
+import {
+  LEGAL_KINDS,
+  LEGAL_TITLES,
+  operatorDetails,
+  type Operator,
+} from "./legal.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
 import { DEFAULT_THEME, THEMES, themeOf, type Theme } from "./users.js";
 
@@ -137,6 +144,8 @@ export function renderPage(
     user?: NavUser | undefined;
     /** One-time message from the previous action, shown above the body. */
     flash?: string | undefined;
+    /** The Operator, named in the footer next to links to the Terms and Privacy policy; nothing when unset. */
+    legalFooter?: Operator | undefined;
   },
 ): string {
   const { build, user } = options;
@@ -173,17 +182,32 @@ export function renderPage(
           >
           · <a href="/docs">API docs</a> ·
           <a href="${REPO_URL}/issues">Feedback</a>
+          ${
+            options.legalFooter &&
+            html`${LEGAL_KINDS.map(
+              (kind) => html`· <a href="/${kind}">${LEGAL_TITLES[kind]}</a> `,
+            )}
+            ${operatorDetails(options.legalFooter)}`
+          }
         </footer>
       </body>
     </html> `.value;
 }
 
-/** Serves `/assets/*` and adds `reply.page()`. */
+/**
+ * Serves `/assets/*` and adds `reply.page()`. `operator` fills the legal footer; `gate` may send a User elsewhere
+ * instead of a page (Terms to accept), never instead of an error page.
+ */
 export function registerLayout(
   app: FastifyInstance,
-  deps: { auth: Auth; build: BuildInfo },
+  deps: {
+    auth: Auth;
+    build: BuildInfo;
+    operator: Operator | undefined;
+    gate: PageGate | undefined;
+  },
 ): void {
-  const { auth, build } = deps;
+  const { auth, build, operator, gate } = deps;
   const assets = loadAssets();
   const cacheControl = assetCacheControl(build);
 
@@ -198,6 +222,8 @@ export function registerLayout(
 
   app.decorateReply("page", function (this: FastifyReply, options) {
     const req = this.request;
+    const elsewhere = this.statusCode < 400 ? gate?.(req) : undefined;
+    if (elsewhere) return this.redirect(elsewhere, 303);
     const user = req.user
       ? {
           email: req.user.email,
@@ -209,7 +235,13 @@ export function registerLayout(
         }
       : undefined;
     return this.type("text/html; charset=utf-8").send(
-      renderPage({ ...options, build, user, flash: takeFlash(req, this) }),
+      renderPage({
+        ...options,
+        build,
+        user,
+        flash: takeFlash(req, this),
+        legalFooter: operator,
+      }),
     );
   });
 }

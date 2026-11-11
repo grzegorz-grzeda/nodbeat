@@ -1,5 +1,7 @@
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
+  acceptTerms,
   Browser,
   buildTestApp,
   createUser,
@@ -11,14 +13,18 @@ const DAY = 24 * 60 * 60 * 1000;
 const PASSWORD = "correct horse";
 const CANT_BE_USED = "This Invite can&#39;t be used";
 
-async function withAdmin() {
-  const ctx = await buildTestApp();
+const LEGAL_DIR = fileURLToPath(new URL("./fixtures/legal/", import.meta.url));
+
+async function withAdmin(options: { legalDir?: string } = {}) {
+  const ctx = await buildTestApp(options);
   await createUser(ctx.db, {
     email: "admin@example.com",
     password: PASSWORD,
     admin: true,
   });
   const admin = await login(ctx.app, "admin@example.com", PASSWORD);
+  // A CLI-created Admin has accepted nothing yet.
+  if (options.legalDir) await acceptTerms(admin);
   return { ...ctx, admin };
 }
 
@@ -39,7 +45,9 @@ const visitor = (ctx: TestContext) =>
 const accept = (
   browser: Browser,
   invite: string,
-  fields: Partial<Record<"email" | "password" | "timeZone", string>> = {},
+  fields: Partial<
+    Record<"email" | "password" | "timeZone" | "acceptLegal", string>
+  > = {},
 ) =>
   browser.submit(invite, invite, {
     email: "new@example.com",
@@ -346,5 +354,72 @@ describe("Invites", () => {
     expect(urls).toContain("/hb/<redacted>?msg=hi");
     expect(JSON.stringify(ctx.logs)).not.toContain(code);
     expect(JSON.stringify(ctx.logs)).not.toContain("C".repeat(32));
+  });
+
+  describe("with the Operator's Terms and Privacy policy", () => {
+    const CHECKBOX = 'name="acceptLegal"';
+    const users = (ctx: TestContext) => ctx.db.collection("users");
+
+    it("ask the invited person to accept both, linking to them", async () => {
+      const ctx = await withAdmin({ legalDir: LEGAL_DIR });
+      const invite = await createInvite(ctx.admin);
+
+      const form = (await visitor(ctx).get(invite)).body;
+      const checkbox = /<input[^>]*name="acceptLegal"[^>]*>/.exec(form)?.[0];
+      expect(checkbox).toContain('type="checkbox"');
+      expect(checkbox).toContain("required");
+      expect(form).toMatch(/I accept\s+the/);
+      expect(form).toMatch(/<a href="\/terms"[^>]*>Terms<\/a>/);
+      expect(form).toMatch(/<a href="\/privacy"[^>]*>Privacy policy<\/a>/);
+    });
+
+    it("create no User until the person accepts, and keep the Invite usable", async () => {
+      const ctx = await withAdmin({ legalDir: LEGAL_DIR });
+      const invite = await createInvite(ctx.admin);
+      const browser = visitor(ctx);
+
+      const res = await accept(browser, invite, { email: "Me@Example.com" });
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toContain(
+        "Accept the Terms and Privacy policy to create your User.",
+      );
+      expect(res.body).toContain(CHECKBOX);
+      expect(res.body).toContain('value="Me@Example.com"');
+      expect(await users(ctx).countDocuments({ email: "me@example.com" })).toBe(
+        0,
+      );
+
+      const ok = await accept(browser, invite, { acceptLegal: "on" });
+      expect(ok.statusCode).toBe(303);
+    });
+
+    it("record the accepted versions and when they were accepted", async () => {
+      const ctx = await withAdmin({ legalDir: LEGAL_DIR });
+      const invite = await createInvite(ctx.admin);
+      ctx.clock.advance(DAY + 1234);
+
+      const res = await accept(visitor(ctx), invite, { acceptLegal: "on" });
+      expect(res.statusCode).toBe(303);
+
+      const user = await users(ctx).findOne({ email: "new@example.com" });
+      const at = new Date("2026-01-02T00:00:01.234Z");
+      expect(user?.accepted).toEqual({
+        terms: { version: "2026-12-01", at },
+        privacy: { version: "2026-12-02", at },
+      });
+    });
+  });
+
+  it("show no Terms checkbox and record no acceptance without the Operator's files", async () => {
+    const ctx = await withAdmin();
+    const invite = await createInvite(ctx.admin);
+    const browser = visitor(ctx);
+    expect((await browser.get(invite)).body).not.toContain("acceptLegal");
+
+    expect((await accept(browser, invite)).statusCode).toBe(303);
+    const user = await ctx.db
+      .collection("users")
+      .findOne({ email: "new@example.com" });
+    expect(user).not.toHaveProperty("accepted");
   });
 });

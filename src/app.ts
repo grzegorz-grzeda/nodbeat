@@ -10,6 +10,7 @@ import type { Db } from "mongodb";
 import type { BuildInfo } from "./build-info.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
+import { registerTermsAcceptance } from "./accept-terms.js";
 import { registerAdmin } from "./admin.js";
 import {
   ensureAlertChannelIndexes,
@@ -34,6 +35,7 @@ import {
 import { ensureIncidentIndexes } from "./incidents.js";
 import { ensureLinkCodeIndexes } from "./linked-chats.js";
 import { registerLayout } from "./layout.js";
+import { loadLegalDocs, registerLegalPages } from "./legal.js";
 import { createLogPruner } from "./log-pruner.js";
 import { KeyedLock } from "./keyed-lock.js";
 import { registerMonitorLogs } from "./monitor-logs.js";
@@ -142,7 +144,18 @@ export async function createApp(deps: AppDeps): Promise<App> {
   });
   await app.register(formbody);
   const auth = registerAuth(app, { db, clock, config });
-  registerLayout(app, { auth, build: deps.build });
+  // Read once: the Operator restarts nodbeat after changing their legal files.
+  const legal = loadLegalDocs(config.legalDir, (message) =>
+    app.log.warn(message),
+  );
+  const gate = registerTermsAcceptance(app, { db, clock, auth, legal });
+  registerLayout(app, {
+    auth,
+    build: deps.build,
+    operator: legal?.operator,
+    gate,
+  });
+  registerLegalPages(app, { legal });
   registerErrorPages(app);
   registerDashboard(app, { db, clock, config, startedAt });
   registerMonitors(app, { db, clock, config, auth, startedAt });
@@ -183,7 +196,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     publicBaseUrl: config.publicBaseUrl,
   });
   registerAdmin(app, { db, clock });
-  registerInvites(app, { db, clock, config, auth });
+  registerInvites(app, { db, clock, config, auth, legal });
   registerTelegramBot(app, {
     db,
     clock,

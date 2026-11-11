@@ -360,6 +360,7 @@ fieldset.timing {
   margin: var(--space-3) 0;
 }
 
+label.legal-acceptance,
 fieldset.alert-channels label,
 fieldset.timing label {
   font-weight: 400;
@@ -864,4 +865,19 @@ ul.alert-channels input[name="name"] {
 
 .site-footer a {
   color: var(--text-muted);
+}
+
+/* The Operator's details: in the footer and at the top of /terms. */
+.operator {
+  font-style: normal;
+}
+
+.site-footer .operator {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+}
+
+.legal .operator {
+  margin-bottom: var(--space-3);
 }

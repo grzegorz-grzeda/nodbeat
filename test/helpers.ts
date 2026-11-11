@@ -160,6 +160,7 @@ export const testConfig: Config = {
   telegramWebhookSecret: "test-webhook-secret",
   selfHeartbeatUrl: undefined,
   trustedProxyIp: "172.18.0.2",
+  legalDir: undefined,
 };
 
 /** The Content-Security-Policy sent on every response. */
@@ -178,6 +179,7 @@ export interface TestContext {
   db: Db;
   /** Warnings and errors the app logged, parsed. */
   logs: Array<Record<string, unknown>>;
+  config: Config;
 }
 
 /** Fastify logger options that collect warnings and errors into `logs`. */
@@ -196,9 +198,12 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-/** Builds the full app on a fresh, isolated database. `logLevel` "info" also records request logs. */
+/**
+ * Builds the full app on a fresh, isolated database. `logLevel` "info" also records request logs; `legalDir` is
+ * `LEGAL_DIR` (a fixture directory: the repo holds no real legal text).
+ */
 export async function buildTestApp(
-  options: { logLevel?: "warn" | "info" } = {},
+  options: { logLevel?: "warn" | "info"; legalDir?: string } = {},
 ): Promise<TestContext> {
   const client = new MongoClient(inject("mongoUri"));
   await client.connect();
@@ -207,21 +212,26 @@ export async function buildTestApp(
   const telegram = new RecordingTelegram();
   const http = new RecordingHttp();
   const logs: TestContext["logs"] = [];
+  const config: Config = { ...testConfig, legalDir: options.legalDir };
   const app = await createApp({
     db,
     clock,
     telegram,
     http,
     resolveHost: http.resolve,
-    config: testConfig,
+    config,
     build: testBuild,
     logger: recordingLogger(logs, options.logLevel),
+  }).catch(async (err: unknown) => {
+    // e.g. malformed legal files: don't leak the connection.
+    await client.close();
+    throw err;
   });
   cleanups.push(async () => {
     await app.close();
     await client.close();
   });
-  return { app, clock, telegram, http, client, db, logs };
+  return { app, clock, telegram, http, client, db, logs, config };
 }
 
 /** Simulates a nodbeat restart: a fresh `createApp` on the same database and clock. */
@@ -233,7 +243,7 @@ export async function restartApp(ctx: TestContext): Promise<App> {
     telegram: ctx.telegram,
     http: ctx.http,
     resolveHost: ctx.http.resolve,
-    config: testConfig,
+    config: ctx.config,
     build: testBuild,
     logger: recordingLogger(ctx.logs),
   });
@@ -279,8 +289,11 @@ export class Browser {
     readonly extraHeaders: Record<string, string> = {},
   ) {}
 
-  async get(url: string): Promise<InjectResponse> {
-    return this.#send({ method: "GET", url });
+  async get(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<InjectResponse> {
+    return this.#send({ method: "GET", url, ...(headers && { headers }) });
   }
 
   /** Posts a form. Fetches `formPage` first to pick up its CSRF token unless `csrf` is given. */
@@ -350,6 +363,43 @@ export const stateOf = async (
   /class="badge badge-\w+">(\w+)<\/span>/.exec(
     (await browser.get(page)).body,
   )?.[1];
+
+/** The hidden fields of the `/accept-terms` form in this page, `_csrf` aside, as a browser would send them. */
+export function acceptTermsFields(body: string): Record<string, string> {
+  const form =
+    /<form method="post" action="\/accept-terms">([\s\S]*?)<\/form>/.exec(
+      body,
+    )?.[1];
+  if (!form) throw new Error("no /accept-terms form on this page");
+  return Object.fromEntries(
+    [
+      ...form.matchAll(
+        /<input\s+type="hidden"\s+name="(\w+)"\s+value="([^"]*)"/g,
+      ),
+    ]
+      .filter((m) => m[1] !== "_csrf")
+      .map((m) => [
+        m[1]!,
+        m[2]!
+          .replaceAll("&quot;", '"')
+          .replaceAll("&#39;", "'")
+          .replaceAll("&amp;", "&"),
+      ]),
+  );
+}
+
+/** Accepts the current Terms and Privacy policy, as a CLI-created User must before using the pages. */
+export async function acceptTerms(browser: Browser): Promise<void> {
+  const page = await browser.get("/accept-terms");
+  if (page.statusCode !== 200) throw new Error("nothing to accept");
+  const res = await browser.submit(
+    "/accept-terms",
+    "/accept-terms",
+    acceptTermsFields(page.body),
+    { csrf: csrfTokenIn(page.body) ?? null },
+  );
+  if (res.statusCode !== 303) throw new Error("acceptance failed");
+}
 
 export async function login(
   app: App,
