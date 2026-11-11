@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-11
+
 ### Security
 
 - `X-Forwarded-For` is believed only from the edge Caddy at the new required `TRUSTED_PROXY_IP`, so another container on the `edge` network can't fake its IP to dodge the login limit or forge recorded source IPs. Set it before upgrading; see `docs/deploy.md` steps 4–5.
@@ -125,7 +127,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.13.0...v0.14.0
