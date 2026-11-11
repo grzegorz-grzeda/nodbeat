@@ -7,7 +7,12 @@ import type { Config } from "./config.js";
 import { sendConfirmPage } from "./confirm.js";
 import { setFlash } from "./flash.js";
 import { formatDateTime } from "./format.js";
-import { currentVersions, type LegalDocs } from "./legal.js";
+import {
+  currentVersions,
+  LEGAL_KINDS,
+  LEGAL_TITLES,
+  type LegalDocs,
+} from "./legal.js";
 import { copyButton, csrfField, html, timeZoneOptions } from "./html.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
 import {
@@ -166,6 +171,16 @@ export function registerInvites(
   },
 ): void {
   const { db, clock, config, auth, legal } = deps;
+  // "the Terms and Privacy policy", each linked, for the checkbox; plain for its error.
+  const legalLinks = html`${LEGAL_KINDS.map(
+    (kind, i) =>
+      html`${i > 0 && " and "}<a href="/${kind}" target="_blank"
+          >${LEGAL_TITLES[kind]}</a
+        >`,
+  )}`;
+  const legalNames = LEGAL_KINDS.map((kind) => LEGAL_TITLES[kind]).join(
+    " and ",
+  );
   const limiter = new SlidingWindowLimiter(
     clock,
     ACCEPT_MAX_REQUESTS,
@@ -365,8 +380,7 @@ export function registerInvites(
             legal &&
             html`<label class="legal-acceptance"
               ><input type="checkbox" name="acceptLegal" required /> I accept
-              the <a href="/terms" target="_blank">Terms</a> and
-              <a href="/privacy" target="_blank">Privacy policy</a></label
+              the ${legalLinks}</label
             >`
           }
           <button type="submit">Create my User</button>
@@ -402,7 +416,7 @@ export function registerInvites(
       if (legal && !field("acceptLegal")) {
         reply.code(400);
         return acceptPage(req, reply, {
-          error: "Accept the Terms and Privacy policy to create your User.",
+          error: `Accept the ${legalNames} to create your User.`,
           email,
           timeZone,
         });

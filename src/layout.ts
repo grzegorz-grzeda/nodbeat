@@ -4,7 +4,13 @@ import type { Auth } from "./auth.js";
 import type { BuildInfo } from "./build-info.js";
 import { takeFlash } from "./flash.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
-import { operatorDetails, type LegalDocs, type Operator } from "./legal.js";
+import type { PageGate } from "./accept-terms.js";
+import {
+  LEGAL_KINDS,
+  LEGAL_TITLES,
+  operatorDetails,
+  type Operator,
+} from "./legal.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
 import { DEFAULT_THEME, THEMES, themeOf, type Theme } from "./users.js";
 
@@ -138,8 +144,8 @@ export function renderPage(
     user?: NavUser | undefined;
     /** One-time message from the previous action, shown above the body. */
     flash?: string | undefined;
-    /** Links the Terms and Privacy policy and names the Operator; nothing when the instance has none. */
-    operator?: Operator | undefined;
+    /** The Operator, named in the footer next to links to the Terms and Privacy policy; nothing when unset. */
+    legalFooter?: Operator | undefined;
   },
 ): string {
   const { build, user } = options;
@@ -177,41 +183,47 @@ export function renderPage(
           · <a href="/docs">API docs</a> ·
           <a href="${REPO_URL}/issues">Feedback</a>
           ${
-            options.operator &&
-            html`· <a href="/terms">Terms</a> ·
-              <a href="/privacy">Privacy</a>
-              ${operatorDetails(options.operator)}`
+            options.legalFooter &&
+            html`${LEGAL_KINDS.map(
+              (kind) => html`· <a href="/${kind}">${LEGAL_TITLES[kind]}</a> `,
+            )}
+            ${operatorDetails(options.legalFooter)}`
           }
         </footer>
       </body>
     </html> `.value;
 }
 
-/** Serves `/assets/*` and adds `reply.page()`. */
+/**
+ * Serves `/assets/*` and adds `reply.page()`. `operator` fills the legal footer; `gate` may send a User elsewhere
+ * instead of a page (Terms to accept), never instead of an error page.
+ */
 export function registerLayout(
   app: FastifyInstance,
-  deps: { auth: Auth; build: BuildInfo; legal: LegalDocs | undefined },
+  deps: {
+    auth: Auth;
+    build: BuildInfo;
+    operator: Operator | undefined;
+    gate: PageGate | undefined;
+  },
 ): void {
-  const { auth, build } = deps;
-  const operator = deps.legal?.operator;
+  const { auth, build, operator, gate } = deps;
   const assets = loadAssets();
   const cacheControl = assetCacheControl(build);
 
-  app.get<{ Params: { name: string } }>(
-    "/assets/:name",
-    { config: { acceptTerms: false } },
-    async (req, reply) => {
-      const asset = assets.get(req.params.name);
-      if (!asset) return reply.errorPage(404);
-      return reply
-        .type(asset.type)
-        .header("cache-control", cacheControl)
-        .send(asset.body);
-    },
-  );
+  app.get<{ Params: { name: string } }>("/assets/:name", async (req, reply) => {
+    const asset = assets.get(req.params.name);
+    if (!asset) return reply.errorPage(404);
+    return reply
+      .type(asset.type)
+      .header("cache-control", cacheControl)
+      .send(asset.body);
+  });
 
   app.decorateReply("page", function (this: FastifyReply, options) {
     const req = this.request;
+    const elsewhere = this.statusCode < 400 ? gate?.(req) : undefined;
+    if (elsewhere) return this.redirect(elsewhere, 303);
     const user = req.user
       ? {
           email: req.user.email,
@@ -228,7 +240,7 @@ export function registerLayout(
         build,
         user,
         flash: takeFlash(req, this),
-        operator,
+        legalFooter: operator,
       }),
     );
   });

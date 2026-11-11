@@ -21,9 +21,7 @@ export function registerOpenApi(
   doc.set("servers", [{ url: deps.publicBaseUrl }]);
   const body = doc.toString();
 
-  app.get(
-    "/openapi.yaml",
-    { config: { acceptTerms: false } },
-    async (_req, reply) => reply.type("application/yaml").send(body),
+  app.get("/openapi.yaml", async (_req, reply) =>
+    reply.type("application/yaml").send(body),
   );
 }

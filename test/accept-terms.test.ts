@@ -253,6 +253,25 @@ describe("re-accepting the Terms", () => {
     expect((await new Browser(app).get("/")).statusCode).toBe(200);
   });
 
+  it("doesn't redirect a JSON GET from a User with Terms to accept", async () => {
+    const { browser } = await cliUser();
+
+    const res = await browser.get("/dashboard.json", {
+      accept: "application/json",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ monitors: [] });
+  });
+
+  it("doesn't redirect an error page", async () => {
+    const { browser } = await cliUser();
+
+    expect((await browser.get("/monitors/no-such-monitor")).statusCode).toBe(
+      404,
+    );
+  });
+
   it("never blocks the Telegram webhook", async () => {
     const { app } = await cliUser();
 

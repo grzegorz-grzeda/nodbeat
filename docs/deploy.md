@@ -184,13 +184,13 @@ The Operator writes the legal text; it isn't in the repo or the image. `compose.
   ```markdown
   ---
   name: Your Name or Company
-  nip: "0000000000"
+  taxId: "0000000000"
   address: ul. Example 1, 00-000 Warszawa
   email: contact@example.com
   ---
   ```
 
-Set `LEGAL_DIR=/legal` in `.env` and `docker compose up -d`. `/terms` (starting with the Operator's details) and `/privacy` appear, and every page's footer links to both and names the Operator. The files are read at startup: restart after editing them. A malformed file stops startup with its name in the error. With `LEGAL_DIR` unset or any of the three files missing, there are no legal pages, footer links or Operator details (a self-hosted instance without its own).
+Set `LEGAL_DIR=/legal` in `.env` and `docker compose up -d`. `/terms` (starting with the Operator's details) and `/privacy` appear, and every page's footer links to both and names the Operator. The files are read at startup: restart after editing them. A malformed file stops startup with its name in the error. `taxId` (shown as "Tax ID"; your NIP in Poland) is optional; the other three are required. With `LEGAL_DIR` unset or any of the three files missing, there are no legal pages, footer links or Operator details (a self-hosted instance without its own); with `LEGAL_DIR` set, startup logs a warning naming the missing files.
 
 ## 11. Releases (ADR 0005, ADR 0006)
 

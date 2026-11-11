@@ -1,5 +1,6 @@
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { loadLegalDocs } from "../src/legal.js";
 import { acceptTerms, buildTestApp, createUser, login } from "./helpers.js";
 
 const fixture = (name: string) =>
@@ -8,7 +9,7 @@ const LEGAL_DIR = fixture("legal");
 
 const OPERATOR = [
   "Fixture Operator Sp. z o.o.",
-  "NIP 1234567890",
+  "Tax ID 1234567890",
   "ul. Testowa 1, 00-001 Warszawa",
   '<a href="mailto:legal@example.com">legal@example.com</a>',
 ];
@@ -44,6 +45,15 @@ describe("Terms and Privacy pages", () => {
     );
   });
 
+  it("shows a link to another host without a scheme (`//host`) as text", async () => {
+    const { app } = await buildTestApp({ legalDir: LEGAL_DIR });
+
+    const res = await app.inject({ method: "GET", url: "/terms" });
+
+    expect(res.body).toContain("<p>An other host link stays text.</p>");
+    expect(res.body).not.toContain("evil.example");
+  });
+
   it("/terms starts with the Operator's details and the version", async () => {
     const { app } = await buildTestApp({ legalDir: LEGAL_DIR });
 
@@ -52,9 +62,20 @@ describe("Terms and Privacy pages", () => {
     const main = body.slice(body.indexOf("<main>"), body.indexOf("</main>"));
     for (const detail of OPERATOR) expect(main).toContain(detail);
     expect(main).toContain("Version 2026-12-01");
-    expect(main.indexOf("NIP 1234567890")).toBeLessThan(
+    expect(main.indexOf("Tax ID 1234567890")).toBeLessThan(
       main.indexOf("<h1>Fixture Terms</h1>"),
     );
+  });
+
+  it("the Operator's tax ID is optional", async () => {
+    const { app } = await buildTestApp({
+      legalDir: fixture("legal-no-tax-id"),
+    });
+
+    const body = (await app.inject({ method: "GET", url: "/terms" })).body;
+
+    expect(body).toMatch(/Fixture Operator Sp. z o.o. ·\s+ul. Testowa 1/);
+    expect(body).not.toContain("Tax ID");
   });
 
   it("/privacy renders the Operator's privacy.md", async () => {
@@ -79,7 +100,7 @@ describe("footer", () => {
       const body = (await app.inject({ method: "GET", url })).body;
       const footer = body.slice(body.indexOf('<footer class="site-footer">'));
       expect(footer, url).toContain('<a href="/terms">Terms</a>');
-      expect(footer, url).toContain('<a href="/privacy">Privacy</a>');
+      expect(footer, url).toContain('<a href="/privacy">Privacy policy</a>');
       for (const detail of OPERATOR) expect(footer, url).toContain(detail);
     }
   });
@@ -114,7 +135,27 @@ describe("without the Operator's files", () => {
     expect(body).not.toContain('href="/terms"');
     expect(body).not.toContain('href="/privacy"');
     expect(body).not.toContain("Operator");
-    expect(body).not.toContain("NIP");
+    expect(body).not.toContain("Tax ID");
+  });
+});
+
+describe("loadLegalDocs", () => {
+  it("warns, naming the missing files, when LEGAL_DIR is set but incomplete", () => {
+    const warn = vi.fn();
+
+    expect(loadLegalDocs(fixture("legal-partial"), warn)).toBeUndefined();
+
+    expect(warn).toHaveBeenCalledOnce();
+    expect(warn.mock.calls[0]![0]).toMatch(/privacy\.md, operator\.md/);
+  });
+
+  it("doesn't warn when LEGAL_DIR is unset or complete", () => {
+    const warn = vi.fn();
+
+    loadLegalDocs(undefined, warn);
+    loadLegalDocs(LEGAL_DIR, warn);
+
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 

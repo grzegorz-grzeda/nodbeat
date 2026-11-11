@@ -1,7 +1,7 @@
 import { hash, verify } from "@node-rs/argon2";
 import { MongoServerError, ObjectId, type Db } from "mongodb";
 import type { Clock } from "./clock.js";
-import type { LegalKind, LegalVersions } from "./legal.js";
+import { LEGAL_KINDS, type LegalKind, type LegalVersions } from "./legal.js";
 
 export const DEFAULT_TIME_ZONE = "Europe/Warsaw";
 
@@ -26,7 +26,10 @@ export interface UserDoc {
   accepted?: Acceptance;
 }
 
-export type Acceptance = Record<LegalKind, { version: string; at: Date }>;
+/** Per document, since each is accepted on its own: one may be recorded without the other. */
+export type Acceptance = Partial<
+  Record<LegalKind, { version: string; at: Date }>
+>;
 
 export interface NewUser {
   email: string;
@@ -123,10 +126,9 @@ export async function createUser(
 }
 
 function acceptance(versions: LegalVersions, at: Date): Acceptance {
-  return {
-    terms: { version: versions.terms, at },
-    privacy: { version: versions.privacy, at },
-  };
+  return Object.fromEntries(
+    LEGAL_KINDS.map((kind) => [kind, { version: versions[kind], at }]),
+  );
 }
 
 export async function findUserById(
