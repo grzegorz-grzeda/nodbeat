@@ -41,6 +41,10 @@ webhooks:
         the last error. It still gets later Alerts, and the next one delivered
         clears Failing.
 
+        "Send test" in Settings sends a test Alert at once: `kind` `down`,
+        `monitor.name` `Test Alert`, `monitor.url` the Settings page, and a
+        `monitor.id` and `incidentId` that match no Monitor or Incident.
+
         With a secret set, verify each request: compute the HMAC-SHA256 of the
         raw request body with the secret as key, hex-encode it, and compare it
         (in constant time) with `X-Nodbeat-Signature` after its `sha256=`

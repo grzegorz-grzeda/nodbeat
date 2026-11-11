@@ -19,6 +19,7 @@ import {
   createAlertDispatcher,
   ensureAlertIndexes,
   migrateAlertOutbox,
+  type AlertSenders,
 } from "./alerts.js";
 import { ensureSessionIndexes, registerAuth } from "./auth.js";
 import { registerDashboard } from "./dashboard.js";
@@ -159,12 +160,25 @@ export async function createApp(deps: AppDeps): Promise<App> {
     pruner,
     publicBaseUrl: config.publicBaseUrl,
   });
+  const senders: AlertSenders = {
+    telegram: createTelegramSender({
+      db,
+      telegram: deps.telegram,
+      log: app.log,
+    }),
+    webhook: createWebhookSender({
+      http: deps.http,
+      resolveHost: deps.resolveHost,
+    }),
+  };
   registerSettings(app, {
     db,
     clock,
     auth,
+    senders,
     channelLock,
     resolveHost: deps.resolveHost,
+    publicBaseUrl: config.publicBaseUrl,
   });
   registerAdmin(app, { db, clock });
   registerInvites(app, { db, clock, config, auth });
@@ -203,17 +217,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const dispatchAlerts = createAlertDispatcher({
     db,
     clock,
-    senders: {
-      telegram: createTelegramSender({
-        db,
-        telegram: deps.telegram,
-        log: app.log,
-      }),
-      webhook: createWebhookSender({
-        http: deps.http,
-        resolveHost: deps.resolveHost,
-      }),
-    },
+    senders,
     log: app.log,
   });
   const tick = async (): Promise<void> => {

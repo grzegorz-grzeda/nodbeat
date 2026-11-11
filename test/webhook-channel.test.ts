@@ -261,6 +261,44 @@ describe("Webhook channel", () => {
     expect((await channelItems(ctx.browser))[0]).toContain("no secret");
   });
 
+  it('"Send test" POSTs a signed test Alert, shows a failure, and clears Failing once it gets through', async () => {
+    const ctx = await loggedIn();
+    await addWebhook(ctx.browser, {
+      name: "Receiver",
+      url: "https://hooks.example.com/x",
+      secret: SECRET,
+    });
+    const m = await createMonitor(ctx.browser);
+    ctx.http.respond = () => 500;
+    await goDown(ctx, m.hb);
+    ctx.clock.advance(61 * MIN);
+    await ctx.app.tick();
+    const testAction = /<form method="post" action="([^"]+\/test)"/.exec(
+      (await channelItems(ctx.browser))[0]!,
+    )![1]!;
+    const flash = async () =>
+      /<p class="flash"[^>]*>([^<]*)<\/p>/.exec(
+        (await ctx.browser.get("/settings")).body,
+      )?.[1];
+
+    await ctx.browser.submit("/settings", testAction);
+    expect(await flash()).toBe("Test Alert to Receiver failed: HTTP 500");
+
+    ctx.http.requests.length = 0;
+    ctx.http.respond = () => 200;
+    await ctx.browser.submit("/settings", testAction);
+    expect(await flash()).toBe("Test Alert sent to Receiver.");
+    const [request] = ctx.http.requests;
+    expect(request!.headers["x-nodbeat-signature"]).toBe(
+      `sha256=${createHmac("sha256", SECRET).update(request!.body).digest("hex")}`,
+    );
+    expect(JSON.parse(request!.body)).toMatchObject({
+      kind: "down",
+      message: expect.stringContaining("Test Alert"),
+    });
+    expect((await channelItems(ctx.browser))[0]).not.toContain("Failing");
+  });
+
   it("can't be edited by another User", async () => {
     const ctx = await loggedIn();
     await addWebhook(ctx.browser, { url: "https://mine.example.com/x" });

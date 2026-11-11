@@ -2,6 +2,12 @@ import { formatDuration } from "./format.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
 import { defaultGraceSec, type Limits } from "./limits.js";
 import type { MonitorTiming } from "./monitor-state.js";
+import type { ObjectId } from "mongodb";
+import {
+  choiceOf,
+  type AlertChannelChoice,
+  type MonitorAlertChannels,
+} from "./monitor-alert-channels.js";
 
 const MAX_NAME_LENGTH = 100;
 const MAX_NOTES_LENGTH = 2000;
@@ -17,12 +23,22 @@ export interface MonitorForm {
   maxRunTime: string;
   maxRunTimeUnit: string;
   notes: string;
+  /** "all", or "chosen" for the channels in `alertChannelIds`. */
+  alertChannels: string;
+  alertChannelIds: string[];
+}
+
+/** An Alert channel the form offers. */
+export interface ChannelOption {
+  _id: ObjectId;
+  name: string;
 }
 
 /** What the form edits. `validate` always sets `maxRunTimeSec` (null: none), so saving clears a removed one. */
-export interface MonitorSettings extends MonitorTiming {
+export interface MonitorSettings extends MonitorTiming, AlertChannelChoice {
   name: string;
   notes: string;
+  alertChannels: MonitorAlertChannels;
 }
 
 export function readForm(body: unknown): MonitorForm {
@@ -38,11 +54,18 @@ export function readForm(body: unknown): MonitorForm {
     maxRunTime: field("maxRunTime"),
     maxRunTimeUnit: field("maxRunTimeUnit") || "m",
     notes: field("notes"),
+    alertChannels: field("alertChannels") === "chosen" ? "chosen" : "all",
+    alertChannelIds: (Array.isArray(b.alertChannelIds)
+      ? (b.alertChannelIds as unknown[])
+      : [b.alertChannelIds]
+    ).filter((v): v is string => typeof v === "string"),
   };
 }
 
 /** The form values that show these settings, in the largest unit that divides each duration evenly. */
-export function formFor(monitor: MonitorSettings): MonitorForm {
+export function formFor(
+  monitor: MonitorTiming & AlertChannelChoice & { name: string; notes: string },
+): MonitorForm {
   const split = (sec: number): [string, Unit] => {
     const unit =
       (["d", "h", "m", "s"] as const).find(
@@ -63,7 +86,16 @@ export function formFor(monitor: MonitorSettings): MonitorForm {
     maxRunTime,
     maxRunTimeUnit,
     notes: monitor.notes,
+    ...alertChannelsForm(choiceOf(monitor)),
   };
+}
+
+function alertChannelsForm(
+  choice: MonitorAlertChannels,
+): Pick<MonitorForm, "alertChannels" | "alertChannelIds"> {
+  return choice === "all"
+    ? { alertChannels: "all", alertChannelIds: [] }
+    : { alertChannels: "chosen", alertChannelIds: choice.map(String) };
 }
 
 function toSeconds(value: string, unit: string): number | null {
@@ -71,9 +103,11 @@ function toSeconds(value: string, unit: string): number | null {
   return Number(value.trim()) * UNIT_SEC[unit as Unit];
 }
 
+/** Checks the form; chosen Alert channels must be among `ownChannels`, the owner's. */
 export function validate(
   form: MonitorForm,
   limits: Limits,
+  ownChannels: ChannelOption[],
 ): { settings: MonitorSettings } | { errors: string[] } {
   const errors: string[] = [];
   const name = form.name.trim();
@@ -128,10 +162,30 @@ export function validate(
     }
   }
 
+  let alertChannels: MonitorAlertChannels = "all";
+  if (form.alertChannels === "chosen") {
+    const own = new Map(ownChannels.map((c) => [String(c._id), c._id]));
+    const chosen = [...new Set(form.alertChannelIds)];
+    if (chosen.every((id) => own.has(id))) {
+      alertChannels = chosen.map((id) => own.get(id)!);
+    } else {
+      errors.push("Choose only your own Alert channels.");
+    }
+  }
+
   if (errors.length > 0 || intervalSec === null || graceSec === null) {
     return { errors };
   }
-  return { settings: { name, notes, intervalSec, graceSec, maxRunTimeSec } };
+  return {
+    settings: {
+      name,
+      notes,
+      intervalSec,
+      graceSec,
+      maxRunTimeSec,
+      alertChannels,
+    },
+  };
 }
 
 /** The create form, or the edit form when `editing` is the Monitor's id. */
@@ -139,10 +193,14 @@ export function monitorFormBody(options: {
   csrf: string;
   form: MonitorForm;
   limits: Limits;
+  /** The owner's Alert channels, to choose from. */
+  channels: ChannelOption[];
   errors?: string[];
   editing?: string;
 }): SafeHtml {
-  const { csrf, form, limits, errors = [], editing } = options;
+  const { csrf, form, limits, channels, errors = [], editing } = options;
+  const chosen = form.alertChannels === "chosen";
+  const checked = new Set(form.alertChannelIds);
   const unitSelect = (name: string, selected: string) =>
     html`<select name="${name}">
       ${(
@@ -220,6 +278,48 @@ export function monitorFormBody(options: {
         <textarea name="notes" rows="3" maxlength="${MAX_NOTES_LENGTH}">
 ${form.notes}</textarea>
       </label>
+      <fieldset class="alert-channels">
+        <legend>Alert channels</legend>
+        <label
+          ><input
+            type="radio"
+            name="alertChannels"
+            value="all"
+            ${chosen ? "" : html`checked`}
+          />
+          All Alert channels, including ones added later</label
+        >
+        <label
+          ><input
+            type="radio"
+            name="alertChannels"
+            value="chosen"
+            ${chosen ? html`checked` : ""}
+          />
+          Only these:</label
+        >
+        ${
+          channels.length === 0
+            ? html`<p>
+                <small
+                  >No Alert channels yet. Add one in
+                  <a href="/settings">Settings</a>.</small
+                >
+              </p>`
+            : channels.map(
+                (c) =>
+                  html`<label class="channel-choice"
+                    ><input
+                      type="checkbox"
+                      name="alertChannelIds"
+                      value="${String(c._id)}"
+                      ${checked.has(String(c._id)) ? html`checked` : ""}
+                    />
+                    ${c.name}</label
+                  >`,
+              )
+        }
+      </fieldset>
       <button type="submit">${editing ? "Save" : "Create Monitor"}</button>
     </form>`;
 }

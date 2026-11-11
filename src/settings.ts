@@ -27,8 +27,10 @@ import {
   OutboundUrlError,
   type HostResolver,
 } from "./outbound-http.js";
+import type { AlertSenders } from "./alerts.js";
 import { createLinkCode, findActiveLinkCode } from "./linked-chats.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
+import { testAlertChannel } from "./test-alert.js";
 import {
   authenticate,
   isTheme,
@@ -78,6 +80,9 @@ function channelDetails(channel: AlertChannelDoc, timeZone: string) {
 /** Link codes a User may generate per hour. */
 const LINK_CODE_MAX = 10;
 const LINK_CODE_WINDOW_MS = 60 * 60 * 1000;
+/** Test Alerts a User may send per minute. */
+const TEST_ALERT_MAX = 5;
+const TEST_ALERT_WINDOW_MS = 60 * 1000;
 
 export function registerSettings(
   app: FastifyInstance,
@@ -85,12 +90,20 @@ export function registerSettings(
     db: Db;
     clock: Clock;
     auth: Auth;
+    senders: AlertSenders;
     /** Guards the per-User Alert channel limit, shared with linking a Telegram chat. */
     channelLock: KeyedLock;
     resolveHost: HostResolver;
+    publicBaseUrl: string;
   },
 ): void {
-  const { db, clock, auth, channelLock, resolveHost } = deps;
+  const { db, clock, auth, senders, channelLock, resolveHost, publicBaseUrl } =
+    deps;
+  const testAlertsPerUser = new SlidingWindowLimiter(
+    clock,
+    TEST_ALERT_MAX,
+    TEST_ALERT_WINDOW_MS,
+  );
   const linkCodesPerUser = new SlidingWindowLimiter(
     clock,
     LINK_CODE_MAX,
@@ -161,6 +174,10 @@ export function registerSettings(
                       ${formatDateTime(c.createdAt, user.timeZone)}</small
                     >
                     ${channelDetails(c, user.timeZone)}
+                    <form method="post" action="${path}/test">
+                      ${csrfField(csrf)}
+                      <button type="submit" class="secondary">Send test</button>
+                    </form>
                     <a href="${path}/delete" class="button secondary">Remove</a>
                   </li>`;
                 })}
@@ -584,6 +601,38 @@ export function registerSettings(
         req.params.id,
       );
       if (channel) setFlash(reply, `${channel.name} removed.`);
+      return reply.redirect("/settings", 303);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/settings/channels/:id/test",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const user = req.user!;
+      const channel = await findAlertChannel(db, user._id, req.params.id);
+      if (!channel) {
+        return reply.errorPage(404);
+      }
+      if (!testAlertsPerUser.tryAcquire(String(user._id))) {
+        reply.code(429);
+        return settingsPage(req, reply, {
+          channelError: "Too many test Alerts. Try again in a minute.",
+        });
+      }
+      const result = await testAlertChannel(
+        db,
+        senders,
+        channel,
+        clock.now(),
+        publicBaseUrl,
+      );
+      setFlash(
+        reply,
+        result.ok
+          ? `Test Alert sent to ${channel.name}.`
+          : `Test Alert to ${channel.name} failed: ${result.error}`,
+      );
       return reply.redirect("/settings", 303);
     },
   );

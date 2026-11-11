@@ -6,6 +6,7 @@ import {
   type TelegramChannelDoc,
 } from "./alert-channels.js";
 import type { KeyedLock } from "./keyed-lock.js";
+import { pullFromMonitors } from "./monitor-alert-channels.js";
 
 export const LINK_CODE_LENGTH = 8;
 export const LINK_CODE_TTL_MS = 10 * 60 * 1000;
@@ -123,21 +124,28 @@ export async function linkChat(
   );
 }
 
-/** Owners of every Link of this Telegram chat, earliest Link first. */
-export async function ownersOfChat(
+/** Every Link of this Telegram chat: its owner and Alert channel id, earliest Link first. */
+export async function linksOfChat(
   db: Db,
   chatId: number,
-): Promise<ObjectId[]> {
+): Promise<Array<{ ownerId: ObjectId; channelId: ObjectId }>> {
   const docs = await linkedChats(db)
     .find({ ...TELEGRAM, chatId })
     .sort({ createdAt: 1, _id: 1 })
     .toArray();
-  return docs.map((d) => d.ownerId);
+  return docs.map((d) => ({ ownerId: d.ownerId, channelId: d._id }));
 }
 
-/** Removes every Link of this Telegram chat. Returns how many were removed. */
+/** Removes every Link of this Telegram chat, also from Monitors' chosen lists. Returns how many were removed. */
 export async function unlinkChat(db: Db, chatId: number): Promise<number> {
-  const res = await linkedChats(db).deleteMany({ ...TELEGRAM, chatId });
+  const ids = (
+    await linkedChats(db)
+      .find({ ...TELEGRAM, chatId }, { projection: { _id: 1 } })
+      .toArray()
+  ).map((d) => d._id);
+  if (ids.length === 0) return 0;
+  const res = await linkedChats(db).deleteMany({ _id: { $in: ids } });
+  await pullFromMonitors(db, ids);
   return res.deletedCount;
 }
 

@@ -1,6 +1,7 @@
 import { MongoServerError, ObjectId, type Db, type Filter } from "mongodb";
 import { parseObjectId } from "./ids.js";
 import type { KeyedLock } from "./keyed-lock.js";
+import { pullFromMonitors } from "./monitor-alert-channels.js";
 
 /** Fields every Alert channel has, whatever its kind. */
 interface AlertChannelBase {
@@ -152,7 +153,10 @@ export async function renameAlertChannel(
   );
 }
 
-/** Removes one of the User's Alert channels. Returns it, or null when it isn't theirs or doesn't exist. */
+/**
+ * Removes one of the User's Alert channels and takes it out of their Monitors' chosen lists. Returns it, or null when
+ * it isn't theirs or doesn't exist.
+ */
 export async function removeAlertChannel(
   db: Db,
   ownerId: ObjectId,
@@ -160,7 +164,9 @@ export async function removeAlertChannel(
 ): Promise<AlertChannelDoc | null> {
   const _id = parseObjectId(id);
   if (!_id) return null;
-  return alertChannels(db).findOneAndDelete({ _id, ownerId });
+  const removed = await alertChannels(db).findOneAndDelete({ _id, ownerId });
+  if (removed) await pullFromMonitors(db, [removed._id]);
+  return removed;
 }
 
 /** The User already has as many Alert channels as their limit allows. */

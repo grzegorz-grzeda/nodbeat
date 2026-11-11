@@ -12,6 +12,11 @@ import { formatDateTime, formatDuration } from "./format.js";
 import type { IncidentDoc } from "./incidents.js";
 import type { IncidentCause } from "./monitor-state.js";
 import { findLinkedChatByChatId, moveLinkedChats } from "./linked-chats.js";
+import {
+  channelsOfMonitor,
+  replaceInMonitors,
+  type AlertChannelChoice,
+} from "./monitor-alert-channels.js";
 import type { SendMessageOptions } from "./telegram.js";
 import { DEFAULT_TIME_ZONE, findUserById } from "./users.js";
 
@@ -121,8 +126,8 @@ export async function migrateAlertOutbox(db: Db): Promise<void> {
   }
 }
 
-/** The part of a Monitor an Alert is built from. */
-export interface AlertedMonitor {
+/** The part of a Monitor an Alert is built from and addressed by. */
+export interface AlertedMonitor extends AlertChannelChoice {
   _id: ObjectId;
   ownerId: ObjectId;
   name: string;
@@ -130,7 +135,7 @@ export interface AlertedMonitor {
   lastMessage: string | null;
 }
 
-/** Puts an Alert about `incident` in the outbox, addressed to the owner's Alert channels at this moment. */
+/** Puts an Alert about `incident` in the outbox, addressed to the Monitor's Alert channels at this moment; none → nothing. */
 export async function enqueueAlert(
   db: Db,
   monitor: AlertedMonitor,
@@ -139,10 +144,11 @@ export async function enqueueAlert(
   now: Date,
   publicBaseUrl: string,
 ): Promise<void> {
-  const [owner, channels] = await Promise.all([
+  const [owner, ownerChannels] = await Promise.all([
     findUserById(db, monitor.ownerId),
     listAlertChannels(db, monitor.ownerId),
   ]);
+  const channels = channelsOfMonitor(monitor, ownerChannels);
   if (channels.length === 0) return;
   const timeZone = owner?.timeZone ?? DEFAULT_TIME_ZONE;
   const details: AlertDetails = {
@@ -234,7 +240,8 @@ function alertText(
 
 /**
  * Follows a group upgraded to a supergroup: its Linked chats move to the new chat id. Where an owner already had the
- * new id linked, the old Linked chat is merged into that one, and its pending Alerts are readdressed to it.
+ * new id linked, the old Linked chat is merged into that one, and its pending Alerts and Monitors' chosen lists are
+ * readdressed to it.
  */
 export async function migrateChat(
   db: Db,
@@ -242,6 +249,7 @@ export async function migrateChat(
   toChatId: number,
 ): Promise<void> {
   for (const { from, to } of await moveLinkedChats(db, fromChatId, toChatId)) {
+    await replaceInMonitors(db, from, to);
     await outbox(db).updateMany({ channelIds: from }, [
       {
         $set: {
