@@ -123,9 +123,15 @@ function readMessage(req: FastifyRequest): string | null {
 
 export async function registerHeartbeatIntake(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; lock: KeyedLock; pruner: LogPruner },
+  deps: {
+    db: Db;
+    clock: Clock;
+    lock: KeyedLock;
+    pruner: LogPruner;
+    publicBaseUrl: string;
+  },
 ): Promise<void> {
-  const { db, clock, lock, pruner } = deps;
+  const { db, clock, lock, pruner, publicBaseUrl } = deps;
   const perMonitor = new SlidingWindowLimiter(clock, 1, 1000);
   // Scanning for Heartbeat URLs: an IP over this many unknown tokens is refused before any database lookup.
   const unknownTokens = new SlidingWindowLimiter(
@@ -178,7 +184,7 @@ export async function registerHeartbeatIntake(
           userAgent: readUserAgent(req),
         }),
       ]);
-      await applyEffects(db, current, effects, now);
+      await applyEffects(db, current, effects, now, publicBaseUrl);
       pruner.mark(current._id);
       return true;
     });

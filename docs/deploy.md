@@ -20,17 +20,10 @@ From nothing to a running `https://nodbeat.g2labs.pl` on the VPS. The VPS alread
 
 1. In Telegram, talk to [@BotFather](https://t.me/BotFather): `/newbot`, choose a name and a username (e.g. `nodbeat_bot`).
 2. Copy the bot token into `TELEGRAM_BOT_TOKEN`.
-3. Optionally set the description and commands (`/setcommands`):
-
-   ```
-   start - Link this chat with a code from Settings
-   status - Show your Monitors
-   unlink - Stop Alerts in this chat
-   ```
-
+3. Optionally set the description (`/setdescription`). The command menu is set by nodbeat at startup.
 4. Generate a webhook secret for `TELEGRAM_WEBHOOK_SECRET`: `openssl rand -hex 32` (Telegram allows `A-Z a-z 0-9 _ -` only).
 
-There's no need to call `setWebhook` yourself: at every startup nodbeat registers `PUBLIC_BASE_URL/telegram/webhook` with that secret. A failure is logged and doesn't stop startup.
+There's no need to call `setWebhook` or `setMyCommands` yourself: at every startup nodbeat registers `PUBLIC_BASE_URL/telegram/webhook` with that secret (receiving only `message` and `my_chat_member` updates) and sets the command menu (`start`, `status`, `unlink`). A failure is logged and doesn't stop startup.
 
 ## 3. DNS
 

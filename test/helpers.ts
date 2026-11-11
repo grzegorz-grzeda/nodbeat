@@ -7,8 +7,12 @@ import type { BuildInfo } from "../src/build-info.js";
 import type { Clock } from "../src/clock.js";
 import type { Config } from "../src/config.js";
 import {
+  TelegramChatMigratedError,
   TelegramForbiddenError,
   type ChatMemberStatus,
+  type SendMessageOptions,
+  type BotCommand,
+  type UpdateType,
   type TelegramClient,
 } from "../src/telegram.js";
 
@@ -31,6 +35,7 @@ export class FakeClock implements Clock {
 export interface SentMessage {
   chatId: number;
   text: string;
+  options: SendMessageOptions;
 }
 
 const memberKey = (chatId: number, userId: number) => `${chatId}:${userId}`;
@@ -45,14 +50,29 @@ export class RecordingTelegram implements TelegramClient {
   /** Sends to these chats fail with HTTP 403: the bot was blocked or removed. */
   readonly forbiddenChats = new Set<number>();
 
-  async sendMessage(chatId: number, text: string): Promise<void> {
+  /** Sends to these chats fail with HTTP 400 and the new id: the group was upgraded to a supergroup. */
+  readonly migratedChats = new Map<number, number>();
+
+  /** Runs before every send, e.g. to make an Update arrive while an Alert is being sent. */
+  beforeSend: ((chatId: number) => Promise<void>) | null = null;
+
+  async sendMessage(
+    chatId: number,
+    text: string,
+    options: SendMessageOptions = {},
+  ): Promise<void> {
+    await this.beforeSend?.(chatId);
+    const newChatId = this.migratedChats.get(chatId);
+    if (newChatId !== undefined) {
+      throw new TelegramChatMigratedError("sendMessage", newChatId);
+    }
     if (this.forbiddenChats.has(chatId)) {
       throw new TelegramForbiddenError("sendMessage");
     }
     if (this.failing || this.failingChats.has(chatId)) {
       throw new Error("telegram unavailable");
     }
-    this.sent.push({ chatId, text });
+    this.sent.push({ chatId, text, options });
   }
 
   readonly #memberStatuses = new Map<string, ChatMemberStatus>();
@@ -79,10 +99,29 @@ export class RecordingTelegram implements TelegramClient {
     return this.#memberStatuses.get(memberKey(chatId, userId)) ?? "member";
   }
 
-  readonly webhooks: Array<{ url: string; secretToken: string }> = [];
+  readonly webhooks: Array<{
+    url: string;
+    secretToken: string;
+    allowedUpdates: UpdateType[];
+  }> = [];
 
-  async setWebhook(url: string, secretToken: string): Promise<void> {
-    this.webhooks.push({ url, secretToken });
+  async setWebhook(
+    url: string,
+    secretToken: string,
+    allowedUpdates: UpdateType[],
+  ): Promise<void> {
+    if (this.failingSetup) throw new Error("telegram unavailable");
+    this.webhooks.push({ url, secretToken, allowedUpdates });
+  }
+
+  /** `setWebhook` and `setMyCommands` fail, e.g. Telegram is down at startup. */
+  failingSetup = false;
+
+  readonly commandMenus: BotCommand[][] = [];
+
+  async setMyCommands(commands: BotCommand[]): Promise<void> {
+    if (this.failingSetup) throw new Error("telegram unavailable");
+    this.commandMenus.push(commands);
   }
 }
 

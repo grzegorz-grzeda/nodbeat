@@ -3,10 +3,12 @@ import {
   buildTestApp,
   createUser,
   login,
+  restartApp,
   testConfig,
   type Browser,
   type TestContext,
 } from "./helpers.js";
+import { createHttpTelegramClient } from "../src/telegram.js";
 
 const MIN = 60 * 1000;
 const PRIVATE_CHAT = { id: 1001, type: "private", first_name: "Grzegorz" };
@@ -242,6 +244,51 @@ describe("Linked chats", () => {
     ]);
   });
 
+  it("are unlinked as soon as the bot is removed from the group", async () => {
+    const ctx = await loggedIn();
+    await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(ctx.browser)}`);
+    await say(
+      ctx,
+      PRIVATE_CHAT,
+      `/start ${await generateLinkCode(ctx.browser)}`,
+    );
+
+    const res = await sendUpdate(ctx, {
+      update_id: ++updateId,
+      my_chat_member: {
+        chat: GROUP_CHAT,
+        from: { id: SENDER_ID, is_bot: false, first_name: "Grzegorz" },
+        date: 0,
+        old_chat_member: { user: { id: 1, is_bot: true }, status: "member" },
+        new_chat_member: { user: { id: 1, is_bot: true }, status: "kicked" },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const settings = (await ctx.browser.get("/settings")).body;
+    expect(settings).not.toContain("Garden project");
+    expect(settings).toContain("Grzegorz");
+  });
+
+  it("stay linked when the bot's membership changes otherwise", async () => {
+    const ctx = await loggedIn();
+    await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(ctx.browser)}`);
+
+    await sendUpdate(ctx, {
+      update_id: ++updateId,
+      my_chat_member: {
+        chat: GROUP_CHAT,
+        date: 0,
+        new_chat_member: {
+          user: { id: 1, is_bot: true },
+          status: "administrator",
+        },
+      },
+    });
+    expect((await ctx.browser.get("/settings")).body).toContain(
+      "Garden project",
+    );
+  });
+
   it("cannot be removed by another User", async () => {
     const ctx = await loggedIn();
     await say(
@@ -430,6 +477,69 @@ describe("startup", () => {
       {
         url: "https://nodbeat.test/telegram/webhook",
         secretToken: testConfig.telegramWebhookSecret,
+        allowedUpdates: ["message", "my_chat_member"],
+      },
+    ]);
+  });
+
+  it("sets the bot's command menu", async () => {
+    const ctx = await buildTestApp();
+    expect(ctx.telegram.commandMenus).toEqual([
+      [
+        {
+          command: "start",
+          description: "Link this chat with a code from Settings",
+        },
+        { command: "status", description: "Show your Monitors" },
+        { command: "unlink", description: "Stop Alerts in this chat" },
+      ],
+    ]);
+  });
+
+  it("logs a failed command menu setup and starts anyway", async () => {
+    const ctx = await buildTestApp();
+    ctx.telegram.failingSetup = true;
+    const app = await restartApp(ctx);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(ctx.logs).toContainEqual(
+      expect.objectContaining({
+        msg: "setting the Telegram command menu failed",
+      }),
+    );
+    expect(
+      (await app.inject({ method: "GET", url: "/health" })).statusCode,
+    ).toBe(200);
+  });
+});
+
+describe("Telegram HTTP client", () => {
+  /** A client whose requests are recorded instead of sent; Telegram answers OK. */
+  const recordingClient = () => {
+    const bodies: unknown[] = [];
+    const fetchFn = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(init.body as string));
+      return new Response(JSON.stringify({ ok: true, result: true }));
+    }) as typeof fetch;
+    return { client: createHttpTelegramClient("123:token", fetchFn), bodies };
+  };
+
+  it("sends a message with a sound unless asked to be silent", async () => {
+    const { client, bodies } = recordingClient();
+    await client.sendMessage(1, "down", {
+      parseMode: "HTML",
+      disableNotification: false,
+    });
+    await client.sendMessage(1, "up", {
+      parseMode: "HTML",
+      disableNotification: true,
+    });
+    expect(bodies).toEqual([
+      { chat_id: 1, text: "down", parse_mode: "HTML" },
+      {
+        chat_id: 1,
+        text: "up",
+        parse_mode: "HTML",
+        disable_notification: true,
       },
     ]);
   });

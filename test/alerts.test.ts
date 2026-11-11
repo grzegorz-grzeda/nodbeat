@@ -13,6 +13,8 @@ const SEC = 1000;
 const MIN = 60 * SEC;
 const PRIVATE_CHAT = { id: 1001, type: "private", first_name: "Grzegorz" };
 const GROUP_CHAT = { id: -2002, type: "group", title: "Garden project" };
+/** The id Telegram gives GROUP_CHAT when upgrading it to a supergroup. */
+const SUPERGROUP_ID = -1009990002002;
 
 type Chat = { id: number; type: string; title?: string; first_name?: string };
 
@@ -40,19 +42,32 @@ async function linkChat(ctx: TestContext, browser: Browser, chat: Chat) {
   const code = /<code class="link-code">([A-Z0-9]{8})<\/code>/.exec(
     settings.body,
   )![1]!;
-  await ctx.app.inject({
+  await sendUpdate(ctx, {
+    message: { message_id: updateId, chat, date: 0, text: `/start ${code}` },
+  });
+  ctx.telegram.sent.length = 0;
+}
+
+function sendUpdate(ctx: TestContext, update: Record<string, unknown>) {
+  return ctx.app.inject({
     method: "POST",
     url: "/telegram/webhook",
     headers: {
       "x-telegram-bot-api-secret-token": testConfig.telegramWebhookSecret,
     },
-    payload: {
-      update_id: ++updateId,
-      message: { message_id: updateId, chat, date: 0, text: `/start ${code}` },
-    },
+    payload: { update_id: ++updateId, ...update },
   });
-  ctx.telegram.sent.length = 0;
 }
+
+/** The service message Telegram sends in a group upgraded to a supergroup. */
+const migrateUpdate = (chat: Chat, newChatId: number) => ({
+  message: {
+    message_id: updateId,
+    chat,
+    date: 0,
+    migrate_to_chat_id: newChatId,
+  },
+});
 
 /** Creates a Monitor and returns its page path and Heartbeat path. */
 async function createMonitor(
@@ -84,8 +99,11 @@ async function goDown(ctx: TestContext, hb: string) {
   await ctx.app.tick();
 }
 
+/** An Alert's text as the chat shows it: Telegram HTML tags dropped. */
+const shown = (text: string) => text.replace(/<[^>]*>/g, "");
+
 const firstLines = (ctx: TestContext) =>
-  ctx.telegram.sent.map((s) => s.text.split("\n")[0]);
+  ctx.telegram.sent.map((s) => shown(s.text).split("\n")[0]);
 
 describe("Alerts", () => {
   it("sends a Down Alert to every Linked chat, then an Up Alert with the Incident duration", async () => {
@@ -101,7 +119,7 @@ describe("Alerts", () => {
       PRIVATE_CHAT.id,
     ]);
     for (const s of ctx.telegram.sent) {
-      expect(s.text).toContain("Garden sensor is Down");
+      expect(shown(s.text)).toContain("Garden sensor is Down");
       expect(s.text).toContain("2026-01-01 01:01:30");
     }
     ctx.telegram.sent.length = 0;
@@ -111,7 +129,7 @@ describe("Alerts", () => {
     await ctx.app.tick();
     expect(ctx.telegram.sent).toHaveLength(2);
     for (const s of ctx.telegram.sent) {
-      expect(s.text).toContain("Garden sensor is Up");
+      expect(shown(s.text)).toContain("Garden sensor is Up");
       expect(s.text).toContain("31 s");
       expect(s.text).toContain("2026-01-01 01:02:01");
     }
@@ -277,7 +295,7 @@ describe("Alerts", () => {
     expect(ctx.logs).toContainEqual(
       expect.objectContaining({ chatId: GROUP_CHAT.id }),
     );
-    // Every Link of the chat is gone, not just the Alert owner's.
+    // The chat is unlinked for every owner, not just the Alert owner.
     for (const browser of [ctx.browser, other.browser]) {
       expect((await browser.get("/settings")).body).not.toContain(
         "Garden project",
@@ -288,6 +306,118 @@ describe("Alerts", () => {
     ctx.clock.advance(10 * MIN);
     await ctx.app.tick();
     expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([PRIVATE_CHAT.id]);
+  });
+
+  it("follows a group upgraded to a supergroup: the chat stays linked and Alerts go to the new id", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+
+    const res = await sendUpdate(ctx, migrateUpdate(GROUP_CHAT, SUPERGROUP_ID));
+    expect(res.statusCode).toBe(200);
+    expect((await ctx.browser.get("/settings")).body).toContain(
+      "Garden project",
+    );
+
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([SUPERGROUP_ID]);
+  });
+
+  it("moves a pending Alert to the new id when the group is upgraded to a supergroup", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failingChats.add(GROUP_CHAT.id);
+    await goDown(ctx, m.hb); // first attempt fails; next one 30 s later
+
+    await sendUpdate(ctx, migrateUpdate(GROUP_CHAT, SUPERGROUP_ID));
+    ctx.clock.advance(30 * SEC);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([SUPERGROUP_ID]);
+  });
+
+  it("delivers an Alert to the new id at once when Telegram says the group became a supergroup", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.migratedChats.set(GROUP_CHAT.id, SUPERGROUP_ID);
+
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent).toEqual([
+      expect.objectContaining({
+        chatId: SUPERGROUP_ID,
+        text: expect.stringContaining("is Down"),
+      }),
+    ]);
+    // Later Alerts go straight to the new id.
+    await sendHeartbeat(ctx, m.hb);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([
+      SUPERGROUP_ID,
+      SUPERGROUP_ID,
+    ]);
+    expect((await ctx.browser.get("/settings")).body).toContain(
+      "Garden project",
+    );
+  });
+
+  it("sends an Alert only once to a chat that is also where a migrated group moved", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    await linkChat(ctx, ctx.browser, {
+      id: SUPERGROUP_ID,
+      type: "supergroup",
+      title: "Garden project",
+    });
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.migratedChats.set(GROUP_CHAT.id, SUPERGROUP_ID);
+
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([SUPERGROUP_ID]);
+  });
+
+  it("still delivers to the other chats when following a migrated group fails, and retries it", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.migratedChats.set(GROUP_CHAT.id, SUPERGROUP_ID);
+    // The database refuses to move the Linked chat, e.g. it is unavailable.
+    await ctx.db.command({
+      collMod: "linkedChats",
+      validator: { chatId: { $ne: SUPERGROUP_ID } },
+      validationAction: "error",
+    });
+
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([PRIVATE_CHAT.id]);
+
+    await ctx.db.command({ collMod: "linkedChats", validator: {} });
+    ctx.clock.advance(30 * SEC);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([
+      PRIVATE_CHAT.id,
+      SUPERGROUP_ID,
+    ]);
+  });
+
+  it("retries at the new id when the group is upgraded to a supergroup while its send is failing", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failingChats.add(GROUP_CHAT.id);
+    ctx.telegram.beforeSend = async (chatId) => {
+      if (chatId !== GROUP_CHAT.id) return;
+      ctx.telegram.beforeSend = null;
+      await sendUpdate(ctx, migrateUpdate(GROUP_CHAT, SUPERGROUP_ID));
+    };
+
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent).toEqual([]);
+
+    ctx.clock.advance(30 * SEC);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([SUPERGROUP_ID]);
   });
 
   it("delivers a Monitor's Alerts in order", async () => {
@@ -358,7 +488,9 @@ describe("Alerts", () => {
     await ctx.app.tick();
 
     expect(ctx.telegram.sent).toHaveLength(1);
-    expect(ctx.telegram.sent[0]!.text).toContain("Garden sensor is Up again");
+    expect(shown(ctx.telegram.sent[0]!.text)).toContain(
+      "Garden sensor is Up again",
+    );
     expect(ctx.telegram.sent[0]!.text).toContain("11 s Down");
   });
 
@@ -375,7 +507,9 @@ describe("Alerts", () => {
     await app.tick();
 
     expect(ctx.telegram.sent).toHaveLength(1);
-    expect(ctx.telegram.sent[0]!.text).toContain("Garden sensor is Down");
+    expect(shown(ctx.telegram.sent[0]!.text)).toContain(
+      "Garden sensor is Down",
+    );
   });
 
   it("drops a deleted Monitor's pending Alerts", async () => {
@@ -391,5 +525,146 @@ describe("Alerts", () => {
     await ctx.app.tick();
 
     expect(ctx.telegram.sent).toEqual([]);
+  });
+
+  describe("Alert text", () => {
+    it("sends a Down Alert in Telegram HTML with the bold name, the last Heartbeat message and a link", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      await ctx.app.inject({
+        method: "GET",
+        url: `${m.hb}?msg=battery%203.1V`,
+      });
+      ctx.clock.advance(91 * SEC);
+      await ctx.app.tick();
+
+      expect(ctx.telegram.sent).toHaveLength(1);
+      const [down] = ctx.telegram.sent;
+      expect(down!.options).toEqual({
+        parseMode: "HTML",
+        disableNotification: false,
+      });
+      expect(down!.text).toBe(
+        "🔴 <b>Garden sensor</b> is Down\n" +
+          "Since 2026-01-01 01:01:30 (Europe/Warsaw)\n" +
+          "Last message: battery 3.1V\n" +
+          `<a href="https://nodbeat.test${m.page}">Open Monitor</a>`,
+      );
+    });
+
+    it("leaves the message line out of a Down Alert when the last Heartbeat had none", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      await goDown(ctx, m.hb);
+
+      expect(ctx.telegram.sent[0]!.text).not.toContain("Last message");
+    });
+
+    it("sends an Up Alert in Telegram HTML with the bold name, the Down duration and a link", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      await goDown(ctx, m.hb);
+      ctx.telegram.sent.length = 0;
+      ctx.clock.advance(30 * SEC);
+      await ctx.app.inject({ method: "GET", url: `${m.hb}?msg=back` });
+      await ctx.app.tick();
+
+      expect(ctx.telegram.sent).toHaveLength(1);
+      const [up] = ctx.telegram.sent;
+      expect(up!.options).toEqual({
+        parseMode: "HTML",
+        disableNotification: true,
+      });
+      expect(up!.text).toBe(
+        "🟢 <b>Garden sensor</b> is Up again\n" +
+          "At 2026-01-01 01:02:01 (Europe/Warsaw), after 31 s Down\n" +
+          `<a href="https://nodbeat.test${m.page}">Open Monitor</a>`,
+      );
+    });
+
+    it("sends the Up Alert silently and the Down Alert with a sound", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      await goDown(ctx, m.hb);
+      await ctx.app.inject({ method: "GET", url: m.hb });
+      await ctx.app.tick();
+
+      const [down, up] = ctx.telegram.sent;
+      expect(down!.text).toContain("is Down");
+      // Only `true` silences a message (see the Telegram HTTP client test).
+      expect(down!.options.disableNotification).not.toBe(true);
+      expect(up!.text).toContain("is Up again");
+      expect(up!.options.disableNotification).toBe(true);
+    });
+
+    it("escapes the Monitor name and the Heartbeat message for Telegram HTML", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser, '<b>&co</b> "x"');
+      await ctx.app.inject({
+        method: "GET",
+        url: `${m.hb}?msg=${encodeURIComponent('v < 3 & t > 40 "ok"')}`,
+      });
+      ctx.clock.advance(91 * SEC);
+      await ctx.app.tick();
+
+      const text = ctx.telegram.sent[0]!.text;
+      expect(text).toContain(
+        "🔴 <b>&lt;b&gt;&amp;co&lt;/b&gt; &quot;x&quot;</b> is Down",
+      );
+      expect(text).toContain(
+        "Last message: v &lt; 3 &amp; t &gt; 40 &quot;ok&quot;",
+      );
+    });
+
+    it("keeps the text built when the Alert was enqueued", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      ctx.telegram.failing = true;
+      await goDown(ctx, m.hb);
+      ctx.telegram.failing = false;
+      await ctx.browser.submit(`${m.page}/edit`, `${m.page}/edit`, {
+        name: "Renamed",
+        interval: "60",
+        intervalUnit: "s",
+        grace: "30",
+        graceUnit: "s",
+      });
+
+      ctx.clock.advance(30 * SEC);
+      await ctx.app.tick();
+
+      expect(ctx.telegram.sent).toHaveLength(1);
+      expect(ctx.telegram.sent[0]!.text).toContain("<b>Garden sensor</b>");
+    });
+
+    it("sends bot command replies as plain text", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      await ctx.app.inject({
+        method: "POST",
+        url: "/telegram/webhook",
+        headers: {
+          "x-telegram-bot-api-secret-token": testConfig.telegramWebhookSecret,
+        },
+        payload: {
+          update_id: ++updateId,
+          message: {
+            message_id: updateId,
+            chat: PRIVATE_CHAT,
+            date: 0,
+            text: "/status",
+          },
+        },
+      });
+
+      expect(ctx.telegram.sent).toHaveLength(1);
+      expect(ctx.telegram.sent[0]!.options).toEqual({});
+    });
   });
 });

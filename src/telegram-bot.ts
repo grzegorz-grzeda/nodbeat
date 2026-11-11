@@ -4,6 +4,7 @@ import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { formatAgo, formatDuration } from "./format.js";
+import { migrateChat } from "./alerts.js";
 import {
   linkChat,
   ownersOfChat,
@@ -13,10 +14,20 @@ import {
 import { STATE_LABELS } from "./monitor-state.js";
 import { listMonitors } from "./monitors.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
-import type { ChatMemberStatus, TelegramClient } from "./telegram.js";
+import type {
+  BotCommand,
+  ChatMemberStatus,
+  TelegramClient,
+} from "./telegram.js";
 import { findUserById } from "./users.js";
 
 const WEBHOOK_PATH = "/telegram/webhook";
+/** The bot's command menu, set at every startup. */
+const COMMAND_MENU: BotCommand[] = [
+  { command: "start", description: "Link this chat with a code from Settings" },
+  { command: "status", description: "Show your Monitors" },
+  { command: "unlink", description: "Stop Alerts in this chat" },
+];
 const SECRET_HEADER = "x-telegram-bot-api-secret-token";
 /** Guesses at Link codes allowed per chat. */
 const START_MAX_ATTEMPTS = 10;
@@ -44,8 +55,21 @@ interface Update {
     text?: unknown;
     chat?: { id?: unknown };
     from?: { id?: unknown };
+    /** Set on the service message of a group upgraded to a supergroup. */
+    migrate_to_chat_id?: unknown;
+  };
+  /** The bot's own membership in a chat changed. */
+  my_chat_member?: {
+    chat?: { id?: unknown };
+    new_chat_member?: { status?: unknown };
   };
 }
+
+/** The bot's membership statuses that mean it can no longer write to the chat. */
+const REMOVED_STATUSES: ReadonlySet<ChatMemberStatus> = new Set([
+  "left",
+  "kicked",
+]);
 
 /** A bot command as sent: the chat, the text after the command and the sending Telegram user. */
 interface CommandMessage {
@@ -192,8 +216,24 @@ export function registerTelegramBot(
   };
 
   const handle = async (update: Update): Promise<void> => {
+    const member = update.my_chat_member;
+    const status = member?.new_chat_member?.status;
+    if (
+      typeof member?.chat?.id === "number" &&
+      typeof status === "string" &&
+      REMOVED_STATUSES.has(status)
+    ) {
+      // The bot was removed from the group or blocked: unlink the chat, the same as /unlink.
+      await unlinkChat(db, member.chat.id);
+      return;
+    }
     const text = update.message?.text;
     const chat = update.message?.chat as TelegramChat | undefined;
+    const migratedTo = update.message?.migrate_to_chat_id;
+    if (typeof chat?.id === "number" && typeof migratedTo === "number") {
+      await migrateChat(db, chat.id, migratedTo);
+      return;
+    }
     if (typeof chat?.id !== "number" || typeof text !== "string") return;
     const parsed = parseCommand(text);
     if (!parsed) return;
@@ -229,8 +269,14 @@ export function registerTelegramBot(
     .setWebhook(
       `${config.publicBaseUrl}${WEBHOOK_PATH}`,
       config.telegramWebhookSecret,
+      ["message", "my_chat_member"],
     )
     .catch((err: unknown) =>
       app.log.error({ err }, "registering the Telegram webhook failed"),
+    );
+  telegram
+    .setMyCommands(COMMAND_MENU)
+    .catch((err: unknown) =>
+      app.log.error({ err }, "setting the Telegram command menu failed"),
     );
 }
