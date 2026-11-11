@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- Backups are encrypted with `age` on the VPS before upload (`nodbeat-*.archive.gz.age`); no plaintext archive touches the disk. `scripts/backup.sh` now needs `BACKUP_AGE_RECIPIENT` and refuses to run without it. See `docs/deploy.md` step 8 for the key pair, restoring and deleting old unencrypted backups.
+
 ## [0.20.0] - 2026-11-11
 
 ### Added
