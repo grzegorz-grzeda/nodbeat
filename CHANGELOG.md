@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-11-11
+
 ### Added
 
 - Terms and Privacy pages: with the new optional `LEGAL_DIR` set, `/terms` and `/privacy` show the Operator's own `terms.md` and `privacy.md` (front-matter `version` date and `summary`), rendered at startup with a small Markdown subset (headings, paragraphs, lists, links; raw HTML shows as text). `operator.md` holds the Operator's name, address, contact email and optional `taxId` (shown as "Tax ID"): `/terms` starts with them, and the footer of every page names the Operator and links to both pages. With `LEGAL_DIR` unset or a file missing there are no pages (`404`), footer links or Operator details (with `LEGAL_DIR` set, startup logs a warning naming the missing files); a malformed file stops startup with its name. Links in the Markdown go only to `http(s)://`, `mailto:`, `#` or a path on this site; anything else, `//host` included, shows as text. No legal text ships in the repo or the image: `compose.yaml` mounts `./legal` read-only at `/legal` (see `docs/deploy.md`).
@@ -240,7 +242,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.1...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.1...v0.27.0
 [0.26.1]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.24.0...v0.25.0

@@ -1,6 +1,6 @@
 {
   "name": "nodbeat",
-  "version": "0.26.1",
+  "version": "0.27.0",
   "private": true,
   "description": "A heartbeat for every service and device",
   "license": "MIT",
