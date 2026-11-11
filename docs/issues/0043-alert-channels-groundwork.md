@@ -12,4 +12,5 @@ Status: ready-for-agent
 - [ ] Linking via Link code, `/unlink`, removal in Settings and bot removal all work on Alert channels
 - [ ] Settings shows one "Alert channels" list with kind, name, rename and remove
 - [ ] A per-User Alert channel limit, checked atomically like the Monitor limit
+- [ ] If issue 0042 has landed: account deletion removes the User's Alert channels of every kind (a Telegram chat shared with another User stays for them), and its confirmation page counts Alert channels
 - [ ] Tests through the HTTP seam: a pre-migration Linked chat still receives Down and Up Alerts after startup; linking, renaming and removing a chat; the limit can't be passed with parallel requests

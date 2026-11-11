@@ -2,6 +2,8 @@
 
 Status: ready-for-agent
 
+Note: stories 9–12 (Alert chats, issue 0031) are wontfix here and moved to spec 0009 (issue 0047). This spec is done once issues 0027–0030 are done.
+
 ## Problem Statement
 
 The Telegram bot works for one User with one chat, but it breaks down at the edges:

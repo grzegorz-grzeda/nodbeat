@@ -15,4 +15,6 @@ Status: ready-for-agent
 - [ ] A chat linked by two Users stays linked for the other User
 - [ ] The Invite list shows "used by (deleted User)" for an Invite the deleted User accepted
 - [ ] Admin sees no button; both routes answer `404` for the Admin
-- [ ] Tests through the HTTP seam: full deletion leaves no documents of the User; wrong password deletes nothing; Admin `404`; shared chat survives; interrupted deletion finishes on restart
+- [ ] The POST needs a valid CSRF token
+- [ ] Admin page totals and the per-User table no longer count the deleted User or their data
+- [ ] Tests through the HTTP seam: full deletion leaves no documents of the User; wrong password deletes nothing; Admin `404`; shared chat survives; interrupted deletion finishes on restart; Admin page totals drop the deleted User; Invite shows "(deleted User)"

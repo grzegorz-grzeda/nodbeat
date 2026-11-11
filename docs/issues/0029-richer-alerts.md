@@ -12,4 +12,5 @@ Status: ready-for-agent
 - [ ] Down: bold name, "is Down", since when (User's time zone), last Heartbeat message if any
 - [ ] Up: bold name, "is Up again", when, how long it was Down
 - [ ] Both end with a link to `PUBLIC_BASE_URL/monitors/<id>`
+- [ ] The text is still built when the Alert is enqueued (not at send time)
 - [ ] Tests through the HTTP seam: the fake receives the HTML text with the message and link; a Monitor named `<b>&co</b>` arrives escaped
