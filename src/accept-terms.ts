@@ -13,13 +13,13 @@ import { recordAcceptance } from "./users.js";
 
 declare module "fastify" {
   interface FastifyContextConfig {
-    /**
-     * Set false on GET routes that aren't the app's own pages (Heartbeat URLs, JSON, assets, the legal pages): a
-     * User with Terms to accept still reaches them.
-     */
+    /** Set false on a page a User with Terms to accept must still see (the legal pages, `/accept-terms`). */
     acceptTerms?: boolean;
   }
 }
+
+/** Where `reply.page()` sends the User instead of rendering this page, or `undefined` to render it. */
+export type PageGate = (req: FastifyRequest) => string | undefined;
 
 const PATH = "/accept-terms";
 const MAX_NEXT_LENGTH = 2048;
@@ -39,25 +39,17 @@ const acceptUrl = (next: string) =>
 
 /**
  * Sends a User to `/accept-terms` when a Terms or Privacy policy version they must accept is newer than the one they
- * accepted (or they accepted none), then back where they were. Only page loads (GET) are redirected; Heartbeats,
- * the Telegram webhook, Alerts and non-page routes (`acceptTerms: false`) never wait on it. Without `legal`,
- * nothing changes.
+ * accepted (or they accepted none), then back where they were. Only app pages loaded with GET are gated, through the
+ * returned gate that `reply.page()` asks: anything that isn't a page (Heartbeats, JSON, assets, docs, redirects,
+ * downloads), form posts, error pages and Alerts never wait on it. Without `legal`, nothing changes and there's no gate.
  */
 export function registerTermsAcceptance(
   app: FastifyInstance,
   deps: { db: Db; clock: Clock; auth: Auth; legal: LegalDocs | undefined },
-): void {
+): PageGate | undefined {
   const { db, clock, auth, legal } = deps;
-  if (!legal) return;
-
-  // Root-level, so it runs before every route's own preHandler (`requireUser`, `requireAdmin`).
-  app.addHook("preHandler", async (req, reply) => {
-    if (!req.user || req.is404) return undefined;
-    if (req.method !== "GET" && req.method !== "HEAD") return undefined;
-    if (req.routeOptions.config.acceptTerms === false) return undefined;
-    if (dueDocuments(legal, req.user.accepted).length === 0) return undefined;
-    return reply.redirect(acceptUrl(req.url), 303);
-  });
+  if (!legal) return undefined;
+  const versionOf = (kind: LegalKind) => legal.documents[kind].version;
 
   const page = (
     req: FastifyRequest,
@@ -70,16 +62,16 @@ export function registerTermsAcceptance(
       body: html`<div class="card narrow">
         <h1>Updated Terms</h1>
         <p>Please read and accept before you continue.</p>
-        ${due.map((kind) => {
-          const document = legal.documents[kind];
-          return html`<section class="legal-change">
-            <h2>
-              <a href="/${kind}" target="_blank">${LEGAL_TITLES[kind]}</a>
-            </h2>
-            <p class="muted">Version ${document.version}</p>
-            <p>${document.summary}</p>
-          </section>`;
-        })}
+        ${due.map(
+          (kind) =>
+            html`<section class="legal-change">
+              <h2>
+                <a href="/${kind}" target="_blank">${LEGAL_TITLES[kind]}</a>
+              </h2>
+              <p class="muted">Version ${versionOf(kind)}</p>
+              <p>${legal.documents[kind].summary}</p>
+            </section>`,
+        )}
         <form method="post" action="${PATH}">
           ${csrfField(auth.csrfToken(req, reply))}
           ${due.map(
@@ -87,7 +79,7 @@ export function registerTermsAcceptance(
               html`<input
                 type="hidden"
                 name="${kind}"
-                value="${legal.documents[kind].version}"
+                value="${versionOf(kind)}"
               />`,
           )}
           ${
@@ -116,18 +108,22 @@ export function registerTermsAcceptance(
     const user = req.user!;
     // Only the versions the User was shown: if the Operator changed a document since, it's asked for again.
     const due = dueDocuments(legal, user.accepted);
-    const accepting = due.filter(
-      (kind) => body[kind] === legal.documents[kind].version,
-    );
+    const accepting = due.filter((kind) => body[kind] === versionOf(kind));
     await recordAcceptance(
       db,
       user._id,
-      Object.fromEntries(
-        accepting.map((kind) => [kind, legal.documents[kind].version]),
-      ),
+      Object.fromEntries(accepting.map((kind) => [kind, versionOf(kind)])),
       clock.now(),
     );
     const stillDue = due.length > accepting.length;
     return reply.redirect(stillDue ? acceptUrl(next) : next, 303);
   });
+
+  return (req) => {
+    if (!req.user) return undefined;
+    if (req.method !== "GET" && req.method !== "HEAD") return undefined;
+    if (req.routeOptions.config.acceptTerms === false) return undefined;
+    if (dueDocuments(legal, req.user.accepted).length === 0) return undefined;
+    return acceptUrl(req.url);
+  };
 }

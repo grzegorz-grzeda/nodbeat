@@ -17,3 +17,5 @@ wraps over two lines.
 2. Numbered two
 
 Raw <script>alert(1)</script> stays text.
+
+An [other host](//evil.example/) link stays text.

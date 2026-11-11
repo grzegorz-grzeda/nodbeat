@@ -107,20 +107,16 @@ export function registerDocs(
       </body>
     </html>`.value;
 
-  app.get("/docs", { config: { acceptTerms: false } }, async (_req, reply) =>
+  app.get("/docs", async (_req, reply) =>
     reply.type("text/html; charset=utf-8").send(page),
   );
 
-  app.get<{ Params: { name: string } }>(
-    "/docs/:name",
-    { config: { acceptTerms: false } },
-    async (req, reply) => {
-      const file = files.get(req.params.name);
-      if (!file) return reply.errorPage(404);
-      return reply
-        .type(file.type)
-        .header("cache-control", cacheControl)
-        .send(file.body);
-    },
-  );
+  app.get<{ Params: { name: string } }>("/docs/:name", async (req, reply) => {
+    const file = files.get(req.params.name);
+    if (!file) return reply.errorPage(404);
+    return reply
+      .type(file.type)
+      .header("cache-control", cacheControl)
+      .send(file.body);
+  });
 }

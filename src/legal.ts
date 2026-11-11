@@ -19,7 +19,8 @@ export interface LegalDocument {
 /** Who runs this instance: the seller in the Terms and the controller in the Privacy policy. */
 export interface Operator {
   name: string;
-  nip: string;
+  /** A tax identification number (NIP in Poland), when the Operator has one. */
+  taxId?: string;
   address: string;
   email: string;
 }
@@ -34,10 +35,9 @@ export type LegalVersions = Record<LegalKind, string>;
 
 /** The version of each document a User must have accepted. */
 export function currentVersions(legal: LegalDocs): LegalVersions {
-  return {
-    terms: legal.documents.terms.version,
-    privacy: legal.documents.privacy.version,
-  };
+  return Object.fromEntries(
+    LEGAL_KINDS.map((kind) => [kind, legal.documents[kind].version]),
+  ) as LegalVersions;
 }
 
 /**
@@ -62,16 +62,25 @@ export class LegalDocsError extends Error {
 }
 
 const FILES = ["terms.md", "privacy.md", "operator.md"] as const;
-const OPERATOR_FIELDS = ["name", "nip", "address", "email"] as const;
+const OPERATOR_FIELDS = ["name", "address", "email"] as const;
 
 /**
  * Reads and renders the Operator's files. `undefined` when `dir` is unset or any file is missing: the instance then
- * has no legal pages (a self-hoster who hasn't written any). A file that's there but malformed throws, so the
- * Operator finds out at startup rather than from a broken page.
+ * has no legal pages (a self-hoster who hasn't written any); with `dir` set, the missing files are passed to `warn`.
+ * A file that's there but malformed throws, so the Operator finds out at startup rather than from a broken page.
  */
-export function loadLegalDocs(dir: string | undefined): LegalDocs | undefined {
+export function loadLegalDocs(
+  dir: string | undefined,
+  warn: (message: string) => void = () => {},
+): LegalDocs | undefined {
   if (!dir) return undefined;
-  if (!FILES.every((file) => existsSync(join(dir, file)))) return undefined;
+  const missing = FILES.filter((file) => !existsSync(join(dir, file)));
+  if (missing.length > 0) {
+    warn(
+      `LEGAL_DIR ${dir} lacks ${missing.join(", ")}: no Terms or Privacy pages`,
+    );
+    return undefined;
+  }
   const read = (file: string) => readFileSync(join(dir, file), "utf8");
 
   const document = (file: string): LegalDocument => {
@@ -90,7 +99,7 @@ export function loadLegalDocs(dir: string | undefined): LegalDocs | undefined {
   };
 
   const { fields } = parseFrontMatter("operator.md", read("operator.md"));
-  const operator = Object.fromEntries(
+  const required = Object.fromEntries(
     OPERATOR_FIELDS.map((field) => {
       const value = fields.get(field);
       if (!value)
@@ -100,11 +109,16 @@ export function loadLegalDocs(dir: string | undefined): LegalDocs | undefined {
         );
       return [field, value];
     }),
-  ) as unknown as Operator;
+  ) as Record<(typeof OPERATOR_FIELDS)[number], string>;
+  // Front-matter keys are read lowercased.
+  const taxId = fields.get("taxid");
+  const operator: Operator = { ...required, ...(taxId && { taxId }) };
 
   return {
     operator,
-    documents: { terms: document("terms.md"), privacy: document("privacy.md") },
+    documents: Object.fromEntries(
+      LEGAL_KINDS.map((kind) => [kind, document(`${kind}.md`)]),
+    ) as Record<LegalKind, LegalDocument>,
   };
 }
 
@@ -216,8 +230,11 @@ function renderBlock(block: Block): SafeHtml {
   }
 }
 
-/** Links whose URL could run script or leave the usual schemes are shown as their text only. */
-const SAFE_URL = /^(https?:\/\/|mailto:|\/|#)/i;
+/**
+ * Links whose URL could run script or leave the usual schemes are shown as their text only, as is `//host` (and
+ * `/\host`, which browsers read the same): another host without a scheme.
+ */
+const SAFE_URL = /^(https?:\/\/|mailto:|\/(?![/\\])|#)/i;
 
 function inline(text: string): SafeHtml {
   const parts: SafeHtml[] = [];
@@ -245,7 +262,8 @@ export const LEGAL_TITLES: Record<LegalKind, string> = {
 /** The Operator's details, as at the top of `/terms`. */
 export function operatorDetails(operator: Operator): SafeHtml {
   return html`<address class="operator">
-    ${operator.name} · NIP ${operator.nip} · ${operator.address} ·
+    ${operator.name} ·
+    ${operator.taxId && html`Tax ID ${operator.taxId} · `}${operator.address} ·
     <a href="mailto:${operator.email}">${operator.email}</a>
   </address>`;
 }

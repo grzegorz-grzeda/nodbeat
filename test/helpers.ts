@@ -289,8 +289,11 @@ export class Browser {
     readonly extraHeaders: Record<string, string> = {},
   ) {}
 
-  async get(url: string): Promise<InjectResponse> {
-    return this.#send({ method: "GET", url });
+  async get(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<InjectResponse> {
+    return this.#send({ method: "GET", url, ...(headers && { headers }) });
   }
 
   /** Posts a form. Fetches `formPage` first to pick up its CSRF token unless `csrf` is given. */
