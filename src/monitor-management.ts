@@ -6,8 +6,8 @@ import { setFlash } from "./flash.js";
 import { deleteHeartbeatsOf } from "./heartbeats.js";
 import { sendConfirmPage } from "./confirm.js";
 import { html } from "./html.js";
-import { deleteIncidentsOf, setNextReminder } from "./incidents.js";
-import { firstReminderAt } from "./reminders.js";
+import { deleteIncidentsOf } from "./incidents.js";
+import { rescheduleReminder, type ReminderSettings } from "./reminders.js";
 import { limitsFor } from "./limits.js";
 import { applyEffects } from "./effects.js";
 import { deleteAlertsOf, dropPendingReminders } from "./alerts.js";
@@ -46,11 +46,19 @@ export function registerMonitorManagement(
 ): void {
   const { db, clock, auth, lock, publicBaseUrl } = deps;
 
-  /** Runs an event through the state machine under the Monitor's lock, also saving `extra` fields. */
+  /**
+   * Runs an event through the state machine under the Monitor's lock, also saving `extra` fields; then, still under the
+   * lock, `andThen` with the Monitor as it was and as saved.
+   */
   const runTransition = (
     monitor: MonitorDoc,
     event: MonitorEvent,
     extra: Partial<MonitorDoc> = {},
+    andThen?: (
+      before: MonitorDoc,
+      after: ReminderSettings,
+      now: Date,
+    ) => Promise<void>,
   ) =>
     lock.run(String(monitor._id), async () => {
       // Re-read under the lock: a Heartbeat or the Down checker may have changed the state.
@@ -58,19 +66,13 @@ export function registerMonitorManagement(
       if (!current) return;
       const now = clock.now();
       const { fields, effects } = transition(current, event, now);
+      const updated = { ...current, ...fields, ...extra };
       await monitors(db).updateOne(
         { _id: current._id },
         { $set: { ...fields, ...extra } },
       );
-      await applyEffects(db, current, effects, now, publicBaseUrl);
-      // A changed cadence counts from the change; the open Incident, if any, is reminded on the new one.
-      const updated = { ...current, ...fields, ...extra };
-      if (
-        (updated.reminderEverySec ?? null) !==
-        (current.reminderEverySec ?? null)
-      ) {
-        await setNextReminder(db, current._id, firstReminderAt(updated, now));
-      }
+      await applyEffects(db, updated, effects, now, publicBaseUrl);
+      await andThen?.(current, updated, now);
     });
 
   /** A route on one of the logged-in User's Monitors; 404 for anyone else's. */
@@ -136,6 +138,8 @@ export function registerMonitorManagement(
         monitor,
         { kind: "edit", timing: result.settings },
         result.settings,
+        (before, after, now) =>
+          rescheduleReminder(db, before._id, before, after, now),
       );
       setFlash(reply, "Monitor saved.");
       return reply.redirect(`/monitors/${monitor._id}`, 303);
@@ -206,11 +210,12 @@ export function registerMonitorManagement(
           { $set: { alertsEnabled } },
         );
         // Off stops Reminders and drops a queued one; on while Down counts them from now.
-        const now = clock.now();
-        await setNextReminder(
+        await rescheduleReminder(
           db,
           current._id,
-          firstReminderAt({ ...current, alertsEnabled }, now),
+          current,
+          { ...current, alertsEnabled },
+          clock.now(),
         );
         if (!alertsEnabled) await dropPendingReminders(db, current._id);
       });

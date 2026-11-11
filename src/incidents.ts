@@ -74,8 +74,8 @@ export function listDueReminders(db: Db, now: Date): Promise<IncidentDoc[]> {
 }
 
 /**
- * Counts the Reminder due at `due` as sent and moves the next one to `next`, in one update: a second tick that read
- * the same due time gets null and sends nothing. Returns the Incident as updated.
+ * Takes the Reminder due at `due` by moving the next one to `next`, in one update: a second tick that read the same due
+ * time gets null and sends nothing. Returns the Incident as updated. Not counted as sent: see countReminder.
  */
 export function claimReminder(
   db: Db,
@@ -85,8 +85,32 @@ export function claimReminder(
 ): Promise<IncidentDoc | null> {
   return incidents(db).findOneAndUpdate(
     { _id: incidentId, endedAt: null, nextReminderAt: due },
-    { $set: { nextReminderAt: next }, $inc: { remindersSent: 1 } },
+    { $set: { nextReminderAt: next } },
     { returnDocument: "after" },
+  );
+}
+
+/** Gives back a Reminder claimed as `due` → `next` that couldn't be enqueued, so the next tick tries it again. */
+export async function unclaimReminder(
+  db: Db,
+  incidentId: ObjectId,
+  due: Date,
+  next: Date,
+): Promise<void> {
+  await incidents(db).updateOne(
+    { _id: incidentId, endedAt: null, nextReminderAt: next },
+    { $set: { nextReminderAt: due } },
+  );
+}
+
+/** Counts a Reminder as sent: it was enqueued to at least one Alert channel. */
+export async function countReminder(
+  db: Db,
+  incidentId: ObjectId,
+): Promise<void> {
+  await incidents(db).updateOne(
+    { _id: incidentId },
+    { $inc: { remindersSent: 1 } },
   );
 }
 
