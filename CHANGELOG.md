@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-11-11
+
 ### Added
 
 - Fail signal: `GET|POST /hb/<token>/fail` (optional message, same rules as a Heartbeat) makes a New or Up Monitor Down at once. Its Down Alert says the Monitor "reported a failure" and includes the message. A Fail signal to a Down Monitor is only recorded; to a Paused Monitor it is only logged (it neither counts as hearing from the Monitor nor ends a Run). The next Heartbeat brings the Monitor Up.
@@ -193,7 +195,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.19.0...v0.20.0
