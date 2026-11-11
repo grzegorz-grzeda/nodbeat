@@ -1,7 +1,7 @@
 # 0039: Max run time
 
 Spec: 0007
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** A Monitor gets an optional Max run time; an Up Monitor whose Run lasts longer goes Down with an Alert saying it ran too long.
 

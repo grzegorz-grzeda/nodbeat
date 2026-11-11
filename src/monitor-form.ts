@@ -1,6 +1,7 @@
 import { formatDuration } from "./format.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
 import { defaultGraceSec, type Limits } from "./limits.js";
+import type { MonitorTiming } from "./monitor-state.js";
 
 const MAX_NAME_LENGTH = 100;
 const MAX_NOTES_LENGTH = 2000;
@@ -13,14 +14,15 @@ export interface MonitorForm {
   intervalUnit: string;
   grace: string;
   graceUnit: string;
+  maxRunTime: string;
+  maxRunTimeUnit: string;
   notes: string;
 }
 
-export interface MonitorSettings {
+/** What the form edits. `validate` always sets `maxRunTimeSec` (null: none), so saving clears a removed one. */
+export interface MonitorSettings extends MonitorTiming {
   name: string;
   notes: string;
-  intervalSec: number;
-  graceSec: number;
 }
 
 export function readForm(body: unknown): MonitorForm {
@@ -33,6 +35,8 @@ export function readForm(body: unknown): MonitorForm {
     intervalUnit: field("intervalUnit") || "s",
     grace: field("grace"),
     graceUnit: field("graceUnit") || "s",
+    maxRunTime: field("maxRunTime"),
+    maxRunTimeUnit: field("maxRunTimeUnit") || "m",
     notes: field("notes"),
   };
 }
@@ -48,12 +52,16 @@ export function formFor(monitor: MonitorSettings): MonitorForm {
   };
   const [interval, intervalUnit] = split(monitor.intervalSec);
   const [grace, graceUnit] = split(monitor.graceSec);
+  const [maxRunTime, maxRunTimeUnit] =
+    monitor.maxRunTimeSec != null ? split(monitor.maxRunTimeSec) : ["", "m"];
   return {
     name: monitor.name,
     interval,
     intervalUnit,
     grace,
     graceUnit,
+    maxRunTime,
+    maxRunTimeUnit,
     notes: monitor.notes,
   };
 }
@@ -106,10 +114,24 @@ export function validate(
     }
   }
 
+  let maxRunTimeSec: number | null = null;
+  if (form.maxRunTime.trim() !== "") {
+    maxRunTimeSec = toSeconds(form.maxRunTime, form.maxRunTimeUnit);
+    if (
+      maxRunTimeSec === null ||
+      maxRunTimeSec < limits.minMaxRunTimeSec ||
+      maxRunTimeSec > limits.maxMaxRunTimeSec
+    ) {
+      errors.push(
+        `Max run time must be between ${formatDuration(limits.minMaxRunTimeSec)} and ${formatDuration(limits.maxMaxRunTimeSec)}.`,
+      );
+    }
+  }
+
   if (errors.length > 0 || intervalSec === null || graceSec === null) {
     return { errors };
   }
-  return { settings: { name, notes, intervalSec, graceSec } };
+  return { settings: { name, notes, intervalSec, graceSec, maxRunTimeSec } };
 }
 
 /** The create form, or the edit form when `editing` is the Monitor's id. */
@@ -180,6 +202,18 @@ export function monitorFormBody(options: {
         for half the Interval)
         <input type="number" name="grace" value="${form.grace}" min="0" />
         ${unitSelect("graceUnit", form.graceUnit)}</label
+      >
+      <label
+        >Max run time (optional, ${formatDuration(limits.minMaxRunTimeSec)} to
+        ${formatDuration(limits.maxMaxRunTimeSec)}; a longer Run makes the
+        Monitor Down)
+        <input
+          type="number"
+          name="maxRunTime"
+          value="${form.maxRunTime}"
+          min="1"
+        />
+        ${unitSelect("maxRunTimeUnit", form.maxRunTimeUnit)}</label
       >
       <label
         >Notes (optional)

@@ -1,10 +1,15 @@
 import { ObjectId, type Db } from "mongodb";
+import type { IncidentCause } from "./monitor-state.js";
 
 export interface IncidentDoc {
   _id: ObjectId;
   monitorId: ObjectId;
   ownerId: ObjectId;
   startedAt: Date;
+  /** Missing on Incidents stored before Fail signals existed: those are missed deadlines. */
+  cause?: IncidentCause;
+  /** For a too long Run (`run-too-long`): the Max run time it passed, as it was then. */
+  maxRunTimeSec?: number;
   endedAt: Date | null;
   endReason: "heartbeat" | "paused" | null;
 }
@@ -19,12 +24,14 @@ export async function openIncident(
   db: Db,
   monitor: { _id: ObjectId; ownerId: ObjectId },
   startedAt: Date,
+  why: Pick<IncidentDoc, "cause" | "maxRunTimeSec">,
 ): Promise<IncidentDoc> {
   const incident: IncidentDoc = {
     _id: new ObjectId(),
     monitorId: monitor._id,
     ownerId: monitor.ownerId,
     startedAt,
+    ...why,
     endedAt: null,
     endReason: null,
   };

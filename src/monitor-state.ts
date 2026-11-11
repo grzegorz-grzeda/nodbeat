@@ -13,16 +13,22 @@ export interface MonitorStateFields {
   /** When the current pause started; null unless Paused. */
   pausedAt: Date | null;
   /**
-   * When the Monitor was last unpaused or had its Interval or Grace period edited: its deadline counts from here at
-   * the earliest. Null if never; absent on Monitors stored before pausing existed.
+   * When the Monitor was last unpaused or had its Interval, Grace period or Max run time edited: its deadlines count
+   * from here at the earliest. Null if never; absent on Monitors stored before pausing existed.
    */
   watchedSince?: Date | null;
+  /** When the open Run began (its Start signal); null if none. Absent on Monitors stored before Start signals existed. */
+  runStartedAt?: Date | null;
+  /** The last finished Run's duration in seconds; null if none. Absent on Monitors stored before Start signals existed. */
+  lastRunDurationSec?: number | null;
 }
 
-/** A Monitor's Interval and Grace period. */
+/** A Monitor's Interval, Grace period and Max run time. */
 export interface MonitorTiming {
   intervalSec: number;
   graceSec: number;
+  /** Longest a Run may last before the Monitor goes Down; null for none. Absent on Monitors stored before it existed. */
+  maxRunTimeSec?: number | null;
 }
 
 /** What the state machine reads besides the state fields. */
@@ -33,6 +39,10 @@ export interface MonitorSettings extends MonitorTiming {
 
 export type MonitorEvent =
   | { kind: "heartbeat"; message: string | null }
+  /** A Fail signal: the job reported a failure. */
+  | { kind: "fail"; message: string | null }
+  /** A Start signal: a job began. Not a Heartbeat. */
+  | { kind: "start" }
   /** The Down checker's look at the Monitor. `startedAt` is when this nodbeat process started (startup grace). */
   | { kind: "deadline-check"; startedAt: Date }
   | { kind: "pause" }
@@ -40,9 +50,18 @@ export type MonitorEvent =
   /** New settings saved. Only the timing matters to the state machine. */
   | { kind: "edit"; timing: MonitorTiming };
 
+/** Why an Incident opened: a missed deadline, a Fail signal or a Run longer than the Max run time. */
+export type IncidentCause = "missed" | "failed" | "run-too-long";
+
 export type Effect =
-  /** The Incident starts at the deadline, not when the checker noticed. */
-  | { kind: "open-incident"; startedAt: Date }
+  /** A missed deadline's or too long Run's Incident starts at that deadline, not when the checker noticed. */
+  | {
+      kind: "open-incident";
+      startedAt: Date;
+      cause: IncidentCause;
+      /** For a too long Run: the Max run time it passed, kept so later edits don't change what the Incident says. */
+      maxRunTimeSec?: number;
+    }
   | { kind: "close-incident"; reason: "heartbeat" | "paused" }
   /** New and pause periods are left out of Uptime. */
   | { kind: "start-period"; state: UncountedState }
@@ -60,6 +79,8 @@ export const STATE_LABELS: Record<MonitorState, string> = {
 export interface Transition {
   fields: MonitorStateFields;
   effects: Effect[];
+  /** The duration in seconds of the Run this event ended; absent if it ended none. */
+  endedRunDurationSec?: number;
 }
 
 /**
@@ -81,6 +102,24 @@ export function downDeadline(
   return new Date(from + (monitor.intervalSec + monitor.graceSec) * 1000);
 }
 
+/**
+ * When an Up Monitor's open Run makes it Down: Max run time after its Start signal, its last unpause or edit, or
+ * nodbeat's start, whichever is latest. Null without an open Run or a Max run time.
+ */
+export function runDeadline(
+  monitor: Pick<MonitorStateFields, "runStartedAt" | "watchedSince"> &
+    Pick<MonitorTiming, "maxRunTimeSec">,
+  startedAt: Date,
+): Date | null {
+  if (!monitor.runStartedAt || monitor.maxRunTimeSec == null) return null;
+  const from = Math.max(
+    monitor.runStartedAt.getTime(),
+    monitor.watchedSince?.getTime() ?? 0,
+    startedAt.getTime(),
+  );
+  return new Date(from + monitor.maxRunTimeSec * 1000);
+}
+
 /** The single place Monitor state changes are decided. Pure: no I/O, time comes in as `now`. */
 export function transition(
   current: MonitorStateFields & MonitorSettings,
@@ -90,6 +129,10 @@ export function transition(
   switch (event.kind) {
     case "heartbeat":
       return onHeartbeat(current, event.message, now);
+    case "fail":
+      return onFail(current, event.message, now);
+    case "start":
+      return onStart(current, now);
     case "deadline-check":
       return onDeadlineCheck(current, event.startedAt, now);
     case "pause":
@@ -106,15 +149,62 @@ function alertEffects(current: MonitorSettings, kind: AlertKind): Effect[] {
 }
 
 function stateFields(current: MonitorStateFields): MonitorStateFields {
-  const { state, lastHeartbeatAt, lastMessage, pausedAt, watchedSince } =
-    current;
+  const {
+    state,
+    lastHeartbeatAt,
+    lastMessage,
+    pausedAt,
+    watchedSince,
+    runStartedAt,
+    lastRunDurationSec,
+  } = current;
   return {
     state,
     lastHeartbeatAt,
     lastMessage,
     pausedAt,
     watchedSince: watchedSince ?? null,
+    runStartedAt: runStartedAt ?? null,
+    lastRunDurationSec: lastRunDurationSec ?? null,
   };
+}
+
+/** After a Heartbeat or Fail signal: the Monitor was heard from, and an open Run ends. */
+function heardFrom(
+  current: MonitorStateFields,
+  message: string | null,
+  now: Date,
+): Pick<Transition, "fields" | "endedRunDurationSec"> {
+  const fields = {
+    ...stateFields(current),
+    lastHeartbeatAt: now,
+    lastMessage: message,
+  };
+  if (!fields.runStartedAt) return { fields };
+  const endedRunDurationSec = runDurationSec(fields.runStartedAt, now);
+  return {
+    fields: {
+      ...fields,
+      runStartedAt: null,
+      lastRunDurationSec: endedRunDurationSec,
+    },
+    endedRunDurationSec,
+  };
+}
+
+/** Whole seconds from a Run's Start signal to its end. */
+export function runDurationSec(runStartedAt: Date, endedAt: Date): number {
+  return Math.max(
+    0,
+    Math.round((endedAt.getTime() - runStartedAt.getTime()) / 1000),
+  );
+}
+
+/** Begins a Run (replacing any open one). No state change and no deadline move: a Start signal is not a Heartbeat. */
+function onStart(current: MonitorStateFields, now: Date): Transition {
+  const fields = stateFields(current);
+  if (fields.state === "paused") return { fields, effects: [] };
+  return { fields: { ...fields, runStartedAt: now }, effects: [] };
 }
 
 function onHeartbeat(
@@ -122,20 +212,16 @@ function onHeartbeat(
   message: string | null,
   now: Date,
 ): Transition {
-  const seen = {
-    ...stateFields(current),
-    lastHeartbeatAt: now,
-    lastMessage: message,
-  };
-  const { state } = current;
-  switch (state) {
+  const { fields: seen, ...ended } = heardFrom(current, message, now);
+  switch (current.state) {
     case "new":
       return {
         fields: { ...seen, state: "up" },
         effects: [{ kind: "end-period", state: "new" }],
+        ...ended,
       };
     case "up":
-      return { fields: { ...seen, state: "up" }, effects: [] };
+      return { fields: { ...seen, state: "up" }, effects: [], ...ended };
     case "down":
       return {
         fields: { ...seen, state: "up" },
@@ -143,10 +229,37 @@ function onHeartbeat(
           { kind: "close-incident", reason: "heartbeat" },
           ...alertEffects(current, "up"),
         ],
+        ...ended,
       };
     case "paused":
-      return { fields: { ...seen, state: "paused" }, effects: [] };
+      return { fields: { ...seen, state: "paused" }, effects: [], ...ended };
   }
+}
+
+/**
+ * New or Up goes Down at once; Down only records it, as heard from. Paused only records it, like a Start signal:
+ * pausing means silence, so it neither counts as heard from nor ends a Run.
+ */
+function onFail(
+  current: MonitorStateFields & MonitorSettings,
+  message: string | null,
+  now: Date,
+): Transition {
+  const { state } = current;
+  if (state === "paused") return { fields: stateFields(current), effects: [] };
+  const { fields: seen, ...ended } = heardFrom(current, message, now);
+  if (state === "down") return { fields: seen, effects: [], ...ended };
+  return {
+    ...ended,
+    fields: { ...seen, state: "down" },
+    effects: [
+      ...(state === "new"
+        ? [{ kind: "end-period", state: "new" } as const]
+        : []),
+      { kind: "open-incident", startedAt: now, cause: "failed" },
+      ...alertEffects(current, "down"),
+    ],
+  };
 }
 
 function onDeadlineCheck(
@@ -156,12 +269,23 @@ function onDeadlineCheck(
 ): Transition {
   const fields = stateFields(current);
   if (fields.state !== "up") return { fields, effects: [] };
-  const deadline = downDeadline(current, startedAt);
-  if (!deadline || now < deadline) return { fields, effects: [] };
+  // The earliest passed deadline decides when the Incident started and why.
+  const deadlines: Array<[Date | null, IncidentCause]> = [
+    [downDeadline(current, startedAt), "missed"],
+    [runDeadline(current, startedAt), "run-too-long"],
+  ];
+  const first = deadlines
+    .filter((d): d is [Date, IncidentCause] => d[0] !== null && d[0] <= now)
+    .sort((a, b) => a[0].getTime() - b[0].getTime())[0];
+  if (!first) return { fields, effects: [] };
+  const [deadline, cause] = first;
+  // runDeadline() is null without a Max run time, so it is set here.
+  const limit =
+    cause === "run-too-long" ? { maxRunTimeSec: current.maxRunTimeSec! } : {};
   return {
     fields: { ...fields, state: "down" },
     effects: [
-      { kind: "open-incident", startedAt: deadline },
+      { kind: "open-incident", startedAt: deadline, cause, ...limit },
       ...alertEffects(current, "down"),
     ],
   };
@@ -207,7 +331,7 @@ function onUnpause(current: MonitorStateFields, now: Date): Transition {
   };
 }
 
-/** A changed Interval or Grace period counts from the edit, so a shorter one can't backdate an Incident. */
+/** A changed Interval, Grace period or Max run time counts from the edit, so a shorter one can't backdate an Incident. */
 function onEdit(
   current: MonitorStateFields & MonitorTiming,
   timing: MonitorTiming,
@@ -216,7 +340,8 @@ function onEdit(
   const fields = stateFields(current);
   const changed =
     timing.intervalSec !== current.intervalSec ||
-    timing.graceSec !== current.graceSec;
+    timing.graceSec !== current.graceSec ||
+    (timing.maxRunTimeSec ?? null) !== (current.maxRunTimeSec ?? null);
   return {
     fields: changed ? { ...fields, watchedSince: now } : fields,
     effects: [],

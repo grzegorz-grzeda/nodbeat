@@ -38,6 +38,7 @@
         title: m.lastHeartbeatTitle,
       }),
       cell(m.lastMessage ?? "", { "data-label": "Last message" }),
+      cell(m.lastRunDurationText, { "data-label": "Last Run" }),
       cell(m.uptime7dText, { "data-label": "7-day Uptime" }),
     );
     return tr;

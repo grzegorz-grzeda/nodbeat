@@ -2,6 +2,7 @@ import { ObjectId, type Db } from "mongodb";
 import type { Clock } from "./clock.js";
 import { formatDateTime, formatDuration } from "./format.js";
 import type { IncidentDoc } from "./incidents.js";
+import type { IncidentCause } from "./monitor-state.js";
 import {
   listLinkedChats,
   moveLinkedChats,
@@ -104,6 +105,17 @@ const escapeTelegramHtml = (text: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
+/** A Down Alert's first line after the name, by why the Incident opened. */
+const DOWN_HEADLINES: Record<IncidentCause, (incident: IncidentDoc) => string> =
+  {
+    missed: () => "is Down",
+    failed: () => "reported a failure",
+    "run-too-long": ({ maxRunTimeSec }) =>
+      maxRunTimeSec !== undefined
+        ? `ran longer than ${formatDuration(maxRunTimeSec)}`
+        : "ran longer than its Max run time",
+  };
+
 /** The Alert in Telegram HTML: bold name, state, when, details, and a link to the Monitor page. */
 function alertText(
   monitor: AlertedMonitor,
@@ -117,9 +129,17 @@ function alertText(
   const url = `${publicBaseUrl}/monitors/${String(monitor._id)}`;
   const link = `<a href="${escapeTelegramHtml(url)}">Open Monitor</a>`;
   if (kind === "down") {
-    const lines = [`🔴 ${name} is Down`, `Since ${at(incident.startedAt)}`];
+    // Missing on Incidents stored before causes existed: those are missed deadlines.
+    const cause = incident.cause ?? "missed";
+    const failed = cause === "failed";
+    const lines = [
+      `🔴 ${name} ${DOWN_HEADLINES[cause](incident)}`,
+      `Since ${at(incident.startedAt)}`,
+    ];
     if (monitor.lastMessage) {
-      lines.push(`Last message: ${escapeTelegramHtml(monitor.lastMessage)}`);
+      // A failure's message is the Fail signal's own.
+      const label = failed ? "Message" : "Last message";
+      lines.push(`${label}: ${escapeTelegramHtml(monitor.lastMessage)}`);
     }
     return [...lines, link].join("\n");
   }

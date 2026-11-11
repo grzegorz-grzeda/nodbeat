@@ -16,6 +16,26 @@ _Avoid_: Ping, check-in, beat
 The secret, unguessable address a Monitor's Heartbeats are sent to. Anyone who knows it can send Heartbeats for that Monitor.
 _Avoid_: Ping URL, endpoint, webhook
 
+**Fail signal**:
+A request to `<Heartbeat URL>/fail` saying a job failed. Makes the Monitor Down at once. It may carry a short text message, which the Down Alert includes.
+_Avoid_: Error ping, failure Heartbeat
+
+**Start signal**:
+A request to `<Heartbeat URL>/start` saying a job began. Not a Heartbeat: it changes no Monitor state and does not move the deadline.
+_Avoid_: Start ping, begin Heartbeat
+
+**Run**:
+One job execution, from a Start signal to the next Heartbeat or Fail signal. A second Start signal before then replaces the first.
+_Avoid_: Job, execution
+
+**Run duration**:
+How long a Run took: from its Start signal to the Heartbeat or Fail signal that ended it, in whole seconds.
+_Avoid_: Runtime, elapsed time
+
+**Max run time**:
+An optional per-Monitor limit on a Run. An Up Monitor whose Run lasts longer goes Down, counted from the Start signal (or nodbeat's start, an unpause or an edit, whichever is latest).
+_Avoid_: Timeout, run limit
+
 **Interval**:
 How often a Monitor is expected to send a Heartbeat. A Monitor has either an Interval or a Schedule, never both.
 _Avoid_: Period, frequency
@@ -29,7 +49,7 @@ Extra time allowed after the Interval or the scheduled time before a missing Hea
 _Avoid_: Tolerance, timeout
 
 **Monitor state**:
-One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval or scheduled time + Grace period passed with no Heartbeat) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
+One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval or scheduled time + Grace period passed with no Heartbeat, or a Fail signal, or a Run longer than its Max run time) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
 _Avoid_: Status, health
 
 **New period**:

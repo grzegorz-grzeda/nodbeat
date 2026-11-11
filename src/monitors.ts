@@ -5,7 +5,7 @@ import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { parseObjectId } from "./ids.js";
-import { formatDuration } from "./format.js";
+import { formatDuration, formatDurationOrEmpty } from "./format.js";
 import { setFlash } from "./flash.js";
 import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
 import { listIncidents, type IncidentDoc } from "./incidents.js";
@@ -36,6 +36,8 @@ export interface MonitorDoc extends MonitorStateFields {
   notes: string;
   intervalSec: number;
   graceSec: number;
+  /** Absent on Monitors stored before Max run times existed (= none). */
+  maxRunTimeSec?: number | null;
   /** Secret part of the Heartbeat URL. */
   token: string;
   alertsEnabled: boolean;
@@ -239,6 +241,8 @@ export function registerMonitors(
         lastMessage: null,
         pausedAt: null,
         watchedSince: null,
+        runStartedAt: null,
+        lastRunDurationSec: null,
         createdAt: clock.now(),
       };
       await monitors(db).insertOne(doc);
@@ -283,6 +287,9 @@ export function registerMonitors(
       const csrf = auth.csrfToken(req, reply);
       const curlGet = `curl -fsS -m 10 --retry 3 ${url}`;
       const curlPost = `curl -fsS -m 10 --retry 3 --data-raw "battery 3.7V" ${url}`;
+      const lastRun = formatDurationOrEmpty(monitor.lastRunDurationSec);
+      // Start signal, then the job; success or Fail signal ends the Run.
+      const cronRun = `curl -fsS -m 10 ${url}/start; /path/to/job.sh && curl -fsS -m 10 ${url} || curl -fsS -m 10 ${url}/fail`;
       return reply.page({
         title: monitor.name,
         // Enhances the copy buttons; without JS they stay hidden and the text is still selectable.
@@ -316,6 +323,13 @@ export function registerMonitors(
             <ul class="plain">
               <li>Interval: ${formatDuration(monitor.intervalSec)}</li>
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
+              ${
+                monitor.maxRunTimeSec != null &&
+                html`<li>
+                  Max run time: ${formatDuration(monitor.maxRunTimeSec)}
+                </li>`
+              }
+              ${lastRun && html`<li>Last Run duration: ${lastRun}</li>`}
             </ul>
             ${monitor.notes ? html`<p class="notes">${monitor.notes}</p>` : ""}
           </div>
@@ -364,6 +378,9 @@ export function registerMonitors(
               <h3>cron</h3>
               <pre><code># crontab -e: run the job, then send a Heartbeat if it succeeded
 */5 * * * * /path/to/job.sh &amp;&amp; curl -fsS -m 10 --retry 3 ${url} &gt; /dev/null</code></pre>
+              <h3>cron with Start and Fail signals</h3>
+              <pre><code># Times the job and reports a failure at once
+*/5 * * * * ${cronRun}</code></pre>
               <h3>ESP32 / Arduino</h3>
               <pre><code>#include &lt;WiFi.h&gt;
 #include &lt;WiFiClientSecure.h&gt;
