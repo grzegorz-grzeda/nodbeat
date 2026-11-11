@@ -1,3 +1,4 @@
+import { MonitorLock } from "./monitor-lock.js";
 import { randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { ObjectId, type Db } from "mongodb";
@@ -194,6 +195,8 @@ export function registerMonitors(
   deps: { db: Db; clock: Clock; config: Config; auth: Auth },
 ): void {
   const { db, clock, config, auth } = deps;
+  // Keyed by owner, not Monitor: it guards the per-User Monitor limit.
+  const ownerLock = new MonitorLock();
 
   const heartbeatUrl = (monitor: MonitorDoc) =>
     `${config.publicBaseUrl}/hb/${monitor.token}`;
@@ -215,14 +218,33 @@ export function registerMonitors(
     const form = readForm(req.body);
     const result = validate(form, limits);
     const errors = "errors" in result ? result.errors : [];
-    if (
-      errors.length === 0 &&
-      (await monitors(db).countDocuments({ ownerId: user._id })) >=
-        limits.maxMonitors
-    ) {
-      errors.push(`You can have at most ${limits.maxMonitors} Monitors.`);
-    }
-    if (errors.length > 0 || !("settings" in result)) {
+    // Count and insert under the owner's lock, so parallel requests can't all pass the limit check.
+    const monitor = await ownerLock.run(String(user._id), async () => {
+      if (
+        errors.length === 0 &&
+        (await monitors(db).countDocuments({ ownerId: user._id })) >=
+          limits.maxMonitors
+      ) {
+        errors.push(`You can have at most ${limits.maxMonitors} Monitors.`);
+      }
+      if (errors.length > 0 || !("settings" in result)) return null;
+      const doc: MonitorDoc = {
+        _id: new ObjectId(),
+        ownerId: user._id,
+        ...result.settings,
+        state: "new",
+        token: newHeartbeatToken(),
+        alertsEnabled: true,
+        lastHeartbeatAt: null,
+        lastMessage: null,
+        pausedAt: null,
+        watchedSince: null,
+        createdAt: clock.now(),
+      };
+      await monitors(db).insertOne(doc);
+      return doc;
+    });
+    if (!monitor) {
       return reply.code(400).page({
         title: "New Monitor",
         body: monitorFormBody({
@@ -234,20 +256,6 @@ export function registerMonitors(
       });
     }
 
-    const monitor: MonitorDoc = {
-      _id: new ObjectId(),
-      ownerId: user._id,
-      ...result.settings,
-      state: "new",
-      token: newHeartbeatToken(),
-      alertsEnabled: true,
-      lastHeartbeatAt: null,
-      lastMessage: null,
-      pausedAt: null,
-      watchedSince: null,
-      createdAt: clock.now(),
-    };
-    await monitors(db).insertOne(monitor);
     await startPeriod(db, "new", monitor, monitor.createdAt);
     setFlash(reply, "Monitor created.");
     return reply.redirect(`/monitors/${monitor._id}`, 303);

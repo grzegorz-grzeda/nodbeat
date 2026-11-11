@@ -263,6 +263,33 @@ describe("Alerts", () => {
     ]);
   });
 
+  it("unlinks a chat that blocked or removed the bot (HTTP 403) and still delivers to the other chats", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const other = await loggedIn({ email: "other@example.com" }, ctx);
+    await linkChat(ctx, other.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.forbiddenChats.add(GROUP_CHAT.id);
+
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([PRIVATE_CHAT.id]);
+    expect(ctx.logs).toContainEqual(
+      expect.objectContaining({ chatId: GROUP_CHAT.id }),
+    );
+    // Every Link of the chat is gone, not just the Alert owner's.
+    for (const browser of [ctx.browser, other.browser]) {
+      expect((await browser.get("/settings")).body).not.toContain(
+        "Garden project",
+      );
+    }
+
+    ctx.telegram.forbiddenChats.clear();
+    ctx.clock.advance(10 * MIN);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([PRIVATE_CHAT.id]);
+  });
+
   it("delivers a Monitor's Alerts in order", async () => {
     const ctx = await loggedIn();
     await linkChat(ctx, ctx.browser, PRIVATE_CHAT);

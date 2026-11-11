@@ -13,7 +13,7 @@ import {
 import { STATE_LABELS } from "./monitor-state.js";
 import { listMonitors } from "./monitors.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
-import type { TelegramClient } from "./telegram.js";
+import type { ChatMemberStatus, TelegramClient } from "./telegram.js";
 import { findUserById } from "./users.js";
 
 const WEBHOOK_PATH = "/telegram/webhook";
@@ -23,6 +23,11 @@ const START_MAX_ATTEMPTS = 10;
 const START_WINDOW_MS = 10 * 60 * 1000;
 /** Telegram rejects longer messages. */
 const MAX_MESSAGE_LENGTH = 4096;
+/** Members allowed to use /status and /unlink in a group. */
+const ADMIN_STATUSES: ReadonlySet<ChatMemberStatus> = new Set([
+  "creator",
+  "administrator",
+]);
 
 interface TelegramChat {
   id: number;
@@ -35,8 +40,18 @@ interface TelegramChat {
 
 /** The parts of a Telegram Update the bot reads. */
 interface Update {
-  message?: { text?: unknown; chat?: { id?: unknown } };
+  message?: {
+    text?: unknown;
+    chat?: { id?: unknown };
+    from?: { id?: unknown };
+  };
 }
+
+type Command = (
+  chat: TelegramChat,
+  arg: string,
+  senderId: number | undefined,
+) => Promise<string>;
 
 function chatTitle(chat: TelegramChat): string {
   if (chat.title) return chat.title;
@@ -106,7 +121,7 @@ export function registerTelegramBot(
       { ownerId: owner._id, chatId: chat.id, title: chatTitle(chat) },
       now,
     );
-    return `This chat is now linked to ${owner.email}. Alerts will arrive here.`;
+    return "This chat is now linked to your nodbeat account. Alerts will arrive here.";
   };
 
   const monitorStatesOf = async (
@@ -128,12 +143,12 @@ export function registerTelegramBot(
     if (owners.length === 0) return notLinked;
     const now = clock.now();
     if (owners.length === 1) return monitorStatesOf(owners[0]!, now);
-    // A group linked by several Users: one section per User.
+    // A group linked by several Users: one numbered section per User, never labelled by email.
     const sections = await Promise.all(
-      owners.map(async (ownerId) => {
-        const owner = await findUserById(db, ownerId);
-        return `${owner?.email ?? "Unknown User"}\n${await monitorStatesOf(ownerId, now)}`;
-      }),
+      owners.map(
+        async (ownerId, i) =>
+          `Account ${i + 1}\n${await monitorStatesOf(ownerId, now)}`,
+      ),
     );
     return sections.join("\n\n");
   };
@@ -143,13 +158,24 @@ export function registerTelegramBot(
       ? "This chat is unlinked. No more Alerts will arrive here."
       : notLinked;
 
-  const commands: Record<
-    string,
-    (chat: TelegramChat, arg: string) => Promise<string>
-  > = {
+  /** In a group only its Telegram admins may read the Monitors or cut off the Alerts. */
+  const adminsOnly =
+    (command: Command): Command =>
+    async (chat, arg, senderId) => {
+      if (chat.type === "private") return command(chat, arg, senderId);
+      const allowed =
+        senderId !== undefined &&
+        ADMIN_STATUSES.has(await telegram.getChatMember(chat.id, senderId));
+      return allowed
+        ? command(chat, arg, senderId)
+        : "Only group admins can use this command.";
+    };
+
+  const commands: Record<string, Command> = {
+    // Open to any member: it needs a valid Link code anyway.
     start: startCommand,
-    status: statusCommand,
-    unlink: unlinkCommand,
+    status: adminsOnly(statusCommand),
+    unlink: adminsOnly(unlinkCommand),
   };
 
   const handle = async (update: Update): Promise<void> => {
@@ -160,7 +186,14 @@ export function registerTelegramBot(
     if (!parsed) return;
     const command = commands[parsed.command];
     let replyText: string;
-    if (command) replyText = await command(chat, parsed.arg);
+    const senderId = update.message?.from?.id;
+    if (command) {
+      replyText = await command(
+        chat,
+        parsed.arg,
+        typeof senderId === "number" ? senderId : undefined,
+      );
+    }
     // In groups an unknown command is likely meant for another bot.
     else if (chat.type === "private") replyText = help;
     else return;

@@ -6,7 +6,11 @@ import { runCli } from "../src/cli.js";
 import type { BuildInfo } from "../src/build-info.js";
 import type { Clock } from "../src/clock.js";
 import type { Config } from "../src/config.js";
-import type { TelegramClient } from "../src/telegram.js";
+import {
+  TelegramForbiddenError,
+  type ChatMemberStatus,
+  type TelegramClient,
+} from "../src/telegram.js";
 
 export class FakeClock implements Clock {
   #now: Date;
@@ -36,11 +40,35 @@ export class RecordingTelegram implements TelegramClient {
   /** Sends to these chats fail, e.g. a group the bot was removed from. */
   readonly failingChats = new Set<number>();
 
+  /** Sends to these chats fail with HTTP 403: the bot was blocked or removed. */
+  readonly forbiddenChats = new Set<number>();
+
   async sendMessage(chatId: number, text: string): Promise<void> {
+    if (this.forbiddenChats.has(chatId)) {
+      throw new TelegramForbiddenError("sendMessage");
+    }
     if (this.failing || this.failingChats.has(chatId)) {
       throw new Error("telegram unavailable");
     }
     this.sent.push({ chatId, text });
+  }
+
+  readonly #memberStatuses = new Map<string, ChatMemberStatus>();
+
+  /** What `getChatMember` answers for this user in this chat; "member" unless set. */
+  setChatMemberStatus(
+    chatId: number,
+    userId: number,
+    status: ChatMemberStatus,
+  ): void {
+    this.#memberStatuses.set(`${chatId}:${userId}`, status);
+  }
+
+  async getChatMember(
+    chatId: number,
+    userId: number,
+  ): Promise<ChatMemberStatus> {
+    return this.#memberStatuses.get(`${chatId}:${userId}`) ?? "member";
   }
 
   readonly webhooks: Array<{ url: string; secretToken: string }> = [];

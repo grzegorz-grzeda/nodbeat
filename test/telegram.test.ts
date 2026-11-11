@@ -11,6 +11,8 @@ import {
 const MIN = 60 * 1000;
 const PRIVATE_CHAT = { id: 1001, type: "private", first_name: "Grzegorz" };
 const GROUP_CHAT = { id: -2002, type: "group", title: "Garden project" };
+/** The Telegram user who sends messages in tests. */
+const SENDER_ID = 4242;
 
 type Chat = { id: number; type: string; title?: string; first_name?: string };
 
@@ -32,7 +34,13 @@ async function say(ctx: TestContext, chat: Chat, text: string) {
   const before = ctx.telegram.sent.length;
   const res = await sendUpdate(ctx, {
     update_id: ++updateId,
-    message: { message_id: updateId, chat, date: 0, text },
+    message: {
+      message_id: updateId,
+      chat,
+      from: { id: SENDER_ID, is_bot: false, first_name: "Grzegorz" },
+      date: 0,
+      text,
+    },
   });
   expect(res.statusCode).toBe(200);
   const replies = ctx.telegram.sent.slice(before);
@@ -99,7 +107,7 @@ describe("linking a chat", () => {
     const replies = await say(ctx, PRIVATE_CHAT, `/start ${code}`);
 
     expect(replies).toEqual([
-      "This chat is now linked to me@example.com. Alerts will arrive here.",
+      "This chat is now linked to your nodbeat account. Alerts will arrive here.",
     ]);
     const settings = await ctx.browser.get("/settings");
     expect(settings.body).toContain("Grzegorz");
@@ -134,7 +142,7 @@ describe("Link codes", () => {
     const fresh = await generateLinkCode(ctx.browser);
     ctx.clock.advance(10 * MIN - 1000);
     expect(await say(ctx, PRIVATE_CHAT, `/start ${fresh}`)).toEqual([
-      "This chat is now linked to me@example.com. Alerts will arrive here.",
+      "This chat is now linked to your nodbeat account. Alerts will arrive here.",
     ]);
   });
 
@@ -149,6 +157,25 @@ describe("Link codes", () => {
     expect(await say(ctx, PRIVATE_CHAT, `/start ${newer}`)).toEqual([
       expect.stringContaining("now linked"),
     ]);
+  });
+
+  it("can be generated only 10 times per User in an hour", async () => {
+    const ctx = await loggedIn();
+    let last = "";
+    for (let i = 0; i < 10; i++) last = await generateLinkCode(ctx.browser);
+
+    const refused = await ctx.browser.submit(
+      "/settings",
+      "/settings/link-code",
+    );
+
+    expect(refused.statusCode).toBe(429);
+    expect(refused.body).toContain("Too many Link codes. Try again later.");
+    expect(await say(ctx, PRIVATE_CHAT, `/start ${last}`)).toEqual([
+      expect.stringContaining("now linked"),
+    ]);
+    ctx.clock.advance(60 * MIN);
+    await generateLinkCode(ctx.browser);
   });
 
   it("can be guessed only 10 times per chat in 10 minutes", async () => {
@@ -256,13 +283,14 @@ describe("bot commands", () => {
     await ctx.app.inject({ method: "GET", url: hb });
     ctx.clock.advance(2 * MIN);
     await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(ctx.browser)}`);
+    ctx.telegram.setChatMemberStatus(GROUP_CHAT.id, SENDER_ID, "administrator");
 
     expect(await say(ctx, GROUP_CHAT, "/status")).toEqual([
       "Garden sensor: Up (last Heartbeat 2 min ago)\nBackup: New (last Heartbeat never)",
     ]);
   });
 
-  it("/status in a group linked by several Users shows each User's Monitors", async () => {
+  it("/status in a group linked by several Users shows each User's Monitors in numbered sections", async () => {
     const ctx = await loggedIn();
     await ctx.browser.submit("/monitors/new", "/monitors", {
       name: "Garden sensor",
@@ -276,15 +304,17 @@ describe("bot commands", () => {
     const other = await login(ctx.app, "other@example.com", "correct horse");
     await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(ctx.browser)}`);
     await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(other)}`);
+    ctx.telegram.setChatMemberStatus(GROUP_CHAT.id, SENDER_ID, "creator");
 
     expect(await say(ctx, GROUP_CHAT, "/status")).toEqual([
-      "me@example.com\nGarden sensor: New (last Heartbeat never)\n\nother@example.com\nNo Monitors yet.",
+      "Account 1\nGarden sensor: New (last Heartbeat never)\n\nAccount 2\nNo Monitors yet.",
     ]);
   });
 
   it("/unlink removes the Linked chat", async () => {
     const ctx = await loggedIn();
     await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(ctx.browser)}`);
+    ctx.telegram.setChatMemberStatus(GROUP_CHAT.id, SENDER_ID, "administrator");
 
     expect(await say(ctx, GROUP_CHAT, "/unlink")).toEqual([
       "This chat is unlinked. No more Alerts will arrive here.",
@@ -292,6 +322,66 @@ describe("bot commands", () => {
     expect((await ctx.browser.get("/settings")).body).not.toContain(
       "Garden project",
     );
+  });
+
+  it("/status and /unlink in a group answer only its Telegram admins", async () => {
+    const ctx = await loggedIn();
+    await ctx.browser.submit("/monitors/new", "/monitors", {
+      name: "Garden sensor",
+      interval: "5",
+      intervalUnit: "m",
+    });
+    await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(ctx.browser)}`);
+    const refusal = "Only group admins can use this command.";
+
+    for (const status of ["member", "restricted", "left", "kicked"]) {
+      ctx.telegram.setChatMemberStatus(GROUP_CHAT.id, SENDER_ID, status);
+      expect(await say(ctx, GROUP_CHAT, "/status")).toEqual([refusal]);
+      expect(await say(ctx, GROUP_CHAT, "/unlink")).toEqual([refusal]);
+    }
+    expect((await ctx.browser.get("/settings")).body).toContain(
+      "Garden project",
+    );
+
+    ctx.telegram.setChatMemberStatus(GROUP_CHAT.id, SENDER_ID, "administrator");
+    expect(await say(ctx, GROUP_CHAT, "/status")).toEqual([
+      "Garden sensor: New (last Heartbeat never)",
+    ]);
+  });
+
+  it("never shows an email in a bot reply", async () => {
+    const ctx = await loggedIn();
+    await createUser(ctx.db, {
+      email: "other@example.com",
+      password: "correct horse",
+    });
+    const other = await login(ctx.app, "other@example.com", "correct horse");
+    ctx.telegram.setChatMemberStatus(GROUP_CHAT.id, SENDER_ID, "administrator");
+
+    const replies = [
+      ...(await say(
+        ctx,
+        PRIVATE_CHAT,
+        `/start ${await generateLinkCode(ctx.browser)}`,
+      )),
+      ...(await say(ctx, PRIVATE_CHAT, "/status")),
+      ...(await say(
+        ctx,
+        GROUP_CHAT,
+        `/start ${await generateLinkCode(ctx.browser)}`,
+      )),
+      ...(await say(
+        ctx,
+        GROUP_CHAT,
+        `/start ${await generateLinkCode(other)}`,
+      )),
+      ...(await say(ctx, GROUP_CHAT, "/status")),
+      ...(await say(ctx, GROUP_CHAT, "/unlink")),
+      ...(await say(ctx, PRIVATE_CHAT, "/help")),
+    ];
+
+    expect(replies).toHaveLength(7);
+    for (const reply of replies) expect(reply).not.toMatch(/@example\.com/);
   });
 
   it("/status and /unlink explain how to link in a chat that isn't linked", async () => {
