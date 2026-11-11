@@ -81,7 +81,11 @@ export async function enqueueAlert(
     kind,
     incidentId: incident._id,
     text: alertText(monitor, kind, incident, timeZone, publicBaseUrl),
-    options: { parseMode: "HTML" },
+    // An Up Alert is good news: it shouldn't wake the User.
+    options: {
+      parseMode: "HTML",
+      ...(kind === "up" ? { disableNotification: true } : {}),
+    },
     chatIds: chats.map((c) => c.chatId),
     attempts: 0,
     createdAt: now,

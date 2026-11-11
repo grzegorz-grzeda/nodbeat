@@ -7,5 +7,5 @@ Status: ready-for-agent
 
 **Blocked by:** 0029 (it adds send options).
 
-- [ ] Up Alerts sent with `disable_notification: true`; Down Alerts without it
-- [ ] Tests through the HTTP seam: the fake records the option on the Up Alert only
+- [x] Up Alerts sent with `disable_notification: true`; Down Alerts without it
+- [x] Tests through the HTTP seam: the fake records the option on the Up Alert only

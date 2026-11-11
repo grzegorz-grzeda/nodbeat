@@ -11,6 +11,8 @@ export type ChatMemberStatus =
 /** How Telegram should show a message. Omitted fields are Telegram's defaults (plain text, with a sound). */
 export interface SendMessageOptions {
   parseMode?: "HTML";
+  /** Deliver without a sound. */
+  disableNotification?: boolean;
 }
 
 /** The small slice of the Telegram Bot API nodbeat needs. */
@@ -62,6 +64,7 @@ export function createHttpTelegramClient(
         chat_id: chatId,
         text,
         ...(options.parseMode ? { parse_mode: options.parseMode } : {}),
+        ...(options.disableNotification ? { disable_notification: true } : {}),
       });
     },
     getChatMember: async (chatId, userId) => {
