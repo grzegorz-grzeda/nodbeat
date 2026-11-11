@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-11-11
+
 ### Added
 
 - Settings: change your password (current, new and confirmation); every other session is logged out. **Log out everywhere** ends every session, this one included.
@@ -157,7 +159,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.16.0...v0.17.0
