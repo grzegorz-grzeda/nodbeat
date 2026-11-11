@@ -144,8 +144,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const auth = registerAuth(app, { db, clock, config });
   registerLayout(app, { auth, build: deps.build });
   registerErrorPages(app);
-  registerDashboard(app, { db, clock, config });
-  registerMonitors(app, { db, clock, config, auth });
+  registerDashboard(app, { db, clock, config, startedAt });
+  registerMonitors(app, { db, clock, config, auth, startedAt });
   registerMonitorManagement(app, {
     db,
     clock,

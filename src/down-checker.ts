@@ -3,7 +3,7 @@ import type { Clock } from "./clock.js";
 import { applyEffects } from "./effects.js";
 import type { LogPruner } from "./log-pruner.js";
 import type { KeyedLock } from "./keyed-lock.js";
-import { transition } from "./monitor-state.js";
+import { nextDueAt, runDeadline, transition } from "./monitor-state.js";
 import { monitors } from "./monitors.js";
 
 /**
@@ -21,39 +21,30 @@ export function createDownChecker(deps: {
   const { db, clock, startedAt, lock, pruner, publicBaseUrl } = deps;
   return async () => {
     const now = clock.now();
-    /** Whether `amount` seconds after the latest of `from`, the last unpause or edit, and startedAt have passed. */
-    const passed = (from: string, amount: unknown) => ({
-      $expr: {
-        $lte: [
-          {
-            $dateAdd: {
-              startDate: { $max: [from, "$watchedSince", startedAt] },
-              unit: "second",
-              amount,
-            },
-          },
-          now,
-        ],
-      },
-    });
-    // Pre-filter with the same rules as downDeadline() and runDeadline(), so only overdue Monitors are loaded;
-    // transition() decides.
-    const overdue = await monitors(db)
+    // Up Monitors with just the fields the deadlines read. nextDueAt() and runDeadline() pick the overdue ones here,
+    // in code, so the rule lives in one place (a Schedule can't be computed in a query); transition() decides.
+    const up = await monitors(db)
       .find(
+        { state: "up" },
         {
-          state: "up",
-          $or: [
-            passed("$lastHeartbeatAt", { $add: ["$intervalSec", "$graceSec"] }),
-            {
-              runStartedAt: { $ne: null },
-              maxRunTimeSec: { $ne: null },
-              ...passed("$runStartedAt", "$maxRunTimeSec"),
-            },
-          ],
+          projection: {
+            state: 1,
+            lastHeartbeatAt: 1,
+            watchedSince: 1,
+            createdAt: 1,
+            intervalSec: 1,
+            graceSec: 1,
+            runStartedAt: 1,
+            maxRunTimeSec: 1,
+          },
         },
-        { projection: { _id: 1 } },
       )
       .toArray();
+    const overdue = up.filter((m) =>
+      [nextDueAt(m, startedAt), runDeadline(m, startedAt)].some(
+        (d) => d !== null && d <= now,
+      ),
+    );
 
     for (const { _id } of overdue) {
       await lock.run(String(_id), async () => {

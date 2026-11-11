@@ -48,3 +48,11 @@ export function formatDateTime(date: Date, timeZone: string): string {
   );
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
 }
+
+/** "14:05" if `date` falls on today's date in the time zone, else "2026-01-02 14:05". */
+export function formatDueTime(date: Date, now: Date, timeZone: string): string {
+  const [day, time] = formatDateTime(date, timeZone).split(" ");
+  const today = formatDateTime(now, timeZone).split(" ")[0];
+  const hhmm = time!.slice(0, 5);
+  return day === today ? hhmm : `${day} ${hhmm}`;
+}

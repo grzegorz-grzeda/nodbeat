@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The Monitor page and Dashboard (and its live update, as `nextExpectedAt` and `nextExpectedText` in `/dashboard.json`) show when each New or Up Monitor's next Heartbeat is expected by, in the User's time zone, with the date when it isn't today; nothing for Paused or Down Monitors. It is the same time the Down checker uses: an Up Monitor goes Down in that minute. A Run's Max run time stays a separate deadline and isn't shown here.
+
 ## [0.24.0] - 2026-11-11
 
 ### Added
