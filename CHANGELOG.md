@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - The Admin page shows how Monitors are set up: counts and shares by Interval (≤ 1 min, ≤ 5 min, ≤ 1 h, ≤ 1 day, > 1 day) and the share with a custom Grace period, with notes, with Alerts off and Paused. Notes are counted, never shown.
 - Heartbeats record the `User-Agent` header (trimmed to 200 characters). The Admin page shows how last-7-day Heartbeats arrive: GET vs POST, with a message, and by client (curl, wget, Python, ESP32/Arduino, browser, other, none). Raw User-Agents and messages are never shown.
+- The Admin page lists every User with their Monitors, Linked chats, Heartbeats in the last 7 days and the time of their last Heartbeat, most recent first.
 - A "Feedback" link to the GitHub issues page in every page's footer.
 
 ## [0.17.0] - 2026-11-11

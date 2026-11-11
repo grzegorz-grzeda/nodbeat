@@ -217,6 +217,20 @@ export async function deleteHeartbeatsOf(
   await heartbeats(db).deleteMany({ monitorId });
 }
 
+/** How many Heartbeats each Monitor has received since `since`, keyed by Monitor id (the Admin page). */
+export async function countHeartbeatsByMonitorSince(
+  db: Db,
+  since: Date,
+): Promise<Map<string, number>> {
+  const groups = await heartbeats(db)
+    .aggregate<{ _id: ObjectId; count: number }>([
+      { $match: { receivedAt: { $gte: since } } },
+      { $group: { _id: "$monitorId", count: { $sum: 1 } } },
+    ])
+    .toArray();
+  return new Map(groups.map((g) => [String(g._id), g.count]));
+}
+
 export interface HeartbeatTraffic {
   total: number;
   get: number;

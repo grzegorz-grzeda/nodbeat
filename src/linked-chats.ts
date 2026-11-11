@@ -164,6 +164,19 @@ export async function removeLinkedChat(
   return linkedChats(db).findOneAndDelete({ _id, ownerId });
 }
 
+/** How many Linked chats each User has, keyed by owner id (the Admin page). Owners without any are absent. */
+export async function countLinkedChatsByOwner(
+  db: Db,
+): Promise<Map<string, number>> {
+  const groups = await linkedChats(db)
+    .aggregate<{
+      _id: ObjectId;
+      count: number;
+    }>([{ $group: { _id: "$ownerId", count: { $sum: 1 } } }])
+    .toArray();
+  return new Map(groups.map((g) => [String(g._id), g.count]));
+}
+
 /** How many Linked chats the instance has, across all Users (the Admin page). */
 export function countLinkedChats(db: Db): Promise<number> {
   return linkedChats(db).countDocuments();

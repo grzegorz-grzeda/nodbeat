@@ -151,7 +151,12 @@ export async function setUserTheme(
   await users(db).updateOne({ _id: id }, { $set: { theme } });
 }
 
-/** How many Users the instance has (the Admin page). */
-export function countUsers(db: Db): Promise<number> {
-  return users(db).countDocuments();
+/** Every User's id and email (the Admin page). */
+export function listUserEmails(
+  db: Db,
+): Promise<Array<Pick<UserDoc, "_id" | "email">>> {
+  return users(db)
+    .find({}, { projection: { email: 1 } })
+    .sort({ createdAt: 1 })
+    .toArray();
 }

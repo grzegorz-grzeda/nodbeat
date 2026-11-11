@@ -77,6 +77,39 @@ export async function countMonitorsByState(
   return counts;
 }
 
+export interface OwnerMonitors {
+  monitorIds: ObjectId[];
+  /** The newest Heartbeat across the owner's Monitors, or null. */
+  lastHeartbeatAt: Date | null;
+}
+
+/** Each User's Monitors and their newest Heartbeat, keyed by owner id (the Admin page). Owners without any are absent. */
+export async function monitorsByOwner(
+  db: Db,
+): Promise<Map<string, OwnerMonitors>> {
+  const groups = await monitors(db)
+    .aggregate<{
+      _id: ObjectId;
+      monitorIds: ObjectId[];
+      lastHeartbeatAt: Date | null;
+    }>([
+      {
+        $group: {
+          _id: "$ownerId",
+          monitorIds: { $push: "$_id" },
+          lastHeartbeatAt: { $max: "$lastHeartbeatAt" },
+        },
+      },
+    ])
+    .toArray();
+  return new Map(
+    groups.map((g) => [
+      String(g._id),
+      { monitorIds: g.monitorIds, lastHeartbeatAt: g.lastHeartbeatAt ?? null },
+    ]),
+  );
+}
+
 /** Interval groups by upper bound (inclusive); anything longer falls in the last group. */
 const INTERVAL_GROUPS: Array<{ label: string; maxSec: number }> = [
   { label: "≤ 1 min", maxSec: 60 },

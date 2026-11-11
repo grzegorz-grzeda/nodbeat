@@ -1,6 +1,6 @@
 # Spec 0006: Admin usage page
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

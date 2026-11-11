@@ -47,7 +47,12 @@ async function createMonitor(
 const heartbeat = (ctx: TestContext, hb: string, msg = "") =>
   ctx.app.inject({ method: "GET", url: msg ? `${hb}?msg=${msg}` : hb });
 
-async function linkChat(ctx: TestContext, browser: Browser, chatId: number) {
+async function linkChat(
+  ctx: TestContext,
+  browser: Browser,
+  chatId: number,
+  firstName = "Chat",
+) {
   const res = await browser.submit("/settings", "/settings/link-code");
   const settings = await browser.get(res.headers.location as string);
   const code = /<code class="link-code">([A-Z0-9]{8})<\/code>/.exec(
@@ -62,7 +67,7 @@ async function linkChat(ctx: TestContext, browser: Browser, chatId: number) {
     payload: {
       update_id: chatId,
       message: {
-        chat: { id: chatId, type: "private", first_name: "Chat" },
+        chat: { id: chatId, type: "private", first_name: firstName },
         text: `/start ${code}`,
       },
     },
@@ -272,5 +277,37 @@ describe("Admin page", () => {
     expect(body).not.toContain("curl/8.5.0");
     expect(body).not.toContain("ESP32HTTPClient");
     expect(body).not.toContain("Mozilla/");
+  });
+
+  it("lists every User's activity, most recent Heartbeat first", async () => {
+    const ctx = await withUsers(); // The Admin's time zone is Europe/Warsaw (UTC+1 in January).
+    await createUser(ctx.db, { email: "idle@example.com", password: PASSWORD });
+    const m1 = await createMonitor(ctx.user, "marker-name-7f3a");
+    const m2 = await createMonitor(ctx.user, "Two");
+    const m3 = await createMonitor(ctx.admin, "Three");
+    await linkChat(ctx, ctx.user, 1001, "marker-chat-7f3a");
+    await linkChat(ctx, ctx.user, 1002);
+    await linkChat(ctx, ctx.admin, 1003);
+
+    await heartbeat(ctx, m1.hb); // Too old for the 7-day count.
+    ctx.clock.advance(8 * DAY);
+    ctx.clock.advance(2 * SEC);
+    await heartbeat(ctx, m1.hb);
+    await heartbeat(ctx, m2.hb); // 2026-01-09 00:00:02 UTC
+    ctx.clock.advance(2 * SEC);
+    await heartbeat(ctx, m3.hb); // 2026-01-09 00:00:04 UTC
+
+    const body = (await ctx.admin.get("/admin")).body;
+    const table = /<h2>Users<\/h2>[\s\S]*?<\/table>/.exec(body)![0];
+    const rows = [...table.matchAll(/<tr>([\s\S]*?)<\/tr>/g)]
+      .map((r) => [...r[1]!.matchAll(/<t[hd][^>]*>\s*([^<]*?)\s*<\/t[hd]>/g)])
+      .map((cells) => cells.map((c) => c[1]))
+      .slice(1); // Header row.
+    expect(rows).toEqual([
+      ["admin@example.com", "1", "1", "1", "2026-01-09 01:00:04"],
+      ["you@example.com", "2", "2", "2", "2026-01-09 01:00:02"],
+      ["idle@example.com", "0", "0", "0", "never"],
+    ]);
+    expect(body).not.toContain("marker-");
   });
 });
