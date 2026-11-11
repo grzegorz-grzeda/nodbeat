@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { Db } from "mongodb";
+import { ObjectId, type Db } from "mongodb";
 import { requireUser, TOO_MANY_LOGINS, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import { sendConfirmPage } from "./confirm.js";
@@ -7,6 +7,9 @@ import { setFlash } from "./flash.js";
 import { formatDateTime } from "./format.js";
 import { csrfField, html, timeZoneOptions } from "./html.js";
 import {
+  addAlertChannel,
+  alertChannels,
+  AlertChannelLimitError,
   CHANNEL_KIND_LABELS,
   findAlertChannel,
   listAlertChannels,
@@ -14,7 +17,16 @@ import {
   removeAlertChannel,
   renameAlertChannel,
   validChannelName,
+  type AlertChannelDoc,
 } from "./alert-channels.js";
+import type { KeyedLock } from "./keyed-lock.js";
+import { limitsFor } from "./limits.js";
+import {
+  checkOutboundUrl,
+  MAX_OUTBOUND_URL_LENGTH,
+  OutboundUrlError,
+  type HostResolver,
+} from "./outbound-http.js";
 import type { AlertSenders } from "./alerts.js";
 import { createLinkCode, findActiveLinkCode } from "./linked-chats.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
@@ -34,6 +46,37 @@ function localPath(value: unknown): string {
   return typeof value === "string" && /^\/(?![/\\])/.test(value) ? value : "/";
 }
 
+/** Longest Webhook secret, in characters. */
+const MAX_SECRET_LENGTH = 200;
+
+/** A form field as a string; "" when missing. */
+const formField = (body: unknown, name: string): string => {
+  const value = (body as Record<string, unknown> | undefined)?.[name];
+  return typeof value === "string" ? value : "";
+};
+
+/** The rest of a channel's row: what it points at and, when Failing, since when and why. */
+function channelDetails(channel: AlertChannelDoc, timeZone: string) {
+  const failing = channel.failingSince
+    ? html`<span class="badge badge-down">Failing</span>
+        <small class="channel-error"
+          >since ${formatDateTime(channel.failingSince, timeZone)}:
+          ${channel.lastError ?? "unknown error"}</small
+        >`
+    : "";
+  if (channel.kind !== "webhook") return failing;
+  return html`<small class="channel-target"
+      ><code>${channel.url}</code>,
+      ${channel.secret ? "secret set" : "no secret"}</small
+    >
+    ${failing}
+    <a
+      href="/settings/channels/${String(channel._id)}/webhook"
+      class="button secondary"
+      >Edit</a
+    >`;
+}
+
 /** Link codes a User may generate per hour. */
 const LINK_CODE_MAX = 10;
 const LINK_CODE_WINDOW_MS = 60 * 60 * 1000;
@@ -43,9 +86,19 @@ const TEST_ALERT_WINDOW_MS = 60 * 1000;
 
 export function registerSettings(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; auth: Auth; senders: AlertSenders },
+  deps: {
+    db: Db;
+    clock: Clock;
+    auth: Auth;
+    senders: AlertSenders;
+    /** Guards the per-User Alert channel limit, shared with linking a Telegram chat. */
+    channelLock: KeyedLock;
+    resolveHost: HostResolver;
+    publicBaseUrl: string;
+  },
 ): void {
-  const { db, clock, auth, senders } = deps;
+  const { db, clock, auth, senders, channelLock, resolveHost, publicBaseUrl } =
+    deps;
   const testAlertsPerUser = new SlidingWindowLimiter(
     clock,
     TEST_ALERT_MAX,
@@ -64,6 +117,8 @@ export function registerSettings(
       passwordError?: string;
       linkCodeError?: string;
       channelError?: string;
+      webhookError?: string;
+      webhookForm?: { name: string; url: string };
     } = {},
   ) => {
     const user = req.user!;
@@ -118,6 +173,7 @@ export function registerSettings(
                       >added
                       ${formatDateTime(c.createdAt, user.timeZone)}</small
                     >
+                    ${channelDetails(c, user.timeZone)}
                     <form method="post" action="${path}/test">
                       ${csrfField(csrf)}
                       <button type="submit" class="secondary">Send test</button>
@@ -127,6 +183,47 @@ export function registerSettings(
                 })}
               </ul>`
         }
+        <h2>Add a Webhook</h2>
+        <p>
+          Alerts are POSTed to the URL as JSON. With a secret, each request is
+          signed in the <code>X-Nodbeat-Signature</code> header; see the
+          <a href="/docs">API docs</a>.
+        </p>
+        ${
+          options.webhookError
+            ? html`<p class="error">${options.webhookError}</p>`
+            : ""
+        }
+        <form method="post" action="/settings/webhooks">
+          ${csrfField(csrf)}
+          <label
+            >Name (optional)
+            <input
+              type="text"
+              name="name"
+              value="${options.webhookForm?.name ?? ""}"
+              maxlength="${String(MAX_CHANNEL_NAME_LENGTH)}"
+          /></label>
+          <label
+            >URL
+            <input
+              type="url"
+              name="url"
+              value="${options.webhookForm?.url ?? ""}"
+              maxlength="${String(MAX_OUTBOUND_URL_LENGTH)}"
+              placeholder="https://"
+              required
+          /></label>
+          <label
+            >Secret (optional)
+            <input
+              type="password"
+              name="secret"
+              autocomplete="off"
+              maxlength="${String(MAX_SECRET_LENGTH)}"
+          /></label>
+          <button type="submit">Add Webhook</button>
+        </form>
         <h2>Link a Telegram chat</h2>
         ${
           code
@@ -287,6 +384,171 @@ export function registerSettings(
     },
   );
 
+  /** The URL once safe to send to, or the reason it isn't. */
+  const checkUrl = async (
+    value: string,
+  ): Promise<{ url: string } | { error: string }> => {
+    try {
+      return { url: (await checkOutboundUrl(value.trim(), resolveHost)).href };
+    } catch (err) {
+      if (err instanceof OutboundUrlError) return { error: err.message };
+      throw err;
+    }
+  };
+
+  /** null for none, false when too long. */
+  const validSecret = (value: string): string | null | false =>
+    value.length === 0 ? null : value.length <= MAX_SECRET_LENGTH && value;
+  const SECRET_TOO_LONG = `A secret can have at most ${MAX_SECRET_LENGTH} characters.`;
+
+  app.post(
+    "/settings/webhooks",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const user = req.user!;
+      const rawName = formField(req.body, "name");
+      const rawUrl = formField(req.body, "url");
+      const fail = (webhookError: string) => {
+        reply.code(400);
+        return settingsPage(req, reply, {
+          webhookError,
+          webhookForm: { name: rawName, url: rawUrl },
+        });
+      };
+      const checked = await checkUrl(rawUrl);
+      if ("error" in checked) return fail(checked.error);
+      // Unnamed: called after its host.
+      const name =
+        rawName.trim() === ""
+          ? new URL(checked.url).hostname
+          : validChannelName(rawName);
+      if (!name) {
+        return fail(`A name needs 1 to ${MAX_CHANNEL_NAME_LENGTH} characters.`);
+      }
+      const secret = validSecret(formField(req.body, "secret"));
+      if (secret === false) return fail(SECRET_TOO_LONG);
+      try {
+        await addAlertChannel(
+          db,
+          channelLock,
+          {
+            _id: new ObjectId(),
+            ownerId: user._id,
+            kind: "webhook",
+            name,
+            url: checked.url,
+            secret,
+            createdAt: clock.now(),
+            failingSince: null,
+            lastError: null,
+          },
+          { limit: limitsFor(user).maxAlertChannels },
+        );
+      } catch (err) {
+        if (!(err instanceof AlertChannelLimitError)) throw err;
+        return fail(`${err.message} Remove one first.`);
+      }
+      setFlash(reply, `Webhook ${name} added.`);
+      return reply.redirect("/settings", 303);
+    },
+  );
+
+  const findWebhook = async (ownerId: ObjectId, id: string) => {
+    const channel = await findAlertChannel(db, ownerId, id);
+    return channel?.kind === "webhook" ? channel : null;
+  };
+
+  /** Edits a Webhook's URL and secret; the secret itself is never shown. */
+  const webhookPage = (
+    req: FastifyRequest,
+    reply: FastifyReply,
+    channel: { _id: ObjectId; name: string; secret: string | null },
+    url: string,
+    error?: string,
+  ) =>
+    reply.page({
+      title: `Edit ${channel.name}`,
+      body: html`<h1>Edit Webhook ${channel.name}</h1>
+        ${error ? html`<p class="error">${error}</p>` : ""}
+        <form
+          method="post"
+          action="/settings/channels/${String(channel._id)}/webhook"
+        >
+          ${csrfField(auth.csrfToken(req, reply))}
+          <label
+            >URL
+            <input
+              type="url"
+              name="url"
+              value="${url}"
+              maxlength="${String(MAX_OUTBOUND_URL_LENGTH)}"
+              required
+          /></label>
+          <label
+            >Secret
+            <input
+              type="password"
+              name="secret"
+              autocomplete="off"
+              maxlength="${String(MAX_SECRET_LENGTH)}"
+              placeholder="${channel.secret ? "secret set" : "no secret"}"
+          /></label>
+          <p>
+            ${
+              channel.secret
+                ? "Secret set. Leave empty to keep it, or type a new one."
+                : "No secret: requests aren't signed."
+            }
+          </p>
+          ${
+            channel.secret
+              ? html`<label
+                  ><input type="checkbox" name="removeSecret" value="1" />
+                  Remove the secret</label
+                >`
+              : ""
+          }
+          <button type="submit">Save Webhook</button>
+          <a href="/settings" class="button secondary">Cancel</a>
+        </form>`,
+    });
+
+  app.get<{ Params: { id: string } }>(
+    "/settings/channels/:id/webhook",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const channel = await findWebhook(req.user!._id, req.params.id);
+      if (!channel) return reply.redirect("/settings", 303);
+      return webhookPage(req, reply, channel, channel.url);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/settings/channels/:id/webhook",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const channel = await findWebhook(req.user!._id, req.params.id);
+      if (!channel) return reply.redirect("/settings", 303);
+      const rawUrl = formField(req.body, "url");
+      const fail = (error: string) => {
+        reply.code(400);
+        return webhookPage(req, reply, channel, rawUrl, error);
+      };
+      const checked = await checkUrl(rawUrl);
+      if ("error" in checked) return fail(checked.error);
+      const typed = validSecret(formField(req.body, "secret"));
+      if (typed === false) return fail(SECRET_TOO_LONG);
+      const secret =
+        typed ?? (formField(req.body, "removeSecret") ? null : channel.secret);
+      await alertChannels(db).updateOne(
+        { _id: channel._id, ownerId: channel.ownerId, kind: "webhook" },
+        { $set: { url: checked.url, secret } },
+      );
+      setFlash(reply, `${channel.name} saved.`);
+      return reply.redirect("/settings", 303);
+    },
+  );
+
   app.post<{ Params: { id: string } }>(
     "/settings/channels/:id/rename",
     { preHandler: requireUser },
@@ -358,7 +620,13 @@ export function registerSettings(
           channelError: "Too many test Alerts. Try again in a minute.",
         });
       }
-      const result = await testAlertChannel(db, senders, channel, clock.now());
+      const result = await testAlertChannel(
+        db,
+        senders,
+        channel,
+        clock.now(),
+        publicBaseUrl,
+      );
       setFlash(
         reply,
         result.ok

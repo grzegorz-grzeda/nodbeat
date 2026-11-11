@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- Webhook Alert channels: add one in Settings with a URL, an optional name and an optional secret, and edit its URL and secret later (the secret is never shown again: "secret set"). Down and Up Alerts are POSTed as JSON (`monitor`, `kind`, `at`, `message`, `incidentId`), signed in `X-Nodbeat-Signature: sha256=<HMAC>` when a secret is set. Any `2xx` counts, within 5 s; redirects aren't followed. Documented as a webhook in `/openapi.yaml` (now OpenAPI 3.1).
+- Webhook URLs whose host resolves to a private, loopback, link-local, CGNAT or unique-local address (IPv4 or IPv6) are refused on save and before every send.
+- Failing: an Alert channel whose Alert still fails when the 1-hour retry window runs out is marked Failing in Settings, with the last error. It keeps getting later Alerts; the next one delivered clears Failing.
 - Each Monitor chooses its Alert channels on the create and edit forms: "All Alert channels" (the default, including ones added later; existing Monitors keep it) or a chosen few. Only the User's own channels are accepted. Alerts go only to the chosen channels, and `/status` in a Telegram chat lists only the Monitors whose Alert channels include that chat ("No Monitors alert this chat." otherwise). The Monitor page shows the Monitor's Alert channels.
 - Removing an Alert channel takes it out of every Monitor's chosen list; an emptied list stays chosen. A Monitor with no Alert channels shows "Alerts go nowhere" on its page and the Dashboard (`alertsGoNowhere` in `/dashboard.json`).
 - "Send test" on every Alert channel in Settings sends a test Alert at once (not queued, no retries) and shows in a Flash message whether it got through, with the error if not. A test that gets through clears Failing. At most 5 tests per User per minute.

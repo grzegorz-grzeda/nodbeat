@@ -1,6 +1,8 @@
 import { ObjectId, type Db, type PullOperator } from "mongodb";
 import {
+  clearChannelsFailing,
   listAlertChannels,
+  markChannelsFailing,
   type AlertChannelDoc,
   type AlertChannelKind,
   type AlertChannelOf,
@@ -29,6 +31,9 @@ export interface AlertDoc {
   text: string;
   /** How `text` is sent. Absent on Alerts enqueued before Alerts were Telegram HTML: those are plain text. */
   options?: SendMessageOptions;
+  /** The Alert as data, for channels that aren't sent `text` (a Webhook's JSON body). Absent on Alerts enqueued
+   * before Webhooks existed: those are addressed to Linked chats only. */
+  details?: AlertDetails;
   /** Alert channels that still have to receive it. */
   channelIds: ObjectId[];
   attempts: number;
@@ -36,6 +41,17 @@ export interface AlertDoc {
   /** Starts the retry window; null until a send fails. */
   firstFailedAt: Date | null;
   nextAttemptAt: Date;
+}
+
+/** What an Alert says, kind-agnostic. */
+export interface AlertDetails {
+  monitorName: string;
+  /** The Monitor page. */
+  monitorUrl: string;
+  /** When the Monitor went Down (Incident start) or came Up (Incident end). */
+  at: Date;
+  /** A Down Alert's last Heartbeat or Fail signal message; null on Up Alerts or when there's none. */
+  message: string | null;
 }
 
 /** An outbox entry as stored before Alert channels existed: addressed to Telegram chat ids. */
@@ -135,6 +151,15 @@ export async function enqueueAlert(
   const channels = channelsOfMonitor(monitor, ownerChannels);
   if (channels.length === 0) return;
   const timeZone = owner?.timeZone ?? DEFAULT_TIME_ZONE;
+  const details: AlertDetails = {
+    monitorName: monitor.name,
+    monitorUrl: monitorUrl(publicBaseUrl, monitor),
+    at:
+      kind === "down"
+        ? incident.startedAt
+        : (incident.endedAt ?? incident.startedAt),
+    message: kind === "down" ? monitor.lastMessage : null,
+  };
   await outbox(db).insertOne({
     _id: new ObjectId(),
     monitorId: monitor._id,
@@ -144,6 +169,7 @@ export async function enqueueAlert(
     text: alertText(monitor, kind, incident, timeZone, publicBaseUrl),
     // An Up Alert is good news: it shouldn't wake the User.
     options: { parseMode: "HTML", disableNotification: kind === "up" },
+    details,
     channelIds: channels.map((c) => c._id),
     attempts: 0,
     createdAt: now,
@@ -151,6 +177,9 @@ export async function enqueueAlert(
     nextAttemptAt: now,
   });
 }
+
+const monitorUrl = (publicBaseUrl: string, monitor: AlertedMonitor) =>
+  `${publicBaseUrl}/monitors/${String(monitor._id)}`;
 
 /** Escapes text from Users or devices for Telegram HTML, in text and in attribute values. */
 const escapeTelegramHtml = (text: string) =>
@@ -181,7 +210,7 @@ function alertText(
 ): string {
   const at = (date: Date) => `${formatDateTime(date, timeZone)} (${timeZone})`;
   const name = `<b>${escapeTelegramHtml(monitor.name)}</b>`;
-  const url = `${publicBaseUrl}/monitors/${String(monitor._id)}`;
+  const url = monitorUrl(publicBaseUrl, monitor);
   const link = `<a href="${escapeTelegramHtml(url)}">Open Monitor</a>`;
   if (kind === "down") {
     // Missing on Incidents stored before causes existed: those are missed deadlines.
@@ -260,7 +289,8 @@ export async function deleteAlertsOf(
  * Sends due Alerts, each to its Alert channels through the sender of the channel's kind. Per Monitor, Alerts go out
  * strictly in order: one that is still being retried holds back the ones after it. A failed send is retried (to the
  * channels that failed only) with exponential backoff until ALERT_RETRY_WINDOW_MS after the first failure, then the
- * Alert is dropped with a log entry.
+ * Alert is dropped with a log entry and the channels still failing are marked Failing. A channel that gets an Alert
+ * is no longer Failing.
  */
 export function createAlertDispatcher(deps: {
   db: Db;
@@ -326,6 +356,7 @@ export function createAlertDispatcher(deps: {
       }
     }
     const { failed } = attempt;
+    await clearChannelsFailing(db, attempt.delivered);
     const attempts = alert.attempts + 1;
     const firstFailedAt = alert.firstFailedAt ?? now;
     const giveUpAt = firstFailedAt.getTime() + ALERT_RETRY_WINDOW_MS;
@@ -333,6 +364,7 @@ export function createAlertDispatcher(deps: {
     if (failed.size === 0 || givingUp) {
       await outbox(db).deleteOne({ _id: alert._id });
       if (givingUp) {
+        await markChannelsFailing(db, failed, now);
         log.warn(
           {
             monitorId: String(alert.monitorId),

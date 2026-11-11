@@ -46,12 +46,18 @@ import { ensureStatePeriodIndexes } from "./state-periods.js";
 import type { TelegramClient } from "./telegram.js";
 import { registerTelegramBot } from "./telegram-bot.js";
 import { createTelegramSender } from "./telegram-sender.js";
+import type { HostResolver, HttpClient } from "./outbound-http.js";
+import { createWebhookSender } from "./webhook-sender.js";
 import { ensureUserIndexes } from "./users.js";
 
 export interface AppDeps {
   db: Db;
   clock: Clock;
   telegram: TelegramClient;
+  /** Sends HTTP Alert channels' requests (Webhooks). */
+  http: HttpClient;
+  /** Resolves the hosts of Alert channel URLs for the SSRF guard. */
+  resolveHost: HostResolver;
   config: Config;
   /** Version and commit reported by `/health`. */
   build: BuildInfo;
@@ -160,8 +166,20 @@ export async function createApp(deps: AppDeps): Promise<App> {
       telegram: deps.telegram,
       log: app.log,
     }),
+    webhook: createWebhookSender({
+      http: deps.http,
+      resolveHost: deps.resolveHost,
+    }),
   };
-  registerSettings(app, { db, clock, auth, senders });
+  registerSettings(app, {
+    db,
+    clock,
+    auth,
+    senders,
+    channelLock,
+    resolveHost: deps.resolveHost,
+    publicBaseUrl: config.publicBaseUrl,
+  });
   registerAdmin(app, { db, clock });
   registerInvites(app, { db, clock, config, auth });
   registerTelegramBot(app, {

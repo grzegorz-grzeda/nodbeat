@@ -1,5 +1,8 @@
 import { ObjectId, type Db } from "mongodb";
-import { alertChannels, type AlertChannelDoc } from "./alert-channels.js";
+import {
+  clearChannelsFailing,
+  type AlertChannelDoc,
+} from "./alert-channels.js";
 import type {
   AlertDoc,
   AlertSender,
@@ -11,7 +14,11 @@ import type {
 export type TestAlertResult = { ok: true } | { ok: false; error: string };
 
 /** The test Alert: shaped like a Down Alert, but about no Monitor. */
-function testAlert(channel: AlertChannelDoc, now: Date): AlertDoc {
+function testAlert(
+  channel: AlertChannelDoc,
+  now: Date,
+  publicBaseUrl: string,
+): AlertDoc {
   return {
     _id: new ObjectId(),
     monitorId: new ObjectId(),
@@ -20,6 +27,13 @@ function testAlert(channel: AlertChannelDoc, now: Date): AlertDoc {
     incidentId: new ObjectId(),
     text: "🔔 <b>Test Alert</b> from nodbeat\nAlerts for your Monitors arrive here.",
     options: { parseMode: "HTML" },
+    // For HTTP channels: points at Settings, where the test was sent from.
+    details: {
+      monitorName: "Test Alert",
+      monitorUrl: `${publicBaseUrl}/settings`,
+      at: now,
+      message: "Test Alert from nodbeat: Alerts for your Monitors arrive here.",
+    },
     channelIds: [channel._id],
     attempts: 0,
     createdAt: now,
@@ -37,21 +51,19 @@ export async function testAlertChannel(
   senders: AlertSenders,
   channel: AlertChannelDoc,
   now: Date,
+  publicBaseUrl: string,
 ): Promise<TestAlertResult> {
   const id = String(channel._id);
   const attempt: DeliveryAttempt = { delivered: new Set(), failed: new Map() };
   const send = senders[channel.kind] as AlertSender<AlertChannelDoc>;
   try {
-    await send(channel, testAlert(channel, now), attempt);
+    await send(channel, testAlert(channel, now, publicBaseUrl), attempt);
   } catch (err) {
     return { ok: false, error: String(err) };
   }
   // A Linked chat whose group became a supergroup is delivered to under its new (or merged-into) channel.
   if (attempt.delivered.size > 0) {
-    await alertChannels(db).updateMany(
-      { _id: { $in: [...attempt.delivered].map((d) => new ObjectId(d)) } },
-      { $set: { failingSince: null, lastError: null } },
-    );
+    await clearChannelsFailing(db, attempt.delivered);
     return { ok: true };
   }
   const error = attempt.failed.get(id);
