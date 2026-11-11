@@ -22,6 +22,7 @@ A User deletes their own account from Settings by confirming their password. Eve
 6. As the Admin, I want my own account to have no delete button, so that I can't lock myself out of the instance.
 7. As the Admin, I want an Invite used by a deleted User to show "used by (deleted User)", so that the Invite history stays honest.
 8. As the Admin, I want the Admin page totals to drop the deleted User's data, so that usage numbers stay true.
+9. As a Pro User, I want deleting my account to cancel my subscription at once, so that I'm never charged for an account that no longer exists.
 
 ## Implementation Decisions
 
