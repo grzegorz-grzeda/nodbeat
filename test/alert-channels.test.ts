@@ -110,7 +110,7 @@ describe("Alert channels", () => {
     const browser = await login(app, "me@example.com", "correct horse");
     expect(
       (await channelsOf(browser)).map(({ kind, name }) => ({ kind, name })),
-    ).toEqual([{ kind: "Telegram", name: "Garden project" }]);
+    ).toEqual([{ kind: "Linked chat", name: "Garden project" }]);
 
     const m = await createMonitor(browser);
     await app.inject({ method: "GET", url: m.hb });
@@ -163,8 +163,8 @@ describe("Alert channels", () => {
     const channels = await channelsOf(ctx.browser);
 
     expect(channels.map(({ kind, name }) => ({ kind, name }))).toEqual([
-      { kind: "Telegram", name: "Grzegorz" },
-      { kind: "Telegram", name: "Garden project" },
+      { kind: "Linked chat", name: "Grzegorz" },
+      { kind: "Linked chat", name: "Garden project" },
     ]);
   });
 

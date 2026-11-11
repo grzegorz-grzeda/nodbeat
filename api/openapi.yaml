@@ -92,6 +92,17 @@ webhooks:
                   at: "2026-11-11T03:20:02.000Z"
                   message: null
                   incidentId: 6731a0b1c2d3e4f5a6b7c8d9
+              test:
+                summary: A test Alert sent from Settings
+                value:
+                  monitor:
+                    id: 6731b2c3d4e5f6a7b8c9d0e1
+                    name: Test Alert
+                    url: https://nodbeat.example.com/settings
+                  kind: test
+                  at: "2026-11-11T09:00:00.000Z"
+                  message: "Test Alert from nodbeat: Alerts for your Monitors arrive here."
+                  incidentId: 6731b2c3d4e5f6a7b8c9d0e2
       responses:
         "2XX":
           description: Received. Any `2xx` counts; the body is ignored.
@@ -381,8 +392,8 @@ components:
               description: The Monitor page in nodbeat.
         kind:
           type: string
-          enum: [down, up]
-          description: "`down`: the Monitor went Down (missed its deadline, sent a Fail signal or ran longer than its Max run time). `up`: it is Up again."
+          enum: [down, up, test]
+          description: "`down`: the Monitor went Down (missed its deadline, sent a Fail signal or ran longer than its Max run time). `up`: it is Up again. `test`: a test Alert sent from Settings; it is about no Monitor (`monitor.id` and `incidentId` are made up, `monitor.url` is the Settings page)."
         at:
           type: string
           format: date-time

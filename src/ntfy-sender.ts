@@ -1,41 +1,15 @@
 import type { NtfyChannelDoc } from "./alert-channels.js";
-import type { AlertDoc, AlertSender } from "./alerts.js";
+import type { AlertSender } from "./alerts.js";
 import {
+  HTTP_CHANNEL_TIMEOUT_MS,
   postAlert,
-  type HostResolver,
-  type HttpClient,
+  type OutboundHttp,
 } from "./outbound-http.js";
 
-/** How long an ntfy server has to answer. */
-export const NTFY_TIMEOUT_MS = 5000;
-
-/** ntfy priorities: a Down Alert is urgent, an Up Alert shouldn't wake the User. */
-const PRIORITY = { down: "5", up: "2" } as const;
-/** ntfy tags shown as emoji, in place of the Telegram text's leading one. */
-const TAGS = { down: "red_circle", up: "green_circle" } as const;
-
-const unescapeTelegramHtml = (text: string) =>
-  text
-    .replace(/<[^>]*>/g, "")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&amp;/g, "&");
-
-/**
- * The Alert's Telegram HTML as an ntfy notification: the first line (Monitor name and state) is the title, the rest
- * the plain-text message. The "Open Monitor" link line is left out: the notification's click opens the Monitor.
- */
-export function ntfyMessage(alert: AlertDoc): { title: string; body: string } {
-  const lines = alert.text
-    .split("\n")
-    .filter((line) => !/^<a [^>]*>[^<]*<\/a>$/.test(line))
-    .map(unescapeTelegramHtml);
-  const title = (lines[0] ?? "")
-    .replace(/^\p{Extended_Pictographic}️?\s*/u, "")
-    .trim();
-  return { title, body: lines.slice(1).join("\n") };
-}
+/** ntfy priorities: a Down Alert is urgent, an Up Alert shouldn't wake the User, a test Alert is ntfy's default. */
+const PRIORITY = { down: "5", up: "2", test: "3" } as const;
+/** ntfy tags shown as emoji, like the Telegram text's leading one. */
+const TAGS = { down: "red_circle", up: "green_circle", test: "bell" } as const;
 
 /** A header value as ntfy reads it: as is when ASCII, else an RFC 2047 encoded-word. */
 const headerValue = (value: string) =>
@@ -47,14 +21,13 @@ const headerValue = (value: string) =>
  * Sends Alerts to ntfy topics: a POST of the plain-text message with title, priority, tags and click link in headers,
  * authorized with the topic's token when it has one. Outcomes as for every HTTP channel (`postAlert`).
  */
-export function createNtfySender(deps: {
-  http: HttpClient;
-  resolveHost: HostResolver;
-}): AlertSender<NtfyChannelDoc> {
+export function createNtfySender(
+  deps: OutboundHttp,
+): AlertSender<NtfyChannelDoc> {
   return async (channel, alert, attempt) => {
     // An Alert from before ntfy topics existed was never addressed to one.
     if (!alert.details) return;
-    const { title, body } = ntfyMessage(alert);
+    const { title, summary: body } = alert.details;
     const headers: Record<string, string> = {
       "content-type": "text/plain; charset=utf-8",
       "user-agent": "nodbeat",
@@ -67,7 +40,7 @@ export function createNtfySender(deps: {
     await postAlert(
       deps,
       String(channel._id),
-      { url: channel.url, headers, body, timeoutMs: NTFY_TIMEOUT_MS },
+      { url: channel.url, headers, body, timeoutMs: HTTP_CHANNEL_TIMEOUT_MS },
       attempt,
     );
   };

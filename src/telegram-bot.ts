@@ -10,7 +10,7 @@ import type { KeyedLock } from "./keyed-lock.js";
 import { limitsFor } from "./limits.js";
 import {
   linkChat,
-  linksOfChat,
+  linkedChatsOf,
   redeemLinkCode,
   unlinkChat,
 } from "./linked-chats.js";
@@ -193,7 +193,7 @@ export function registerTelegramBot(
   };
 
   const statusCommand: Command = async ({ chat }) => {
-    const owners = await linksOfChat(db, chat.id);
+    const owners = await linkedChatsOf(db, chat.id);
     if (owners.length === 0) return notLinked;
     const now = clock.now();
     if (owners.length === 1) return monitorStatesOf(owners[0]!, now);

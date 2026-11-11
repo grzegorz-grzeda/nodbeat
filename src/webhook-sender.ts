@@ -2,13 +2,10 @@ import { createHmac } from "node:crypto";
 import type { WebhookChannelDoc } from "./alert-channels.js";
 import type { AlertDoc, AlertSender } from "./alerts.js";
 import {
+  HTTP_CHANNEL_TIMEOUT_MS,
   postAlert,
-  type HostResolver,
-  type HttpClient,
+  type OutboundHttp,
 } from "./outbound-http.js";
-
-/** How long a Webhook has to answer. */
-export const WEBHOOK_TIMEOUT_MS = 5000;
 
 /** The JSON body POSTed to a Webhook (documented in `api/openapi.yaml`). */
 export function webhookBody(alert: AlertDoc): string | null {
@@ -35,10 +32,9 @@ export const webhookSignature = (secret: string, body: string) =>
  * Sends Alerts to Webhooks: a JSON POST, signed when the Webhook has a secret. Outcomes as for every HTTP channel
  * (`postAlert`).
  */
-export function createWebhookSender(deps: {
-  http: HttpClient;
-  resolveHost: HostResolver;
-}): AlertSender<WebhookChannelDoc> {
+export function createWebhookSender(
+  deps: OutboundHttp,
+): AlertSender<WebhookChannelDoc> {
   return async (channel, alert, attempt) => {
     const id = String(channel._id);
     const body = webhookBody(alert);
@@ -54,7 +50,7 @@ export function createWebhookSender(deps: {
     await postAlert(
       deps,
       id,
-      { url: channel.url, headers, body, timeoutMs: WEBHOOK_TIMEOUT_MS },
+      { url: channel.url, headers, body, timeoutMs: HTTP_CHANNEL_TIMEOUT_MS },
       attempt,
     );
   };

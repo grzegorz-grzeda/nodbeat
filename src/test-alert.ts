@@ -3,17 +3,17 @@ import {
   clearChannelsFailing,
   type AlertChannelDoc,
 } from "./alert-channels.js";
-import type {
-  AlertDoc,
-  AlertSender,
-  AlertSenders,
-  DeliveryAttempt,
+import {
+  sendTo,
+  type AlertDoc,
+  type AlertSenders,
+  type DeliveryAttempt,
 } from "./alerts.js";
 
 /** How a test Alert went: delivered, or not with why. */
 export type TestAlertResult = { ok: true } | { ok: false; error: string };
 
-/** The test Alert: shaped like a Down Alert, but about no Monitor. */
+/** The test Alert: shaped like a Down Alert, but of kind "test" and about no Monitor. */
 function testAlert(
   channel: AlertChannelDoc,
   now: Date,
@@ -23,7 +23,7 @@ function testAlert(
     _id: new ObjectId(),
     monitorId: new ObjectId(),
     ownerId: channel.ownerId,
-    kind: "down",
+    kind: "test",
     incidentId: new ObjectId(),
     text: "🔔 <b>Test Alert</b> from nodbeat\nAlerts for your Monitors arrive here.",
     options: { parseMode: "HTML" },
@@ -33,12 +33,11 @@ function testAlert(
       monitorUrl: `${publicBaseUrl}/settings`,
       at: now,
       message: "Test Alert from nodbeat: Alerts for your Monitors arrive here.",
+      title: "Test Alert from nodbeat",
+      summary: "Alerts for your Monitors arrive here.",
     },
     channelIds: [channel._id],
-    attempts: 0,
     createdAt: now,
-    firstFailedAt: null,
-    nextAttemptAt: now,
   };
 }
 
@@ -55,9 +54,13 @@ export async function testAlertChannel(
 ): Promise<TestAlertResult> {
   const id = String(channel._id);
   const attempt: DeliveryAttempt = { delivered: new Set(), failed: new Map() };
-  const send = senders[channel.kind] as AlertSender<AlertChannelDoc>;
   try {
-    await send(channel, testAlert(channel, now, publicBaseUrl), attempt);
+    await sendTo(
+      senders,
+      channel,
+      testAlert(channel, now, publicBaseUrl),
+      attempt,
+    );
   } catch (err) {
     return { ok: false, error: String(err) };
   }
