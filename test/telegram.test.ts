@@ -151,6 +151,25 @@ describe("Link codes", () => {
     ]);
   });
 
+  it("can be generated only 10 times per User in an hour", async () => {
+    const ctx = await loggedIn();
+    let last = "";
+    for (let i = 0; i < 10; i++) last = await generateLinkCode(ctx.browser);
+
+    const refused = await ctx.browser.submit(
+      "/settings",
+      "/settings/link-code",
+    );
+
+    expect(refused.statusCode).toBe(429);
+    expect(refused.body).toContain("Too many Link codes. Try again later.");
+    expect(await say(ctx, PRIVATE_CHAT, `/start ${last}`)).toEqual([
+      expect.stringContaining("now linked"),
+    ]);
+    ctx.clock.advance(60 * MIN);
+    await generateLinkCode(ctx.browser);
+  });
+
   it("can be guessed only 10 times per chat in 10 minutes", async () => {
     const ctx = await loggedIn();
     for (let i = 0; i < 10; i++) {
