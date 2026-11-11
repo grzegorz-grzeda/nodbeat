@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-11-11
+
+### Added
+
+- Alerts are formatted in Telegram HTML: the Monitor name is bold, a Down Alert includes the last Heartbeat message, and every Alert ends with a link to its Monitor page. Names and messages are escaped.
+- Up Alerts are delivered silently (`disable_notification`); Down Alerts still notify.
+- When Telegram upgrades a group to a supergroup, its Linked chat and pending Alerts move to the new chat id, and an Alert that fails with the migration error is resent to the new id at once.
+- A chat that removes the bot (`left` or `kicked`) is unlinked straight away.
+- At startup the bot's command menu (`start`, `status`, `unlink`) is set and the webhook receives only `message` and `my_chat_member` updates. The manual `/setcommands` step is gone from `docs/deploy.md`.
+
 ## [0.21.0] - 2026-11-11
 
 ### Security
@@ -171,7 +181,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.18.0...v0.19.0
