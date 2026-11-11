@@ -36,6 +36,8 @@ export interface MonitorDoc extends MonitorStateFields {
   notes: string;
   intervalSec: number;
   graceSec: number;
+  /** Absent on Monitors stored before Max run times existed (= none). */
+  maxRunTimeSec?: number | null;
   /** Secret part of the Heartbeat URL. */
   token: string;
   alertsEnabled: boolean;
@@ -324,6 +326,12 @@ export function registerMonitors(
             <ul class="plain">
               <li>Interval: ${formatDuration(monitor.intervalSec)}</li>
               <li>Grace period: ${formatDuration(monitor.graceSec)}</li>
+              ${
+                monitor.maxRunTimeSec != null &&
+                html`<li>
+                  Max run time: ${formatDuration(monitor.maxRunTimeSec)}
+                </li>`
+              }
               ${lastRun && html`<li>Last Run duration: ${lastRun}</li>`}
             </ul>
             ${monitor.notes ? html`<p class="notes">${monitor.notes}</p>` : ""}

@@ -111,10 +111,10 @@ export function registerMonitorManagement(
         reply.code(400);
         return sendEditPage(req, reply, { form, errors: result.errors });
       }
-      const { intervalSec, graceSec } = result.settings;
+      const { intervalSec, graceSec, maxRunTimeSec } = result.settings;
       await runTransition(
         monitor,
-        { kind: "edit", timing: { intervalSec, graceSec } },
+        { kind: "edit", timing: { intervalSec, graceSec, maxRunTimeSec } },
         result.settings,
       );
       setFlash(reply, "Monitor saved.");

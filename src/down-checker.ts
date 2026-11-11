@@ -7,8 +7,8 @@ import { transition } from "./monitor-state.js";
 import { monitors } from "./monitors.js";
 
 /**
- * Moves Up Monitors past their deadline to Down. `startedAt` is when this nodbeat process started:
- * no Monitor goes Down before startedAt + Interval + Grace period.
+ * Moves Up Monitors past their deadline, or with a Run past their Max run time, to Down. `startedAt` is when this
+ * nodbeat process started: no Monitor goes Down before startedAt + Interval + Grace period (or + Max run time).
  */
 export function createDownChecker(deps: {
   db: Db;
@@ -21,25 +21,35 @@ export function createDownChecker(deps: {
   const { db, clock, startedAt, lock, pruner, publicBaseUrl } = deps;
   return async () => {
     const now = clock.now();
-    // Pre-filter with the same rule as downDeadline(), so only overdue Monitors are loaded; transition() decides.
+    /** Whether `amount` seconds after the latest of `from`, the last unpause or edit, and startedAt have passed. */
+    const passed = (from: string, amount: unknown) => ({
+      $expr: {
+        $lte: [
+          {
+            $dateAdd: {
+              startDate: { $max: [from, "$watchedSince", startedAt] },
+              unit: "second",
+              amount,
+            },
+          },
+          now,
+        ],
+      },
+    });
+    // Pre-filter with the same rules as downDeadline() and runDeadline(), so only overdue Monitors are loaded;
+    // transition() decides.
     const overdue = await monitors(db)
       .find(
         {
           state: "up",
-          $expr: {
-            $lte: [
-              {
-                $dateAdd: {
-                  startDate: {
-                    $max: ["$lastHeartbeatAt", "$watchedSince", startedAt],
-                  },
-                  unit: "second",
-                  amount: { $add: ["$intervalSec", "$graceSec"] },
-                },
-              },
-              now,
-            ],
-          },
+          $or: [
+            passed("$lastHeartbeatAt", { $add: ["$intervalSec", "$graceSec"] }),
+            {
+              runStartedAt: { $ne: null },
+              maxRunTimeSec: { $ne: null },
+              ...passed("$runStartedAt", "$maxRunTimeSec"),
+            },
+          ],
         },
         { projection: { _id: 1 } },
       )
