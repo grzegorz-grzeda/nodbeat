@@ -78,8 +78,8 @@ export interface TestContext {
 }
 
 /** Fastify logger options that collect warnings and errors into `logs`. */
-const recordingLogger = (logs: TestContext["logs"]) => ({
-  level: "warn",
+const recordingLogger = (logs: TestContext["logs"], level = "warn") => ({
+  level,
   stream: {
     write: (line: string) => {
       logs.push(JSON.parse(line) as Record<string, unknown>);
@@ -93,8 +93,10 @@ afterEach(async () => {
   await Promise.all(cleanups.splice(0).map((cleanup) => cleanup()));
 });
 
-/** Builds the full app on a fresh, isolated database. */
-export async function buildTestApp(): Promise<TestContext> {
+/** Builds the full app on a fresh, isolated database. `logLevel` "info" also records request logs. */
+export async function buildTestApp(
+  options: { logLevel?: "warn" | "info" } = {},
+): Promise<TestContext> {
   const client = new MongoClient(inject("mongoUri"));
   await client.connect();
   const db = client.db(`test_${randomUUID().replaceAll("-", "")}`);
@@ -107,7 +109,7 @@ export async function buildTestApp(): Promise<TestContext> {
     telegram,
     config: testConfig,
     build: testBuild,
-    logger: recordingLogger(logs),
+    logger: recordingLogger(logs, options.logLevel),
   });
   cleanups.push(async () => {
     await app.close();

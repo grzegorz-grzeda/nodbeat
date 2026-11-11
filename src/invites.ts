@@ -1,7 +1,7 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { Db, ObjectId } from "mongodb";
-import { requireAdmin, type Auth } from "./auth.js";
+import { requireAdmin, sha256, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { sendConfirmPage } from "./confirm.js";
@@ -13,10 +13,14 @@ import {
   createUser,
   DEFAULT_TIME_ZONE,
   emailsByUserId,
+  MIN_PASSWORD_LENGTH,
   UserError,
+  type UserDoc,
 } from "./users.js";
 
 const INVITE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+/** A claim whose User never got created (the process died mid-accept) frees the Invite again after this. */
+const CLAIM_TIMEOUT_MS = 60 * 1000;
 const MAX_NOTE_LENGTH = 200;
 const ACCEPT_MAX_REQUESTS = 10;
 const ACCEPT_WINDOW_MS = 15 * 60 * 1000;
@@ -31,6 +35,7 @@ export interface InviteDoc {
   revokedAt: Date | null;
   /** When the Invite was claimed; set before the User exists, cleared again if creating the User fails. */
   usedAt: Date | null;
+  /** The User it created; null until then. */
   usedBy: ObjectId | null;
 }
 
@@ -40,8 +45,9 @@ export async function ensureInviteIndexes(db: Db): Promise<void> {
   await invites(db).createIndex({ createdAt: -1 });
 }
 
-const hashCode = (code: string) =>
-  createHash("sha256").update(code).digest("hex");
+/** The Invite's id for the code in its link. */
+const inviteIdOf = (code: string) => sha256(code);
+const isInviteId = (id: string) => /^[0-9a-f]{64}$/.test(id);
 
 /** Creates an Invite and returns its code: the only time the code exists outside the link. */
 async function createInvite(
@@ -50,7 +56,7 @@ async function createInvite(
 ): Promise<string> {
   const code = randomBytes(32).toString("base64url");
   await invites(db).insertOne({
-    _id: hashCode(code),
+    _id: inviteIdOf(code),
     note: input.note,
     createdBy: input.createdBy,
     createdAt: input.now,
@@ -62,37 +68,41 @@ async function createInvite(
   return code;
 }
 
-/** Matches an Invite that can still be accepted at `now`. */
-const pending = (now: Date) => ({
-  usedAt: null,
+/** Query for an Invite that can be accepted or revoked at `now`: unused, unrevoked, unexpired and not mid-accept. */
+const acceptableAt = (now: Date) => ({
+  usedBy: null,
   revokedAt: null,
   expiresAt: { $gt: now },
+  $or: [
+    { usedAt: null },
+    { usedAt: { $lte: new Date(now.getTime() - CLAIM_TIMEOUT_MS) } },
+  ],
 });
 
-function findPendingInvite(
+function findAcceptableInvite(
   db: Db,
-  code: string,
+  id: string,
   now: Date,
 ): Promise<InviteDoc | null> {
-  return invites(db).findOne({ _id: hashCode(code), ...pending(now) });
+  return invites(db).findOne({ _id: id, ...acceptableAt(now) });
 }
 
-/** Claims a pending Invite in one atomic step, so two parallel accepts can't both win. */
-async function claimInvite(
-  db: Db,
-  code: string,
-  now: Date,
-): Promise<InviteDoc | null> {
+/** Claims an acceptable Invite in one atomic step, so two parallel accepts can't both win. */
+function claimInvite(db: Db, id: string, now: Date): Promise<InviteDoc | null> {
   return invites(db).findOneAndUpdate(
-    { _id: hashCode(code), ...pending(now) },
+    { _id: id, ...acceptableAt(now) },
     { $set: { usedAt: now } },
   );
 }
 
-/** Makes a claimed Invite pending again after creating its User failed. */
-async function releaseInvite(db: Db, id: string): Promise<void> {
+/** Undoes this claim (made at `claimedAt`) after creating its User failed. */
+async function releaseInvite(
+  db: Db,
+  id: string,
+  claimedAt: Date,
+): Promise<void> {
   await invites(db).updateOne(
-    { _id: id, usedBy: null },
+    { _id: id, usedBy: null, usedAt: claimedAt },
     { $set: { usedAt: null } },
   );
 }
@@ -105,21 +115,13 @@ async function markInviteUsed(
   await invites(db).updateOne({ _id: id }, { $set: { usedBy: userId } });
 }
 
-/** Revokes the Invite if it's still pending; false when it was used, expired, revoked or doesn't exist. */
+/** Revokes the Invite if it's still acceptable; false when it was used, expired, revoked or doesn't exist. */
 async function revokeInvite(db: Db, id: string, now: Date): Promise<boolean> {
   const res = await invites(db).updateOne(
-    { _id: id, ...pending(now) },
+    { _id: id, ...acceptableAt(now) },
     { $set: { revokedAt: now } },
   );
   return res.modifiedCount === 1;
-}
-
-function findPendingInviteById(
-  db: Db,
-  id: string,
-  now: Date,
-): Promise<InviteDoc | null> {
-  return invites(db).findOne({ _id: id, ...pending(now) });
 }
 
 /** Every Invite, newest first. */
@@ -127,24 +129,30 @@ function listInvites(db: Db): Promise<InviteDoc[]> {
   return invites(db).find().sort({ createdAt: -1, _id: 1 }).toArray();
 }
 
+type InviteStatus =
+  | { kind: "pending" | "expired" | "revoked" }
+  | { kind: "used"; usedBy: ObjectId; usedAt: Date };
+
+function inviteStatus(invite: InviteDoc, now: Date): InviteStatus {
+  if (invite.usedBy && invite.usedAt) {
+    return { kind: "used", usedBy: invite.usedBy, usedAt: invite.usedAt };
+  }
+  if (invite.revokedAt) return { kind: "revoked" };
+  if (invite.expiresAt <= now) return { kind: "expired" };
+  // Also while an accept is in progress: it either creates the User or frees the Invite again.
+  return { kind: "pending" };
+}
+
 /** "pending", "expired", "revoked", or "used by <email> at <time>". */
-function inviteStatus(
-  invite: InviteDoc,
-  now: Date,
+function statusText(
+  status: InviteStatus,
   emails: Map<string, string>,
   timeZone: string,
 ): string {
-  if (invite.usedBy && invite.usedAt) {
-    const email = emails.get(String(invite.usedBy)) ?? "a deleted User";
-    return `used by ${email} at ${formatDateTime(invite.usedAt, timeZone)}`;
-  }
-  if (invite.revokedAt) return "revoked";
-  // Claimed by an accept still in progress: about to be used, or released again.
-  if (invite.usedAt) return "pending";
-  return invite.expiresAt > now ? "pending" : "expired";
+  if (status.kind !== "used") return status.kind;
+  const email = emails.get(String(status.usedBy)) ?? "a deleted User";
+  return `used by ${email} at ${formatDateTime(status.usedAt, timeZone)}`;
 }
-
-const isInviteId = (id: string) => /^[0-9a-f]{64}$/.test(id);
 
 export function registerInvites(
   app: FastifyInstance,
@@ -188,15 +196,15 @@ export function registerInvites(
                   </thead>
                   <tbody>
                     ${list.map((i) => {
-                      const status = inviteStatus(i, now, emails, timeZone);
+                      const status = inviteStatus(i, now);
                       return html`<tr>
                         <td>${i.note}</td>
                         <td>${formatDateTime(i.createdAt, timeZone)}</td>
                         <td>${formatDateTime(i.expiresAt, timeZone)}</td>
-                        <td>${status}</td>
+                        <td>${statusText(status, emails, timeZone)}</td>
                         <td>
                           ${
-                            status === "pending" && !i.usedAt
+                            status.kind === "pending"
                               ? html`<a href="/admin/invites/${i._id}/revoke"
                                   >Revoke</a
                                 >`
@@ -232,7 +240,7 @@ export function registerInvites(
     async (req, reply) => {
       const { id } = req.params;
       const invite = isInviteId(id)
-        ? await findPendingInviteById(db, id, clock.now())
+        ? await findAcceptableInvite(db, id, clock.now())
         : null;
       if (!invite) return reply.redirect("/admin/invites", 303);
       return sendConfirmPage(reply, auth.csrfToken(req, reply), {
@@ -332,12 +340,12 @@ export function registerInvites(
               required
           /></label>
           <label
-            >Password (at least 8 characters)
+            >Password (at least ${String(MIN_PASSWORD_LENGTH)} characters)
             <input
               type="password"
               name="password"
               autocomplete="new-password"
-              minlength="8"
+              minlength="${String(MIN_PASSWORD_LENGTH)}"
               required
           /></label>
           <label
@@ -358,7 +366,11 @@ export function registerInvites(
 
   app.get<{ Params: { code: string } }>("/invite/:code", async (req, reply) => {
     if (!limiter.tryAcquire(req.ip)) return tooMany(reply);
-    const invite = await findPendingInvite(db, req.params.code, clock.now());
+    const invite = await findAcceptableInvite(
+      db,
+      inviteIdOf(req.params.code),
+      clock.now(),
+    );
     return invite ? acceptPage(req, reply) : cantBeUsed(reply);
   });
 
@@ -372,20 +384,24 @@ export function registerInvites(
       const email = field("email");
       const timeZone = field("timeZone") || DEFAULT_TIME_ZONE;
 
-      const invite = await claimInvite(db, req.params.code, clock.now());
+      const claimedAt = clock.now();
+      const invite = await claimInvite(
+        db,
+        inviteIdOf(req.params.code),
+        claimedAt,
+      );
       if (!invite) return cantBeUsed(reply);
+      let user: UserDoc;
       try {
-        const user = await createUser(db, clock, {
+        user = await createUser(db, clock, {
           email,
           password: field("password"),
           timeZone,
           isAdmin: false,
         });
-        await markInviteUsed(db, invite._id, user._id);
-        await auth.startSession(req, reply, user._id);
-        return reply.redirect("/", 303);
       } catch (err) {
-        await releaseInvite(db, invite._id);
+        // Only when no User was created: past this point the Invite must never be released.
+        await releaseInvite(db, invite._id, claimedAt);
         if (!(err instanceof UserError)) throw err;
         reply.code(400);
         return acceptPage(req, reply, {
@@ -394,6 +410,9 @@ export function registerInvites(
           timeZone,
         });
       }
+      await markInviteUsed(db, invite._id, user._id);
+      await auth.startSession(req, reply, user._id);
+      return reply.redirect("/", 303);
     },
   );
 }

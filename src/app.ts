@@ -3,6 +3,7 @@ import cookie from "@fastify/cookie";
 import formbody from "@fastify/formbody";
 import Fastify, {
   type FastifyInstance,
+  type FastifyRequest,
   type FastifyServerOptions,
 } from "fastify";
 import type { Db } from "mongodb";
@@ -57,6 +58,30 @@ declare module "fastify" {
 
 export type App = FastifyInstance;
 
+/** Hides the secret path segment of Heartbeat URLs and Invite links: whoever reads the logs mustn't get either. */
+export function redactSecretPath(url: string): string {
+  return url.replace(/^\/(hb|invite)\/[^/?#]+/, "/$1/<redacted>");
+}
+
+/** The logger options with request URLs redacted; `false` stays off. */
+function withRedactedUrls(
+  logger: FastifyServerOptions["logger"],
+): NonNullable<FastifyServerOptions["logger"]> {
+  if (!logger) return false;
+  return {
+    ...(logger === true ? {} : logger),
+    serializers: {
+      ...(logger === true ? {} : logger.serializers),
+      req: (req: FastifyRequest) => ({
+        method: req.method,
+        url: redactSecretPath(req.url),
+        host: req.host,
+        remoteAddress: req.ip,
+      }),
+    },
+  };
+}
+
 /** Composition root: builds the Fastify instance and every module. */
 export async function createApp(deps: AppDeps): Promise<App> {
   const { db, clock, config } = deps;
@@ -64,12 +89,13 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const startedAt = clock.now();
   const lock = new MonitorLock();
   const pruner = createLogPruner({ db, clock });
-  const app = Fastify({
-    logger: deps.logger ?? false,
+  const options: FastifyServerOptions = {
+    logger: withRedactedUrls(deps.logger),
     // Only the edge Caddy (ADR 0004), at its fixed address, may set the client IP via X-Forwarded-For;
     // another container on the edge network can't fake one.
     trustProxy: config.trustedProxyIp,
-  });
+  };
+  const app = Fastify(options);
 
   registerSecurityHeaders(app);
 

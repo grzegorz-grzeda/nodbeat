@@ -328,4 +328,23 @@ describe("Invites", () => {
       expect((await visitor(ctx).get(invite)).statusCode).toBe(200);
     });
   });
+
+  it("never write Invite codes or Heartbeat tokens to the request log", async () => {
+    const ctx = await buildTestApp({ logLevel: "info" });
+    const code = "B".repeat(43);
+    await visitor(ctx).get(`/invite/${code}`);
+    await ctx.app.inject({
+      method: "GET",
+      url: `/hb/${"C".repeat(32)}?msg=hi`,
+    });
+
+    const urls = ctx.logs.flatMap((l) => {
+      const req = l.req as { url?: string } | undefined;
+      return req?.url ? [req.url] : [];
+    });
+    expect(urls).toContain("/invite/<redacted>");
+    expect(urls).toContain("/hb/<redacted>?msg=hi");
+    expect(JSON.stringify(ctx.logs)).not.toContain(code);
+    expect(JSON.stringify(ctx.logs)).not.toContain("C".repeat(32));
+  });
 });

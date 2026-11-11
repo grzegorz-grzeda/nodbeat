@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - The Invite list shows each Invite's note, created and expiry times and status (pending, expired, revoked, or used by whom and when); a pending Invite can be revoked after confirming.
 - The landing page says nodbeat is invite-only for now.
 
+### Security
+
+- Request logs no longer contain Heartbeat URL tokens or Invite codes: the secret path segment is logged as `<redacted>`.
+
 ## [0.18.0] - 2026-11-11
 
 ### Added

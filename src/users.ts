@@ -33,7 +33,7 @@ export class UserError extends Error {
 
 /** @node-rs/argon2 exports Algorithm as a const enum, which isolated modules can't reference; 2 = Argon2id. */
 const ARGON2ID = 2;
-const MIN_PASSWORD_LENGTH = 8;
+export const MIN_PASSWORD_LENGTH = 8;
 
 const users = (db: Db) => db.collection<UserDoc>("users");
 

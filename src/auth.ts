@@ -54,7 +54,7 @@ export async function ensureSessionIndexes(db: Db): Promise<void> {
 const newToken = () => randomBytes(32).toString("base64url");
 const sessionExpiry = (now: Date) => new Date(now.getTime() + SESSION_TTL_MS);
 
-const sha256 = (value: string) =>
+export const sha256 = (value: string) =>
   createHash("sha256").update(value).digest("hex");
 
 /** Redirects anonymous visitors to the login page. Use as a route's preHandler. */
