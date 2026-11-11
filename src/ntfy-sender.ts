@@ -6,10 +6,18 @@ import {
   type OutboundHttp,
 } from "./outbound-http.js";
 
-/** ntfy priorities: a Down Alert is urgent, an Up Alert shouldn't wake the User, a test Alert is ntfy's default. */
-const PRIORITY = { down: "5", up: "2", test: "3" } as const;
+/**
+ * ntfy priorities: a Down Alert and a Reminder are urgent, an Up Alert shouldn't wake the User, a test Alert is ntfy's
+ * default.
+ */
+const PRIORITY = { down: "5", reminder: "5", up: "2", test: "3" } as const;
 /** ntfy tags shown as emoji, like the Telegram text's leading one. */
-const TAGS = { down: "red_circle", up: "green_circle", test: "bell" } as const;
+const TAGS = {
+  down: "red_circle",
+  reminder: "red_circle",
+  up: "green_circle",
+  test: "bell",
+} as const;
 
 /** A header value as ntfy reads it: as is when ASCII, else an RFC 2047 encoded-word. */
 const headerValue = (value: string) =>

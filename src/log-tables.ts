@@ -34,6 +34,7 @@ export function incidentsTable(
           <th>Start</th>
           <th>End</th>
           <th>Duration</th>
+          <th>Reminders</th>
         </tr>
       </thead>
       <tbody>
@@ -50,6 +51,7 @@ export function incidentsTable(
                   ((i.endedAt ?? now).getTime() - i.startedAt.getTime()) / 1000,
                 )}
               </td>
+              <td class="reminders">${String(i.remindersSent ?? 0)}</td>
             </tr>`,
         )}
       </tbody>
