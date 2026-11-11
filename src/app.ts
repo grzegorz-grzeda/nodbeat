@@ -11,7 +11,16 @@ import type { BuildInfo } from "./build-info.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { registerAdmin } from "./admin.js";
-import { createAlertDispatcher, ensureAlertIndexes } from "./alerts.js";
+import {
+  ensureAlertChannelIndexes,
+  migrateLinkedChats,
+} from "./alert-channels.js";
+import {
+  createAlertDispatcher,
+  ensureAlertIndexes,
+  migrateAlertOutbox,
+  type AlertSenders,
+} from "./alerts.js";
 import { ensureSessionIndexes, registerAuth } from "./auth.js";
 import { registerDashboard } from "./dashboard.js";
 import { ensureInviteIndexes, registerInvites } from "./invites.js";
@@ -23,7 +32,7 @@ import {
   registerHeartbeatIntake,
 } from "./heartbeats.js";
 import { ensureIncidentIndexes } from "./incidents.js";
-import { ensureLinkedChatIndexes } from "./linked-chats.js";
+import { ensureLinkCodeIndexes } from "./linked-chats.js";
 import { registerLayout } from "./layout.js";
 import { createLogPruner } from "./log-pruner.js";
 import { KeyedLock } from "./keyed-lock.js";
@@ -36,12 +45,20 @@ import { registerSettings } from "./settings.js";
 import { ensureStatePeriodIndexes } from "./state-periods.js";
 import type { TelegramClient } from "./telegram.js";
 import { registerTelegramBot } from "./telegram-bot.js";
+import { createTelegramSender } from "./telegram-sender.js";
+import type { HostResolver, HttpClient } from "./outbound-http.js";
+import { createNtfySender } from "./ntfy-sender.js";
+import { createWebhookSender } from "./webhook-sender.js";
 import { ensureUserIndexes } from "./users.js";
 
 export interface AppDeps {
   db: Db;
   clock: Clock;
   telegram: TelegramClient;
+  /** Sends HTTP Alert channels' requests (Webhooks, ntfy topics). */
+  http: HttpClient;
+  /** Resolves the hosts of Alert channel URLs for the SSRF guard. */
+  resolveHost: HostResolver;
   config: Config;
   /** Version and commit reported by `/health`. */
   build: BuildInfo;
@@ -88,6 +105,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
   // Startup grace: no Monitor goes Down before this + its Interval + Grace period.
   const startedAt = clock.now();
   const lock = new KeyedLock();
+  // Keyed by owner: it guards the per-User Alert channel limit, whichever kind is added.
+  const channelLock = new KeyedLock();
   const pruner = createLogPruner({ db, clock });
   const options: FastifyServerOptions = {
     logger: withRedactedUrls(deps.logger),
@@ -105,11 +124,15 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ensureMonitorIndexes(db),
     ensureHeartbeatIndexes(db),
     ensureIncidentIndexes(db),
-    ensureLinkedChatIndexes(db),
+    ensureLinkCodeIndexes(db),
+    ensureAlertChannelIndexes(db),
     ensureStatePeriodIndexes(db),
     ensureAlertIndexes(db),
     ensureInviteIndexes(db),
   ]);
+  // Linked chats and queued Alerts from before Alert channels existed; idempotent.
+  await migrateLinkedChats(db);
+  await migrateAlertOutbox(db);
 
   // Signs Flash cookies. A key derived for that purpose alone, so a signature never doubles as a CSRF token.
   await app.register(cookie, {
@@ -138,10 +161,36 @@ export async function createApp(deps: AppDeps): Promise<App> {
     pruner,
     publicBaseUrl: config.publicBaseUrl,
   });
-  registerSettings(app, { db, clock, auth });
+  const senders: AlertSenders = {
+    telegram: createTelegramSender({
+      db,
+      telegram: deps.telegram,
+      log: app.log,
+    }),
+    webhook: createWebhookSender({
+      http: deps.http,
+      resolveHost: deps.resolveHost,
+    }),
+    ntfy: createNtfySender({ http: deps.http, resolveHost: deps.resolveHost }),
+  };
+  registerSettings(app, {
+    db,
+    clock,
+    auth,
+    senders,
+    channelLock,
+    resolveHost: deps.resolveHost,
+    publicBaseUrl: config.publicBaseUrl,
+  });
   registerAdmin(app, { db, clock });
   registerInvites(app, { db, clock, config, auth });
-  registerTelegramBot(app, { db, clock, telegram: deps.telegram, config });
+  registerTelegramBot(app, {
+    db,
+    clock,
+    telegram: deps.telegram,
+    config,
+    channelLock,
+  });
   registerOpenApi(app, {
     build: deps.build,
     publicBaseUrl: config.publicBaseUrl,
@@ -170,7 +219,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const dispatchAlerts = createAlertDispatcher({
     db,
     clock,
-    telegram: deps.telegram,
+    senders,
     log: app.log,
   });
   const tick = async (): Promise<void> => {

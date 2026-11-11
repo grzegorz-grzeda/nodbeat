@@ -384,7 +384,7 @@ describe("Alerts", () => {
     ctx.telegram.migratedChats.set(GROUP_CHAT.id, SUPERGROUP_ID);
     // The database refuses to move the Linked chat, e.g. it is unavailable.
     await ctx.db.command({
-      collMod: "linkedChats",
+      collMod: "alertChannels",
       validator: { chatId: { $ne: SUPERGROUP_ID } },
       validationAction: "error",
     });
@@ -392,7 +392,7 @@ describe("Alerts", () => {
     await goDown(ctx, m.hb);
     expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([PRIVATE_CHAT.id]);
 
-    await ctx.db.command({ collMod: "linkedChats", validator: {} });
+    await ctx.db.command({ collMod: "alertChannels", validator: {} });
     ctx.clock.advance(30 * SEC);
     await ctx.app.tick();
     expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([
@@ -447,6 +447,42 @@ describe("Alerts", () => {
       "🟢 Garden sensor is Up again",
       "🔴 Garden sensor is Down",
     ]);
+  });
+
+  it("retries per Alert channel: a failing Webhook doesn't hold back a Linked chat's Alerts", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+    await ctx.browser.submit("/settings", "/settings/webhooks", {
+      name: "Dead hook",
+      url: "https://hooks.example.com/x",
+      secret: "",
+    });
+    ctx.http.respond = () => 503;
+    const m = await createMonitor(ctx.browser);
+    await goDown(ctx, m.hb); // t=91 s: Down to the chat; the Webhook fails
+    ctx.clock.advance(9 * SEC); // t=100 s
+    await sendHeartbeat(ctx, m.hb);
+    await ctx.app.tick(); // Up to the chat; the Webhook fails, retry due at 130 s
+
+    ctx.clock.advance(91 * SEC); // t=191 s: Down again; the Webhook's Up is still retried
+    await ctx.app.tick();
+
+    expect(firstLines(ctx)).toEqual([
+      "🔴 Garden sensor is Down",
+      "🟢 Garden sensor is Up again",
+      "🔴 Garden sensor is Down",
+    ]);
+    // The Webhook still gets its Alerts in order once it answers.
+    ctx.http.requests.length = 0;
+    ctx.http.respond = () => 200;
+    ctx.clock.advance(10 * MIN);
+    await ctx.app.tick();
+    await ctx.app.tick();
+    expect(
+      ctx.http.requests.map(
+        (r) => (JSON.parse(r.body) as { kind: string }).kind,
+      ),
+    ).toEqual(["up", "down"]);
   });
 
   it("does not hold back another Monitor's Alerts while one is being retried", async () => {

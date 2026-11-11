@@ -213,7 +213,7 @@ textarea {
   max-width: 100%;
 }
 
-label > input:not([type="checkbox"]),
+label > input:not([type="checkbox"], [type="radio"]),
 label > textarea {
   display: block;
   width: 100%;
@@ -344,6 +344,28 @@ form.inline {
 .error {
   color: var(--danger);
   font-weight: 500;
+}
+
+/* A Monitor whose Alerts reach no Alert channel. */
+.warning {
+  color: var(--danger);
+  font-weight: 500;
+}
+
+fieldset.alert-channels {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+fieldset.alert-channels label {
+  font-weight: 400;
+  margin: var(--space-2) 0;
+}
+
+fieldset.alert-channels .channel-choice {
+  margin-left: var(--space-4);
 }
 
 /* Classes that set display must not override the hidden attribute. */
@@ -501,6 +523,30 @@ ul.plain > li {
 
 ul.plain > li:last-child {
   border-bottom: none;
+}
+
+/* Settings: one row per Alert channel, kind, rename form, date and Remove wrapping on narrow screens. */
+ul.alert-channels > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+ul.alert-channels form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+ul.alert-channels input[name="name"] {
+  width: auto;
+  min-width: 10rem;
+}
+
+.channel-kind {
+  font-weight: 600;
 }
 
 .notes {

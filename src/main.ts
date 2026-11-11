@@ -3,6 +3,7 @@ import { createApp } from "./app.js";
 import { loadBuildInfo } from "./build-info.js";
 import { systemClock } from "./clock.js";
 import { ConfigError, loadConfig } from "./config.js";
+import { createNodeHttpClient, dnsResolver } from "./outbound-http.js";
 import { startSelfHeartbeat } from "./self-heartbeat.js";
 import { createHttpTelegramClient } from "./telegram.js";
 
@@ -22,6 +23,8 @@ async function main(): Promise<void> {
     db: client.db(),
     clock: systemClock,
     telegram: createHttpTelegramClient(config.telegramBotToken),
+    http: createNodeHttpClient(),
+    resolveHost: dnsResolver,
     config,
     build: loadBuildInfo(),
     logger: true,

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { MongoClient, type Db } from "mongodb";
 import { afterEach, inject } from "vitest";
 import { createApp, type App } from "../src/app.js";
@@ -6,6 +7,7 @@ import { runCli } from "../src/cli.js";
 import type { BuildInfo } from "../src/build-info.js";
 import type { Clock } from "../src/clock.js";
 import type { Config } from "../src/config.js";
+import type { HttpClient, HttpRequest } from "../src/outbound-http.js";
 import {
   TelegramChatMigratedError,
   TelegramForbiddenError,
@@ -125,6 +127,31 @@ export class RecordingTelegram implements TelegramClient {
   }
 }
 
+/** A host no test names resolves to this public address. */
+export const PUBLIC_IP = "93.184.216.34";
+
+/**
+ * Records outgoing HTTP requests (Webhooks, ntfy topics) instead of sending them, and resolves host names from
+ * `hosts`. Kind-agnostic: every HTTP Alert channel goes through it.
+ */
+export class RecordingHttp implements HttpClient {
+  readonly requests: HttpRequest[] = [];
+  /** The status code answered, or an error thrown (a timeout, a refused connection). 200 unless set. */
+  respond: (request: HttpRequest) => number | Error = () => 200;
+  /** Addresses a host name resolves to; any other name resolves to PUBLIC_IP. */
+  readonly hosts = new Map<string, string[]>();
+
+  async post(request: HttpRequest): Promise<{ status: number }> {
+    const answer = this.respond(request);
+    if (answer instanceof Error) throw answer;
+    this.requests.push(request);
+    return { status: answer };
+  }
+
+  readonly resolve = async (hostname: string): Promise<string[]> =>
+    isIP(hostname) ? [hostname] : (this.hosts.get(hostname) ?? [PUBLIC_IP]);
+}
+
 export const testConfig: Config = {
   mongoUri: "mongodb://unused-in-tests",
   publicBaseUrl: "https://nodbeat.test",
@@ -146,6 +173,7 @@ export interface TestContext {
   app: App;
   clock: FakeClock;
   telegram: RecordingTelegram;
+  http: RecordingHttp;
   client: MongoClient;
   db: Db;
   /** Warnings and errors the app logged, parsed. */
@@ -177,11 +205,14 @@ export async function buildTestApp(
   const db = client.db(`test_${randomUUID().replaceAll("-", "")}`);
   const clock = new FakeClock();
   const telegram = new RecordingTelegram();
+  const http = new RecordingHttp();
   const logs: TestContext["logs"] = [];
   const app = await createApp({
     db,
     clock,
     telegram,
+    http,
+    resolveHost: http.resolve,
     config: testConfig,
     build: testBuild,
     logger: recordingLogger(logs, options.logLevel),
@@ -190,7 +221,7 @@ export async function buildTestApp(
     await app.close();
     await client.close();
   });
-  return { app, clock, telegram, client, db, logs };
+  return { app, clock, telegram, http, client, db, logs };
 }
 
 /** Simulates a nodbeat restart: a fresh `createApp` on the same database and clock. */
@@ -200,6 +231,8 @@ export async function restartApp(ctx: TestContext): Promise<App> {
     db: ctx.db,
     clock: ctx.clock,
     telegram: ctx.telegram,
+    http: ctx.http,
+    resolveHost: ctx.http.resolve,
     config: testConfig,
     build: testBuild,
     logger: recordingLogger(ctx.logs),
@@ -254,12 +287,20 @@ export class Browser {
   async submit(
     formPage: string,
     action: string,
-    fields: Record<string, string> = {},
+    fields: Record<string, string | string[]> = {},
     options: { csrf?: string | null; headers?: Record<string, string> } = {},
   ): Promise<InjectResponse> {
     if (options.csrf === undefined) await this.get(formPage);
     const csrf = options.csrf === undefined ? this.#csrf : options.csrf;
-    const form = new URLSearchParams(fields);
+    // An array is sent as the field repeated, like checkboxes of the same name.
+    const form = new URLSearchParams(
+      Object.entries(fields).flatMap(([k, v]) =>
+        (Array.isArray(v) ? v : [v]).map((value): [string, string] => [
+          k,
+          value,
+        ]),
+      ),
+    );
     if (csrf !== null && csrf !== undefined) form.set("_csrf", csrf);
     return this.#send({
       method: "POST",

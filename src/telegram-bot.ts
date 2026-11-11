@@ -4,13 +4,17 @@ import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { formatAgo, formatDuration } from "./format.js";
+import { AlertChannelLimitError, listAlertChannels } from "./alert-channels.js";
 import { migrateChat } from "./alerts.js";
+import type { KeyedLock } from "./keyed-lock.js";
+import { limitsFor } from "./limits.js";
 import {
   linkChat,
-  ownersOfChat,
+  linkedChatsOf,
   redeemLinkCode,
   unlinkChat,
 } from "./linked-chats.js";
+import { channelsOfMonitor } from "./monitor-alert-channels.js";
 import { STATE_LABELS } from "./monitor-state.js";
 import { listMonitors } from "./monitors.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
@@ -105,9 +109,16 @@ function truncate(text: string): string {
 /** The Telegram webhook and the bot commands behind it. Registers the webhook with Telegram on startup. */
 export function registerTelegramBot(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; telegram: TelegramClient; config: Config },
+  deps: {
+    db: Db;
+    clock: Clock;
+    telegram: TelegramClient;
+    config: Config;
+    /** Guards the per-User Alert channel limit. */
+    channelLock: KeyedLock;
+  },
 ): void {
-  const { db, clock, telegram, config } = deps;
+  const { db, clock, telegram, config, channelLock } = deps;
   const expectedSecret = Buffer.from(config.telegramWebhookSecret);
   const startLimiter = new SlidingWindowLimiter(
     clock,
@@ -140,20 +151,39 @@ export function registerTelegramBot(
     if (!owner) {
       return `That Link code is invalid, already used or expired. Generate a new one at ${settingsUrl}.`;
     }
-    await linkChat(
-      db,
-      { ownerId: owner._id, chatId: chat.id, title: chatTitle(chat) },
-      now,
-    );
+    try {
+      await linkChat(
+        db,
+        channelLock,
+        {
+          ownerId: owner._id,
+          chatId: chat.id,
+          title: chatTitle(chat),
+          limit: limitsFor(owner).maxAlertChannels,
+        },
+        now,
+      );
+    } catch (err) {
+      if (!(err instanceof AlertChannelLimitError)) throw err;
+      return `You already have ${err.limit} Alert channels, the most allowed. Remove one at ${settingsUrl} first.`;
+    }
     return "This chat is now linked to your nodbeat account. Alerts will arrive here.";
   };
 
+  /** The owner's Monitors whose Alert channels include `channelId` (the chat's Linked chat of this owner). */
   const monitorStatesOf = async (
-    ownerId: ObjectId,
+    { ownerId, channelId }: { ownerId: ObjectId; channelId: ObjectId },
     now: Date,
   ): Promise<string> => {
-    const list = await listMonitors(db, ownerId);
-    if (list.length === 0) return "No Monitors yet.";
+    const [all, channels] = await Promise.all([
+      listMonitors(db, ownerId),
+      listAlertChannels(db, ownerId),
+    ]);
+    if (all.length === 0) return "No Monitors yet.";
+    const list = all.filter((m) =>
+      channelsOfMonitor(m, channels).some((c) => c._id.equals(channelId)),
+    );
+    if (list.length === 0) return "No Monitors alert this chat.";
     return list
       .map(
         (m) =>
@@ -163,15 +193,15 @@ export function registerTelegramBot(
   };
 
   const statusCommand: Command = async ({ chat }) => {
-    const owners = await ownersOfChat(db, chat.id);
+    const owners = await linkedChatsOf(db, chat.id);
     if (owners.length === 0) return notLinked;
     const now = clock.now();
     if (owners.length === 1) return monitorStatesOf(owners[0]!, now);
     // A group linked by several Users: one numbered section per User, never labelled by email.
     const sections = await Promise.all(
       owners.map(
-        async (ownerId, i) =>
-          `Account ${i + 1}\n${await monitorStatesOf(ownerId, now)}`,
+        async (link, i) =>
+          `Account ${i + 1}\n${await monitorStatesOf(link, now)}`,
       ),
     );
     return sections.join("\n\n");

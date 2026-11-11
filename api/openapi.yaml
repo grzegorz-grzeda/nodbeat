@@ -1,6 +1,6 @@
 # Hand-written (spec 0003). Served at /openapi.yaml with info.version set to the
 # running version and servers set to PUBLIC_BASE_URL; the values below are placeholders.
-openapi: 3.0.3
+openapi: 3.1.0
 info:
   title: nodbeat
   version: 0.0.0
@@ -25,6 +25,87 @@ tags:
     description: Send a Heartbeat to a Monitor's Heartbeat URL.
   - name: Health
     description: Whether this nodbeat instance is up.
+  - name: Alerts
+    description: Alerts nodbeat sends to your Alert channels.
+webhooks:
+  alert:
+    post:
+      tags: [Alerts]
+      summary: Alert sent to a Webhook
+      description: |
+        nodbeat POSTs each Down and Up Alert to every Webhook among the
+        Monitor's Alert channels (add one in Settings). Answer with any `2xx`
+        within 5 s; anything else, including a redirect (never followed), is a
+        failure. A failed Alert is retried with growing delays for 1 hour; then
+        it is dropped and the Webhook is marked **Failing** in Settings, with
+        the last error. It still gets later Alerts, and the next one delivered
+        clears Failing.
+
+        "Send test" in Settings sends a test Alert at once: `kind` `down`,
+        `monitor.name` `Test Alert`, `monitor.url` the Settings page, and a
+        `monitor.id` and `incidentId` that match no Monitor or Incident.
+
+        With a secret set, verify each request: compute the HMAC-SHA256 of the
+        raw request body with the secret as key, hex-encode it, and compare it
+        (in constant time) with `X-Nodbeat-Signature` after its `sha256=`
+        prefix. Reject requests that don't match.
+
+        URLs whose host resolves to a private, loopback, link-local, CGNAT or
+        unique-local address (IPv4 or IPv6) are refused, on save and before
+        every send.
+      operationId: alertWebhook
+      parameters:
+        - name: X-Nodbeat-Signature
+          in: header
+          required: false
+          description: "`sha256=` and the hex HMAC-SHA256 of the raw body, keyed with the Webhook's secret. Only sent when a secret is set."
+          schema:
+            type: string
+            pattern: "^sha256=[0-9a-f]{64}$"
+          example: sha256=77325902caca812dc259733aacd046b73817372c777b8d95b402647474516e13
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebhookAlert"
+            examples:
+              down:
+                summary: A Monitor went Down
+                value:
+                  monitor:
+                    id: 6730c1f2a4b5c6d7e8f90123
+                    name: Nightly backup
+                    url: https://nodbeat.example.com/monitors/6730c1f2a4b5c6d7e8f90123
+                  kind: down
+                  at: "2026-11-11T03:01:30.000Z"
+                  message: disk full
+                  incidentId: 6731a0b1c2d3e4f5a6b7c8d9
+              up:
+                summary: The Monitor is Up again
+                value:
+                  monitor:
+                    id: 6730c1f2a4b5c6d7e8f90123
+                    name: Nightly backup
+                    url: https://nodbeat.example.com/monitors/6730c1f2a4b5c6d7e8f90123
+                  kind: up
+                  at: "2026-11-11T03:20:02.000Z"
+                  message: null
+                  incidentId: 6731a0b1c2d3e4f5a6b7c8d9
+              test:
+                summary: A test Alert sent from Settings
+                value:
+                  monitor:
+                    id: 6731b2c3d4e5f6a7b8c9d0e1
+                    name: Test Alert
+                    url: https://nodbeat.example.com/settings
+                  kind: test
+                  at: "2026-11-11T09:00:00.000Z"
+                  message: "Test Alert from nodbeat: Alerts for your Monitors arrive here."
+                  incidentId: 6731b2c3d4e5f6a7b8c9d0e2
+      responses:
+        "2XX":
+          description: Received. Any `2xx` counts; the body is ignored.
 paths:
   /hb/{token}:
     parameters:
@@ -291,3 +372,35 @@ components:
         commit:
           type: string
           description: The commit it was built from, or `dev`.
+    WebhookAlert:
+      type: object
+      description: The JSON body of an Alert POSTed to a Webhook.
+      required: [monitor, kind, at, message, incidentId]
+      properties:
+        monitor:
+          type: object
+          required: [id, name, url]
+          properties:
+            id:
+              type: string
+              description: The Monitor's id.
+            name:
+              type: string
+            url:
+              type: string
+              format: uri
+              description: The Monitor page in nodbeat.
+        kind:
+          type: string
+          enum: [down, up, test]
+          description: "`down`: the Monitor went Down (missed its deadline, sent a Fail signal or ran longer than its Max run time). `up`: it is Up again. `test`: a test Alert sent from Settings; it is about no Monitor (`monitor.id` and `incidentId` are made up, `monitor.url` is the Settings page)."
+        at:
+          type: string
+          format: date-time
+          description: When the Monitor went Down (the Incident's start) or came Up (its end).
+        message:
+          type: [string, "null"]
+          description: On a Down Alert, the last Heartbeat's or the Fail signal's message; null on Up Alerts or when there is none.
+        incidentId:
+          type: string
+          description: The Incident; a Down Alert and the Up Alert that ends it share it.

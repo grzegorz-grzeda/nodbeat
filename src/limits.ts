@@ -3,6 +3,8 @@ import type { UserDoc } from "./users.js";
 /** Per-User limits. Constants for now; Plans will feed them later. */
 export interface Limits {
   maxMonitors: number;
+  /** Alert channels of every kind together. */
+  maxAlertChannels: number;
   minIntervalSec: number;
   maxIntervalSec: number;
   minGraceSec: number;
@@ -25,6 +27,7 @@ const DAY_SEC = 24 * 60 * 60;
 
 const DEFAULT_LIMITS: Limits = {
   maxMonitors: 50,
+  maxAlertChannels: 10,
   minIntervalSec: 30,
   maxIntervalSec: 7 * DAY_SEC,
   minGraceSec: 0,

@@ -60,7 +60,7 @@ async function loggedIn(email = "me@example.com") {
 /** The Remove link of the Linked chat with this title on the Settings page; it posts to the same path. */
 function removeActionFor(settingsBody: string, title: string): string {
   const item = settingsBody.split("<li>").find((li) => li.includes(title));
-  const action = /href="(\/settings\/linked-chats\/[^"]+\/delete)"/.exec(
+  const action = /href="(\/settings\/channels\/[^"]+\/delete)"/.exec(
     item ?? "",
   )?.[1];
   expect(action).toBeDefined();

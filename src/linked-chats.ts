@@ -1,6 +1,12 @@
 import { randomInt } from "node:crypto";
-import { MongoServerError, ObjectId, type Db } from "mongodb";
-import { parseObjectId } from "./ids.js";
+import { MongoServerError, ObjectId, type Collection, type Db } from "mongodb";
+import {
+  addAlertChannel,
+  alertChannels,
+  type TelegramChannelDoc,
+} from "./alert-channels.js";
+import type { KeyedLock } from "./keyed-lock.js";
+import { pullFromMonitors } from "./monitor-alert-channels.js";
 
 export const LINK_CODE_LENGTH = 8;
 export const LINK_CODE_TTL_MS = 10 * 60 * 1000;
@@ -16,23 +22,16 @@ export interface LinkCodeDoc {
   used: boolean;
 }
 
-export interface LinkedChatDoc {
-  _id: ObjectId;
-  ownerId: ObjectId;
-  chatId: number;
-  title: string;
-  linkedAt: Date;
-}
-
 const linkCodes = (db: Db) => db.collection<LinkCodeDoc>("linkCodes");
-const linkedChats = (db: Db) => db.collection<LinkedChatDoc>("linkedChats");
+/** Linked chats: the Alert channels of kind `telegram`. */
+const linkedChats = (db: Db) =>
+  alertChannels(db) as unknown as Collection<TelegramChannelDoc>;
+const TELEGRAM = { kind: "telegram" } as const;
 
-export async function ensureLinkedChatIndexes(db: Db): Promise<void> {
+export async function ensureLinkCodeIndexes(db: Db): Promise<void> {
   await Promise.all([
     linkCodes(db).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     linkCodes(db).createIndex({ ownerId: 1, createdAt: -1 }),
-    linkedChats(db).createIndex({ ownerId: 1, chatId: 1 }, { unique: true }),
-    linkedChats(db).createIndex({ chatId: 1 }),
   ]);
 }
 
@@ -98,58 +97,80 @@ export async function redeemLinkCode(
   return doc?.ownerId ?? null;
 }
 
-/** Links the chat to the User; linking an already Linked chat again just refreshes its title. */
+/**
+ * Links the chat to the User as an Alert channel named after the chat. Linking an already Linked chat again changes
+ * nothing: it keeps the name the User gave it. Throws AlertChannelLimitError when the User has no Alert channel left.
+ */
 export async function linkChat(
   db: Db,
-  chat: { ownerId: ObjectId; chatId: number; title: string },
+  lock: KeyedLock,
+  chat: { ownerId: ObjectId; chatId: number; title: string; limit: number },
   now: Date,
 ): Promise<void> {
-  await linkedChats(db).updateOne(
-    { ownerId: chat.ownerId, chatId: chat.chatId },
+  await addAlertChannel(
+    db,
+    lock,
     {
-      $set: { title: chat.title },
-      $setOnInsert: { _id: new ObjectId(), linkedAt: now },
+      _id: new ObjectId(),
+      ownerId: chat.ownerId,
+      ...TELEGRAM,
+      name: chat.title,
+      chatId: chat.chatId,
+      createdAt: now,
+      failingSince: null,
+      lastError: null,
     },
-    { upsert: true },
+    { limit: chat.limit, existing: { ...TELEGRAM, chatId: chat.chatId } },
   );
 }
 
-export function listLinkedChats(
-  db: Db,
-  ownerId: ObjectId,
-): Promise<LinkedChatDoc[]> {
-  return linkedChats(db)
-    .find({ ownerId })
-    .sort({ linkedAt: 1, _id: 1 })
-    .toArray();
-}
-
-/** Owners of every Link of this Telegram chat. */
-export async function ownersOfChat(
+/** Every User's Linked chat that is this Telegram chat: its owner and Alert channel id, earliest linked first. */
+export async function linkedChatsOf(
   db: Db,
   chatId: number,
-): Promise<ObjectId[]> {
+): Promise<Array<{ ownerId: ObjectId; channelId: ObjectId }>> {
   const docs = await linkedChats(db)
-    .find({ chatId })
-    .sort({ linkedAt: 1 })
+    .find({ ...TELEGRAM, chatId })
+    .sort({ createdAt: 1, _id: 1 })
     .toArray();
-  return docs.map((d) => d.ownerId);
+  return docs.map((d) => ({ ownerId: d.ownerId, channelId: d._id }));
 }
 
-/** Removes every Link of this Telegram chat. Returns how many were removed. */
+/** Removes every Link of this Telegram chat, also from Monitors' chosen lists. Returns how many were removed. */
 export async function unlinkChat(db: Db, chatId: number): Promise<number> {
-  const res = await linkedChats(db).deleteMany({ chatId });
+  const ids = (
+    await linkedChats(db)
+      .find({ ...TELEGRAM, chatId }, { projection: { _id: 1 } })
+      .toArray()
+  ).map((d) => d._id);
+  if (ids.length === 0) return 0;
+  const res = await linkedChats(db).deleteMany({ _id: { $in: ids } });
+  await pullFromMonitors(db, ids);
   return res.deletedCount;
 }
 
-/** Moves every owner's Linked chat `fromChatId` to `toChatId` (a group upgraded to a supergroup). An owner who already has the new id as a Linked chat keeps that one. */
+/** The User's Linked chat for this Telegram chat, if any. */
+export function findLinkedChatByChatId(
+  db: Db,
+  ownerId: ObjectId,
+  chatId: number,
+): Promise<TelegramChannelDoc | null> {
+  return linkedChats(db).findOne({ ...TELEGRAM, ownerId, chatId });
+}
+
+/**
+ * Moves every owner's Linked chat `fromChatId` to `toChatId` (a group upgraded to a supergroup); a moved chat keeps
+ * its Alert channel id. An owner who already has the new id as a Linked chat keeps that one: the old one is removed
+ * and returned as `{ from, to }`, so whatever was addressed to it can follow.
+ */
 export async function moveLinkedChats(
   db: Db,
   fromChatId: number,
   toChatId: number,
-): Promise<void> {
+): Promise<Array<{ from: ObjectId; to: ObjectId }>> {
+  const merged: Array<{ from: ObjectId; to: ObjectId }> = [];
   for (const link of await linkedChats(db)
-    .find({ chatId: fromChatId })
+    .find({ ...TELEGRAM, chatId: fromChatId })
     .toArray()) {
     try {
       await linkedChats(db).updateOne(
@@ -158,31 +179,12 @@ export async function moveLinkedChats(
       );
     } catch (err) {
       if (!(err instanceof MongoServerError && err.code === 11000)) throw err;
+      const kept = await findLinkedChatByChatId(db, link.ownerId, toChatId);
       await linkedChats(db).deleteOne({ _id: link._id });
+      if (kept) merged.push({ from: link._id, to: kept._id });
     }
   }
-}
-
-/** One of the User's Linked chats by id; null when it isn't theirs or doesn't exist. */
-export async function findLinkedChat(
-  db: Db,
-  ownerId: ObjectId,
-  id: string,
-): Promise<LinkedChatDoc | null> {
-  const _id = parseObjectId(id);
-  if (!_id) return null;
-  return linkedChats(db).findOne({ _id, ownerId });
-}
-
-/** Removes one of the User's Linked chats by id. Returns it, or null when it isn't theirs or doesn't exist. */
-export async function removeLinkedChat(
-  db: Db,
-  ownerId: ObjectId,
-  id: string,
-): Promise<LinkedChatDoc | null> {
-  const _id = parseObjectId(id);
-  if (!_id) return null;
-  return linkedChats(db).findOneAndDelete({ _id, ownerId });
+  return merged;
 }
 
 /** How many Linked chats each User has, keyed by owner id (the Admin page). Owners without any are absent. */
@@ -193,12 +195,15 @@ export async function countLinkedChatsByOwner(
     .aggregate<{
       _id: ObjectId;
       count: number;
-    }>([{ $group: { _id: "$ownerId", count: { $sum: 1 } } }])
+    }>([
+      { $match: TELEGRAM },
+      { $group: { _id: "$ownerId", count: { $sum: 1 } } },
+    ])
     .toArray();
   return new Map(groups.map((g) => [String(g._id), g.count]));
 }
 
 /** How many Linked chats the instance has, across all Users (the Admin page). */
 export function countLinkedChats(db: Db): Promise<number> {
-  return linkedChats(db).countDocuments();
+  return linkedChats(db).countDocuments(TELEGRAM);
 }

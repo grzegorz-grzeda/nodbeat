@@ -1,7 +1,7 @@
 # 0046: Send test Alert
 
 Spec: 0009
-Status: ready-for-agent
+Status: resolved
 
 **What to build:** Every Alert channel in Settings has a "Send test" button that delivers a test Alert straight away and shows whether it got through, so a User can check a setup without a Monitor going Down.
 

@@ -1,6 +1,6 @@
 # Spec 0009: Alert channels
 
-Status: ready-for-agent
+Status: resolved
 
 Blocked by: spec 0005 issues 0027–0030 (Telegram changes land first); replaces issue 0031
 
