@@ -7,6 +7,7 @@ import type { BuildInfo } from "../src/build-info.js";
 import type { Clock } from "../src/clock.js";
 import type { Config } from "../src/config.js";
 import {
+  TelegramChatMigratedError,
   TelegramForbiddenError,
   type ChatMemberStatus,
   type TelegramClient,
@@ -45,7 +46,14 @@ export class RecordingTelegram implements TelegramClient {
   /** Sends to these chats fail with HTTP 403: the bot was blocked or removed. */
   readonly forbiddenChats = new Set<number>();
 
+  /** Sends to these chats fail with HTTP 400 and the new id: the group was upgraded to a supergroup. */
+  readonly migratedChats = new Map<number, number>();
+
   async sendMessage(chatId: number, text: string): Promise<void> {
+    const newChatId = this.migratedChats.get(chatId);
+    if (newChatId !== undefined) {
+      throw new TelegramChatMigratedError("sendMessage", newChatId);
+    }
     if (this.forbiddenChats.has(chatId)) {
       throw new TelegramForbiddenError("sendMessage");
     }

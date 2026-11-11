@@ -4,6 +4,7 @@ import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { formatAgo, formatDuration } from "./format.js";
+import { migrateChat } from "./alerts.js";
 import {
   linkChat,
   ownersOfChat,
@@ -44,8 +45,18 @@ interface Update {
     text?: unknown;
     chat?: { id?: unknown };
     from?: { id?: unknown };
+    /** Set on the service message of a group upgraded to a supergroup. */
+    migrate_to_chat_id?: unknown;
+  };
+  /** The bot's own membership in a chat changed. */
+  my_chat_member?: {
+    chat?: { id?: unknown };
+    new_chat_member?: { status?: unknown };
   };
 }
+
+/** The bot's membership statuses that mean it can no longer write to the chat. */
+const REMOVED_STATUSES: ReadonlySet<unknown> = new Set(["left", "kicked"]);
 
 /** A bot command as sent: the chat, the text after the command and the sending Telegram user. */
 interface CommandMessage {
@@ -192,8 +203,22 @@ export function registerTelegramBot(
   };
 
   const handle = async (update: Update): Promise<void> => {
+    const member = update.my_chat_member;
+    if (
+      typeof member?.chat?.id === "number" &&
+      REMOVED_STATUSES.has(member.new_chat_member?.status)
+    ) {
+      // The bot was removed from the group or blocked: unlink the chat, the same as /unlink.
+      await unlinkChat(db, member.chat.id);
+      return;
+    }
     const text = update.message?.text;
     const chat = update.message?.chat as TelegramChat | undefined;
+    const migratedTo = update.message?.migrate_to_chat_id;
+    if (typeof chat?.id === "number" && typeof migratedTo === "number") {
+      await migrateChat(db, chat.id, migratedTo);
+      return;
+    }
     if (typeof chat?.id !== "number" || typeof text !== "string") return;
     const parsed = parseCommand(text);
     if (!parsed) return;

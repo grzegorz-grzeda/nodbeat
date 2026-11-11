@@ -13,6 +13,8 @@ const SEC = 1000;
 const MIN = 60 * SEC;
 const PRIVATE_CHAT = { id: 1001, type: "private", first_name: "Grzegorz" };
 const GROUP_CHAT = { id: -2002, type: "group", title: "Garden project" };
+/** The id Telegram gives GROUP_CHAT when upgrading it to a supergroup. */
+const SUPERGROUP_ID = -1009990002002;
 
 type Chat = { id: number; type: string; title?: string; first_name?: string };
 
@@ -40,19 +42,32 @@ async function linkChat(ctx: TestContext, browser: Browser, chat: Chat) {
   const code = /<code class="link-code">([A-Z0-9]{8})<\/code>/.exec(
     settings.body,
   )![1]!;
-  await ctx.app.inject({
+  await sendUpdate(ctx, {
+    message: { message_id: updateId, chat, date: 0, text: `/start ${code}` },
+  });
+  ctx.telegram.sent.length = 0;
+}
+
+function sendUpdate(ctx: TestContext, update: Record<string, unknown>) {
+  return ctx.app.inject({
     method: "POST",
     url: "/telegram/webhook",
     headers: {
       "x-telegram-bot-api-secret-token": testConfig.telegramWebhookSecret,
     },
-    payload: {
-      update_id: ++updateId,
-      message: { message_id: updateId, chat, date: 0, text: `/start ${code}` },
-    },
+    payload: { update_id: ++updateId, ...update },
   });
-  ctx.telegram.sent.length = 0;
 }
+
+/** The service message Telegram sends in a group upgraded to a supergroup. */
+const migrateUpdate = (chat: Chat, newChatId: number) => ({
+  message: {
+    message_id: updateId,
+    chat,
+    date: 0,
+    migrate_to_chat_id: newChatId,
+  },
+});
 
 /** Creates a Monitor and returns its page path and Heartbeat path. */
 async function createMonitor(
@@ -288,6 +303,56 @@ describe("Alerts", () => {
     ctx.clock.advance(10 * MIN);
     await ctx.app.tick();
     expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([PRIVATE_CHAT.id]);
+  });
+
+  it("follows a group upgraded to a supergroup: the chat stays linked and Alerts go to the new id", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+
+    const res = await sendUpdate(ctx, migrateUpdate(GROUP_CHAT, SUPERGROUP_ID));
+    expect(res.statusCode).toBe(200);
+    expect((await ctx.browser.get("/settings")).body).toContain(
+      "Garden project",
+    );
+
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([SUPERGROUP_ID]);
+  });
+
+  it("moves a pending Alert to the new id when the group is upgraded to a supergroup", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.failingChats.add(GROUP_CHAT.id);
+    await goDown(ctx, m.hb); // first attempt fails; next one 30 s later
+
+    await sendUpdate(ctx, migrateUpdate(GROUP_CHAT, SUPERGROUP_ID));
+    ctx.clock.advance(30 * SEC);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([SUPERGROUP_ID]);
+  });
+
+  it("delivers an Alert to the new id at once when Telegram says the group became a supergroup", async () => {
+    const ctx = await loggedIn();
+    await linkChat(ctx, ctx.browser, GROUP_CHAT);
+    const m = await createMonitor(ctx.browser);
+    ctx.telegram.migratedChats.set(GROUP_CHAT.id, SUPERGROUP_ID);
+
+    await goDown(ctx, m.hb);
+    expect(ctx.telegram.sent).toEqual([
+      { chatId: SUPERGROUP_ID, text: expect.stringContaining("is Down") },
+    ]);
+    // Later Alerts go straight to the new id.
+    await sendHeartbeat(ctx, m.hb);
+    await ctx.app.tick();
+    expect(ctx.telegram.sent.map((s) => s.chatId)).toEqual([
+      SUPERGROUP_ID,
+      SUPERGROUP_ID,
+    ]);
+    expect((await ctx.browser.get("/settings")).body).toContain(
+      "Garden project",
+    );
   });
 
   it("delivers a Monitor's Alerts in order", async () => {

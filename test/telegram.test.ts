@@ -242,6 +242,51 @@ describe("Linked chats", () => {
     ]);
   });
 
+  it("are unlinked as soon as the bot is removed from the group", async () => {
+    const ctx = await loggedIn();
+    await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(ctx.browser)}`);
+    await say(
+      ctx,
+      PRIVATE_CHAT,
+      `/start ${await generateLinkCode(ctx.browser)}`,
+    );
+
+    const res = await sendUpdate(ctx, {
+      update_id: ++updateId,
+      my_chat_member: {
+        chat: GROUP_CHAT,
+        from: { id: SENDER_ID, is_bot: false, first_name: "Grzegorz" },
+        date: 0,
+        old_chat_member: { user: { id: 1, is_bot: true }, status: "member" },
+        new_chat_member: { user: { id: 1, is_bot: true }, status: "kicked" },
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const settings = (await ctx.browser.get("/settings")).body;
+    expect(settings).not.toContain("Garden project");
+    expect(settings).toContain("Grzegorz");
+  });
+
+  it("stay linked when the bot's membership changes otherwise", async () => {
+    const ctx = await loggedIn();
+    await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(ctx.browser)}`);
+
+    await sendUpdate(ctx, {
+      update_id: ++updateId,
+      my_chat_member: {
+        chat: GROUP_CHAT,
+        date: 0,
+        new_chat_member: {
+          user: { id: 1, is_bot: true },
+          status: "administrator",
+        },
+      },
+    });
+    expect((await ctx.browser.get("/settings")).body).toContain(
+      "Garden project",
+    );
+  });
+
   it("cannot be removed by another User", async () => {
     const ctx = await loggedIn();
     await say(
