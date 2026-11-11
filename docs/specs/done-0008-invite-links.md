@@ -1,6 +1,6 @@
 # Spec 0008: Invite links
 
-Status: ready-for-agent
+Status: done
 
 Blocked by: spec 0006 (Admin guard and Admin page)
 
