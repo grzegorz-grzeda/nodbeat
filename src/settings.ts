@@ -4,7 +4,6 @@ import { requireUser, TOO_MANY_LOGINS, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import { sendConfirmPage } from "./confirm.js";
 import { setFlash } from "./flash.js";
-import { SlidingWindowLimiter } from "./rate-limit.js";
 import { formatDateTime } from "./format.js";
 import { csrfField, html, timeZoneOptions } from "./html.js";
 import {
@@ -14,6 +13,7 @@ import {
   listLinkedChats,
   removeLinkedChat,
 } from "./linked-chats.js";
+import { SlidingWindowLimiter } from "./rate-limit.js";
 import {
   authenticate,
   isTheme,
@@ -30,7 +30,8 @@ function localPath(value: unknown): string {
 }
 
 /** Link codes a User may generate per hour. */
-const LINK_CODES_PER_HOUR = 10;
+const LINK_CODE_MAX = 10;
+const LINK_CODE_WINDOW_MS = 60 * 60 * 1000;
 
 export function registerSettings(
   app: FastifyInstance,
@@ -39,8 +40,8 @@ export function registerSettings(
   const { db, clock, auth } = deps;
   const linkCodesPerUser = new SlidingWindowLimiter(
     clock,
-    LINK_CODES_PER_HOUR,
-    60 * 60 * 1000,
+    LINK_CODE_MAX,
+    LINK_CODE_WINDOW_MS,
   );
 
   const settingsPage = async (

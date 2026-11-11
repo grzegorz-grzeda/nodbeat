@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { buildTestApp, createUser, login, type Browser } from "./helpers.js";
+import {
+  buildTestApp,
+  createUser,
+  csrfTokenIn,
+  login,
+  type Browser,
+} from "./helpers.js";
 
 async function loggedIn(email = "me@example.com") {
   const ctx = await buildTestApp();
@@ -143,7 +149,7 @@ describe("creating a Monitor", () => {
       });
     }
     const page = await browser.get("/monitors/new");
-    const csrf = /name="_csrf" value="([^"]+)"/.exec(page.body)![1]!;
+    const csrf = csrfTokenIn(page.body)!;
 
     const results = await Promise.all(
       Array.from({ length: 5 }, (_, i) =>

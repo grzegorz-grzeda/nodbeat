@@ -24,7 +24,7 @@ const START_WINDOW_MS = 10 * 60 * 1000;
 /** Telegram rejects longer messages. */
 const MAX_MESSAGE_LENGTH = 4096;
 /** Members allowed to use /status and /unlink in a group. */
-const ADMIN_STATUSES: ReadonlySet<ChatMemberStatus> = new Set([
+const GROUP_ADMIN_STATUSES: ReadonlySet<ChatMemberStatus> = new Set([
   "creator",
   "administrator",
 ]);
@@ -47,11 +47,14 @@ interface Update {
   };
 }
 
-type Command = (
-  chat: TelegramChat,
-  arg: string,
-  senderId: number | undefined,
-) => Promise<string>;
+/** A bot command as sent: the chat, the text after the command and the sending Telegram user. */
+interface CommandMessage {
+  chat: TelegramChat;
+  arg: string;
+  senderId: number | undefined;
+}
+
+type Command = (message: CommandMessage) => Promise<string>;
 
 function chatTitle(chat: TelegramChat): string {
   if (chat.title) return chat.title;
@@ -102,10 +105,7 @@ export function registerTelegramBot(
     );
   };
 
-  const startCommand = async (
-    chat: TelegramChat,
-    code: string,
-  ): Promise<string> => {
+  const startCommand: Command = async ({ chat, arg: code }) => {
     if (!code) return `To link this chat: ${howToLink}`;
     if (!startLimiter.tryAcquire(String(chat.id))) {
       return `Too many attempts. Try again in ${formatDuration(START_WINDOW_MS / 1000)}.`;
@@ -138,7 +138,7 @@ export function registerTelegramBot(
       .join("\n");
   };
 
-  const statusCommand = async (chat: TelegramChat): Promise<string> => {
+  const statusCommand: Command = async ({ chat }) => {
     const owners = await ownersOfChat(db, chat.id);
     if (owners.length === 0) return notLinked;
     const now = clock.now();
@@ -153,29 +153,42 @@ export function registerTelegramBot(
     return sections.join("\n\n");
   };
 
-  const unlinkCommand = async (chat: TelegramChat): Promise<string> =>
+  const unlinkCommand: Command = async ({ chat }) =>
     (await unlinkChat(db, chat.id)) > 0
       ? "This chat is unlinked. No more Alerts will arrive here."
       : notLinked;
 
+  const isGroupAdmin = async (
+    chatId: number,
+    senderId: number | undefined,
+  ): Promise<boolean> => {
+    if (senderId === undefined) return false;
+    try {
+      return GROUP_ADMIN_STATUSES.has(
+        await telegram.getChatMember(chatId, senderId),
+      );
+    } catch (err) {
+      // Fail closed: without an answer from Telegram the sender is not an admin.
+      app.log.warn({ err }, "telegram getChatMember failed");
+      return false;
+    }
+  };
+
   /** In a group only its Telegram admins may read the Monitors or cut off the Alerts. */
-  const adminsOnly =
+  const groupAdminsOnly =
     (command: Command): Command =>
-    async (chat, arg, senderId) => {
-      if (chat.type === "private") return command(chat, arg, senderId);
-      const allowed =
-        senderId !== undefined &&
-        ADMIN_STATUSES.has(await telegram.getChatMember(chat.id, senderId));
-      return allowed
-        ? command(chat, arg, senderId)
+    async (message) => {
+      if (message.chat.type === "private") return command(message);
+      return (await isGroupAdmin(message.chat.id, message.senderId))
+        ? command(message)
         : "Only group admins can use this command.";
     };
 
   const commands: Record<string, Command> = {
     // Open to any member: it needs a valid Link code anyway.
     start: startCommand,
-    status: adminsOnly(statusCommand),
-    unlink: adminsOnly(unlinkCommand),
+    status: groupAdminsOnly(statusCommand),
+    unlink: groupAdminsOnly(unlinkCommand),
   };
 
   const handle = async (update: Update): Promise<void> => {
@@ -188,11 +201,11 @@ export function registerTelegramBot(
     let replyText: string;
     const senderId = update.message?.from?.id;
     if (command) {
-      replyText = await command(
+      replyText = await command({
         chat,
-        parsed.arg,
-        typeof senderId === "number" ? senderId : undefined,
-      );
+        arg: parsed.arg,
+        senderId: typeof senderId === "number" ? senderId : undefined,
+      });
     }
     // In groups an unknown command is likely meant for another bot.
     else if (chat.type === "private") replyText = help;

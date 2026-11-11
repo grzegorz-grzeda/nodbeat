@@ -349,6 +349,20 @@ describe("bot commands", () => {
     ]);
   });
 
+  it("refuses /status and /unlink in a group when Telegram can't say who is an admin", async () => {
+    const ctx = await loggedIn();
+    await say(ctx, GROUP_CHAT, `/start ${await generateLinkCode(ctx.browser)}`);
+    ctx.telegram.setChatMemberStatus(GROUP_CHAT.id, SENDER_ID, "administrator");
+    ctx.telegram.failingMemberChats.add(GROUP_CHAT.id);
+    const refusal = "Only group admins can use this command.";
+
+    expect(await say(ctx, GROUP_CHAT, "/status")).toEqual([refusal]);
+    expect(await say(ctx, GROUP_CHAT, "/unlink")).toEqual([refusal]);
+    expect((await ctx.browser.get("/settings")).body).toContain(
+      "Garden project",
+    );
+  });
+
   it("never shows an email in a bot reply", async () => {
     const ctx = await loggedIn();
     await createUser(ctx.db, {

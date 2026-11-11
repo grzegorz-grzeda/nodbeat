@@ -33,6 +33,8 @@ export interface SentMessage {
   text: string;
 }
 
+const memberKey = (chatId: number, userId: number) => `${chatId}:${userId}`;
+
 export class RecordingTelegram implements TelegramClient {
   readonly sent: SentMessage[] = [];
   /** Every send fails. */
@@ -55,20 +57,26 @@ export class RecordingTelegram implements TelegramClient {
 
   readonly #memberStatuses = new Map<string, ChatMemberStatus>();
 
+  /** `getChatMember` fails for every user in these chats, e.g. Telegram is down. */
+  readonly failingMemberChats = new Set<number>();
+
   /** What `getChatMember` answers for this user in this chat; "member" unless set. */
   setChatMemberStatus(
     chatId: number,
     userId: number,
     status: ChatMemberStatus,
   ): void {
-    this.#memberStatuses.set(`${chatId}:${userId}`, status);
+    this.#memberStatuses.set(memberKey(chatId, userId), status);
   }
 
   async getChatMember(
     chatId: number,
     userId: number,
   ): Promise<ChatMemberStatus> {
-    return this.#memberStatuses.get(`${chatId}:${userId}`) ?? "member";
+    if (this.failingMemberChats.has(chatId)) {
+      throw new Error("telegram unavailable");
+    }
+    return this.#memberStatuses.get(memberKey(chatId, userId)) ?? "member";
   }
 
   readonly webhooks: Array<{ url: string; secretToken: string }> = [];
@@ -180,6 +188,10 @@ export async function createUser(
   return { exitCode, output };
 }
 
+/** The CSRF token of the first form in this page, if any. */
+export const csrfTokenIn = (body: string): string | undefined =>
+  /name="_csrf" value="([^"]+)"/.exec(body)?.[1];
+
 type InjectResponse = Awaited<ReturnType<App["inject"]>>;
 
 /** A cookie-keeping client that fills in CSRF tokens from the last page it saw. */
@@ -243,7 +255,7 @@ export class Browser {
       if (expired) this.cookies.delete(c.name);
       else this.cookies.set(c.name, c.value);
     }
-    const token = /name="_csrf" value="([^"]+)"/.exec(res.body)?.[1];
+    const token = csrfTokenIn(res.body);
     if (token) this.#csrf = token;
     this.lastResponse = res;
     return res;

@@ -1,4 +1,3 @@
-import { MonitorLock } from "./monitor-lock.js";
 import { randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyReply } from "fastify";
 import { ObjectId, type Db } from "mongodb";
@@ -18,6 +17,7 @@ import {
   MONITOR_PAGE_LOG_ROWS,
 } from "./log-tables.js";
 import { copyButton, csrfField, html, type SafeHtml } from "./html.js";
+import { KeyedLock } from "./keyed-lock.js";
 import { stateBadge } from "./layout.js";
 import { monitorFormBody, readForm, validate } from "./monitor-form.js";
 import {
@@ -195,8 +195,8 @@ export function registerMonitors(
   deps: { db: Db; clock: Clock; config: Config; auth: Auth },
 ): void {
   const { db, clock, config, auth } = deps;
-  // Keyed by owner, not Monitor: it guards the per-User Monitor limit.
-  const ownerLock = new MonitorLock();
+  // Keyed by owner: it guards the per-User Monitor limit.
+  const ownerLock = new KeyedLock();
 
   const heartbeatUrl = (monitor: MonitorDoc) =>
     `${config.publicBaseUrl}/hb/${monitor.token}`;

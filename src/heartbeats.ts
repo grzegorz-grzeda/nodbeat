@@ -14,7 +14,7 @@ import {
 } from "./limits.js";
 import { transition } from "./monitor-state.js";
 import type { LogPruner } from "./log-pruner.js";
-import type { MonitorLock } from "./monitor-lock.js";
+import type { KeyedLock } from "./keyed-lock.js";
 import { monitors } from "./monitors.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
 
@@ -123,7 +123,7 @@ function readMessage(req: FastifyRequest): string | null {
 
 export async function registerHeartbeatIntake(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; lock: MonitorLock; pruner: LogPruner },
+  deps: { db: Db; clock: Clock; lock: KeyedLock; pruner: LogPruner },
 ): Promise<void> {
   const { db, clock, lock, pruner } = deps;
   const perMonitor = new SlidingWindowLimiter(clock, 1, 1000);

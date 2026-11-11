@@ -50,14 +50,18 @@ partial="partial-$name"
 config="$work_dir/mongodump.yaml"
 (umask 077 && printf 'uri: "%s"\n' "$MONGODB_URI" >"$config")
 
+remove_partial() {
+  echo "backup: $1; removing $partial from $remote" >&2
+  rclone deletefile "$remote/$partial" 2>/dev/null || true
+  exit 1
+}
+
 if ! mongodump --config="$config" --excludeCollection=heartbeats --archive --gzip --quiet |
   age -r "$BACKUP_AGE_RECIPIENT" |
   rclone rcat "$remote/$partial"; then
-  echo "backup: failed; removing $partial from $remote" >&2
-  rclone deletefile "$remote/$partial" 2>/dev/null || true
-  exit 1
+  remove_partial "failed"
 fi
-rclone moveto "$remote/$partial" "$remote/$name"
+rclone moveto "$remote/$partial" "$remote/$name" || remove_partial "renaming the upload failed"
 rclone delete "$remote" --include "nodbeat-*.archive.gz.age" --min-age "${retention_days}d"
 
 echo "backup: uploaded $name to $remote"

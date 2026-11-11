@@ -10,7 +10,7 @@ import { deleteIncidentsOf } from "./incidents.js";
 import { limitsFor } from "./limits.js";
 import { applyEffects } from "./effects.js";
 import { deleteAlertsOf } from "./alerts.js";
-import type { MonitorLock } from "./monitor-lock.js";
+import type { KeyedLock } from "./keyed-lock.js";
 import { transition, type MonitorEvent } from "./monitor-state.js";
 import { deleteStatePeriodsOf } from "./state-periods.js";
 import {
@@ -33,7 +33,7 @@ type IdRequest = FastifyRequest<{ Params: { id: string } }>;
 /** Editing, pausing, unpausing, regenerating the Heartbeat URL, the Alerts switch and deleting a Monitor. */
 export function registerMonitorManagement(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; auth: Auth; lock: MonitorLock },
+  deps: { db: Db; clock: Clock; auth: Auth; lock: KeyedLock },
 ): void {
   const { db, clock, auth, lock } = deps;
 

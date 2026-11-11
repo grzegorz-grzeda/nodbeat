@@ -18,8 +18,6 @@ export interface TelegramClient {
 
 /** Telegram answered HTTP 403: the bot can no longer write to that chat. */
 export class TelegramForbiddenError extends Error {
-  readonly status = 403;
-
   constructor(method: string) {
     super(`Telegram ${method} failed: HTTP 403`);
     this.name = "TelegramForbiddenError";

@@ -26,7 +26,7 @@ import { ensureIncidentIndexes } from "./incidents.js";
 import { ensureLinkedChatIndexes } from "./linked-chats.js";
 import { registerLayout } from "./layout.js";
 import { createLogPruner } from "./log-pruner.js";
-import { MonitorLock } from "./monitor-lock.js";
+import { KeyedLock } from "./keyed-lock.js";
 import { registerMonitorLogs } from "./monitor-logs.js";
 import { registerMonitorManagement } from "./monitor-management.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
@@ -87,7 +87,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const { db, clock, config } = deps;
   // Startup grace: no Monitor goes Down before this + its Interval + Grace period.
   const startedAt = clock.now();
-  const lock = new MonitorLock();
+  const lock = new KeyedLock();
   const pruner = createLogPruner({ db, clock });
   const options: FastifyServerOptions = {
     logger: withRedactedUrls(deps.logger),

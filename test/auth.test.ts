@@ -3,6 +3,7 @@ import {
   Browser,
   buildTestApp,
   createUser,
+  csrfTokenIn,
   login,
   testConfig,
 } from "./helpers.js";
@@ -154,7 +155,7 @@ describe("login", () => {
           "/login",
           { email: "me@example.com", password: "wrong horse" },
           {
-            csrf: /name="_csrf" value="([^"]+)"/.exec(b.lastResponse.body)![1]!,
+            csrf: csrfTokenIn(b.lastResponse.body)!,
           },
         ),
       ),
