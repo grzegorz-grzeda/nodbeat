@@ -12,7 +12,7 @@ import {
   MAX_HEARTBEAT_MESSAGE_LENGTH,
   MAX_USER_AGENT_LENGTH,
 } from "./limits.js";
-import { transition } from "./monitor-state.js";
+import { transition, type MonitorEvent } from "./monitor-state.js";
 import type { LogPruner } from "./log-pruner.js";
 import type { KeyedLock } from "./keyed-lock.js";
 import { monitors } from "./monitors.js";
@@ -40,6 +40,16 @@ export interface HeartbeatDoc {
   /** The `User-Agent` header, trimmed to 200 characters. Missing on Heartbeats stored before it was recorded. */
   userAgent?: string | null;
 }
+
+/** The state machine event each signal is, carrying its message. */
+const SIGNAL_EVENTS: Record<
+  SignalKind,
+  (message: string | null) => MonitorEvent
+> = {
+  success: (message) => ({ kind: "heartbeat", message }),
+  start: () => ({ kind: "start" }),
+  fail: (message) => ({ kind: "fail", message }),
+};
 
 /** Client groups on the Admin page, in display order. */
 export const HEARTBEAT_CLIENTS = [
@@ -177,17 +187,11 @@ export async function registerHeartbeatIntake(
       });
       if (!current) return false;
       const now = clock.now();
-      const { fields, effects } = transition(
+      const { fields, effects, endedRunDurationSec } = transition(
         current,
-        kind === "success"
-          ? { kind: "heartbeat", message }
-          : kind === "fail"
-            ? { kind: "fail", message }
-            : { kind: "start" },
+        SIGNAL_EVENTS[kind](message),
         now,
       );
-      // A Heartbeat or Fail signal that ended an open Run carries the Run duration the transition just recorded.
-      const endedRun = kind !== "start" && Boolean(current.runStartedAt);
       await Promise.all([
         monitors(db).updateOne({ _id: current._id }, { $set: fields }),
         heartbeats(db).insertOne({
@@ -195,7 +199,7 @@ export async function registerHeartbeatIntake(
           kind,
           receivedAt: now,
           message,
-          runDurationSec: endedRun ? (fields.lastRunDurationSec ?? null) : null,
+          runDurationSec: endedRunDurationSec ?? null,
           method: req.method,
           sourceIp: req.ip,
           userAgent: readUserAgent(req),

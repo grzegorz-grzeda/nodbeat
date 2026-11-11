@@ -88,17 +88,19 @@ describe("transition: fail", () => {
     expect(effects).toEqual([]);
   });
 
-  it("only records a Fail signal to a Paused Monitor", () => {
+  it("only records a Fail signal to a Paused Monitor: no last Heartbeat, message or Run change", () => {
     const { fields, effects } = transition(
-      monitor({ state: "paused", pausedAt: T0 }),
+      monitor({ state: "paused", pausedAt: T0, runStartedAt: T0 }),
       fail,
       NOW,
     );
     expect(fields).toMatchObject({
       state: "paused",
       pausedAt: T0,
-      lastHeartbeatAt: NOW,
-      lastMessage: "disk full",
+      lastHeartbeatAt: T0,
+      lastMessage: "ok",
+      runStartedAt: T0,
+      lastRunDurationSec: null,
     });
     expect(effects).toEqual([]);
   });
@@ -198,6 +200,7 @@ describe("transition: Max run time", () => {
         kind: "open-incident",
         startedAt: new Date("2026-01-01T00:05:10Z"),
         cause: "run-too-long",
+        maxRunTimeSec: 300,
       },
       { kind: "enqueue-alert", alert: "down" },
     ]);
@@ -226,6 +229,7 @@ describe("transition: Max run time", () => {
       kind: "open-incident",
       startedAt: new Date("2026-01-01T00:08:00Z"),
       cause: "run-too-long",
+      maxRunTimeSec: 300,
     });
   });
 
@@ -269,6 +273,7 @@ describe("transition: Max run time", () => {
     expect(check1("2026-01-01T00:06:00Z")[0]).toMatchObject({
       startedAt: new Date("2026-01-01T00:06:00Z"),
       cause: "run-too-long",
+      maxRunTimeSec: 120,
     });
   });
 });

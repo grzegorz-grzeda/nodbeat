@@ -1,6 +1,7 @@
 import { formatDuration } from "./format.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
 import { defaultGraceSec, type Limits } from "./limits.js";
+import type { MonitorTiming } from "./monitor-state.js";
 
 const MAX_NAME_LENGTH = 100;
 const MAX_NOTES_LENGTH = 2000;
@@ -18,13 +19,10 @@ export interface MonitorForm {
   notes: string;
 }
 
-export interface MonitorSettings {
+/** What the form edits. `validate` always sets `maxRunTimeSec` (null: none), so saving clears a removed one. */
+export interface MonitorSettings extends MonitorTiming {
   name: string;
   notes: string;
-  intervalSec: number;
-  graceSec: number;
-  /** Null: no Max run time. */
-  maxRunTimeSec: number | null;
 }
 
 export function readForm(body: unknown): MonitorForm {
@@ -44,12 +42,7 @@ export function readForm(body: unknown): MonitorForm {
 }
 
 /** The form values that show these settings, in the largest unit that divides each duration evenly. */
-export function formFor(
-  monitor: Omit<MonitorSettings, "maxRunTimeSec"> & {
-    // Absent on Monitors stored before Max run times existed.
-    maxRunTimeSec?: number | null;
-  },
-): MonitorForm {
+export function formFor(monitor: MonitorSettings): MonitorForm {
   const split = (sec: number): [string, Unit] => {
     const unit =
       (["d", "h", "m", "s"] as const).find(

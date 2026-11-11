@@ -157,7 +157,9 @@ describe("Fail signal", () => {
     await linkChat(ctx, ctx.browser);
     const m = await createMonitor(ctx.browser);
     await ctx.app.inject({ method: "GET", url: m.hb });
+    ctx.clock.advance(SEC);
     await ctx.browser.submit(m.page, `${m.page}/pause`);
+    ctx.clock.advance(SEC);
 
     const res = await ctx.app.inject({ method: "GET", url: `${m.hb}/fail` });
     expect(res.statusCode).toBe(200);
@@ -165,6 +167,10 @@ describe("Fail signal", () => {
 
     expect(await stateOf(ctx.browser, m.page)).toBe("Paused");
     expect(ctx.telegram.sent).toEqual([]);
+
+    // Pausing means silence: the Fail signal doesn't count as hearing from the Monitor.
+    await ctx.browser.submit(m.page, `${m.page}/unpause`);
+    expect(await stateOf(ctx.browser, m.page)).toBe("New");
   });
 
   it("sends no Alert for a Monitor with Alerts off", async () => {
