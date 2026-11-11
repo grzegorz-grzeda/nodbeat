@@ -8,7 +8,8 @@ import { monitors } from "./monitors.js";
 
 /**
  * Moves Up Monitors past their deadline, or with a Run past their Max run time, to Down. `startedAt` is when this
- * nodbeat process started: no Monitor goes Down before startedAt + Interval + Grace period (or + Max run time).
+ * nodbeat process started: no Monitor goes Down before a full Interval (or its next scheduled time) + Grace period
+ * after it, or before startedAt + Max run time.
  */
 export function createDownChecker(deps: {
   db: Db;
@@ -33,6 +34,7 @@ export function createDownChecker(deps: {
             watchedSince: 1,
             createdAt: 1,
             intervalSec: 1,
+            schedule: 1,
             graceSec: 1,
             runStartedAt: 1,
             maxRunTimeSec: 1,

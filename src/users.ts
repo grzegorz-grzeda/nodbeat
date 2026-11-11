@@ -45,7 +45,7 @@ export function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
-function isValidTimeZone(timeZone: string): boolean {
+export function isValidTimeZone(timeZone: string): boolean {
   try {
     new Intl.DateTimeFormat("en", { timeZone });
     return true;

@@ -16,6 +16,7 @@ import { transition, type MonitorEvent } from "./monitor-state.js";
 import { deleteStatePeriodsOf } from "./state-periods.js";
 import {
   formFor,
+  MONITOR_FORM_SCRIPT,
   monitorFormBody,
   readForm,
   validate,
@@ -87,10 +88,12 @@ export function registerMonitorManagement(
     const csrf = auth.csrfToken(req, reply);
     return reply.page({
       title: "Edit Monitor",
+      scripts: [MONITOR_FORM_SCRIPT],
       body: monitorFormBody({
         csrf,
         limits: limitsFor(req.user!),
         channels: await listAlertChannels(db, req.user!._id),
+        now: clock.now(),
         editing: req.params.id,
         ...options,
       }),
@@ -100,18 +103,21 @@ export function registerMonitorManagement(
   app.get<{ Params: { id: string } }>(
     "/monitors/:id/edit",
     ownMonitorRoute(async (monitor, req, reply) =>
-      sendEditPage(req, reply, { form: formFor(monitor) }),
+      sendEditPage(req, reply, {
+        form: formFor(monitor, req.user!.timeZone),
+      }),
     ),
   );
 
   app.post<{ Params: { id: string } }>(
     "/monitors/:id/edit",
     ownMonitorRoute(async (monitor, req, reply) => {
-      const form = readForm(req.body);
+      const form = readForm(req.body, req.user!.timeZone);
       const result = validate(
         form,
         limitsFor(req.user!),
         await listAlertChannels(db, req.user!._id),
+        clock.now(),
       );
       if ("errors" in result) {
         reply.code(400);

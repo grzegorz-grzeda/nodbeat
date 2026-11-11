@@ -223,6 +223,33 @@ describe("Admin page", () => {
     expect(body).not.toContain("marker-");
   });
 
+  it("counts Schedule Monitors as their own group", async () => {
+    const ctx = await withUsers();
+    await createMonitor(ctx.user, "A");
+    // Default Grace period: half the shortest gap (1 day).
+    await createMonitor(ctx.user, "B", {
+      timing: "schedule",
+      cron: "0 2 * * *",
+      timeZone: "UTC",
+      grace: "",
+    });
+    // Custom Grace period.
+    await createMonitor(ctx.admin, "C", {
+      timing: "schedule",
+      cron: "0 8 * * 1-5",
+      timeZone: "Europe/Warsaw",
+      grace: "1",
+      graceUnit: "h",
+    });
+
+    const body = (await ctx.admin.get("/admin")).body;
+    expect(body).toContain("Monitors by Interval or Schedule");
+    expect(stat(body, "≤ 1 min")).toBe(1);
+    expect(stat(body, "Schedule")).toBe(2);
+    expect(share(body, "Schedule")).toBe("67%");
+    expect(stat(body, "Custom Grace period")).toBe(1);
+  });
+
   it("shows how Heartbeats arrive", async () => {
     const ctx = await withUsers();
     const a = await createMonitor(ctx.user, "A");

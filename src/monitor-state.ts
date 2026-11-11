@@ -1,4 +1,9 @@
 import type { AlertKind } from "./alerts.js";
+import {
+  nextScheduledTime,
+  previousScheduledTime,
+  type Schedule,
+} from "./schedule.js";
 
 export type MonitorState = "new" | "up" | "down" | "paused";
 
@@ -13,7 +18,7 @@ export interface MonitorStateFields {
   /** When the current pause started; null unless Paused. */
   pausedAt: Date | null;
   /**
-   * When the Monitor was last unpaused or had its Interval, Grace period or Max run time edited: its deadlines count
+   * When the Monitor was last unpaused or had its Interval, Schedule, Grace period or Max run time edited: its deadlines count
    * from here at the earliest. Null if never; absent on Monitors stored before pausing existed.
    */
   watchedSince?: Date | null;
@@ -23,9 +28,12 @@ export interface MonitorStateFields {
   lastRunDurationSec?: number | null;
 }
 
-/** A Monitor's Interval, Grace period and Max run time. */
+/** A Monitor's Interval or Schedule (exactly one is set), Grace period and Max run time. */
 export interface MonitorTiming {
-  intervalSec: number;
+  /** Null for a Schedule Monitor. */
+  intervalSec: number | null;
+  /** Null for an Interval Monitor; absent on Monitors stored before Schedules existed (= Interval). */
+  schedule?: Schedule | null;
   graceSec: number;
   /** Longest a Run may last before the Monitor goes Down; null for none. Absent on Monitors stored before it existed. */
   maxRunTimeSec?: number | null;
@@ -94,10 +102,15 @@ export type DueFields = Pick<
   };
 
 /**
- * The one rule for when a Monitor's next Heartbeat is due: Interval + Grace period after its last Heartbeat (Up) or its
- * creation (New), its last unpause or edit, or nodbeat's start, whichever is latest. An Up Monitor past it goes Down
- * (a New one waits for its first Heartbeat); "next expected by" shows it. Null for Paused and Down Monitors.
- * A Run's Max run time is a separate deadline: see runDeadline().
+ * The one rule for when a Monitor's next Heartbeat is due. An Up Monitor past it goes Down (a New one waits for its
+ * first Heartbeat); "next expected by" shows it. Null for Paused and Down Monitors. A Run's Max run time is a separate
+ * deadline: see runDeadline().
+ *
+ * It counts from the last Heartbeat (Up) or creation (New), the last unpause or edit, or nodbeat's start, whichever is
+ * latest. An Interval Monitor is due Interval + Grace period after that. A Schedule Monitor is due Grace period after
+ * the scheduled time it waits for: the first one after that point, except that a Heartbeat counts for the run it
+ * belongs to (a late one within the Grace period for the run before it, any other for the coming run), so the
+ * Monitor then waits for the run after that one. A Heartbeat from before the last unpause or edit counts for none.
  */
 export function nextDueAt(monitor: DueFields, startedAt: Date): Date | null {
   const heard =
@@ -107,13 +120,41 @@ export function nextDueAt(monitor: DueFields, startedAt: Date): Date | null {
         ? (monitor.createdAt ?? null)
         : null;
   if (!heard) return null;
-  const from = Math.max(
-    heard.getTime(),
-    // Absent on Monitors stored before pausing existed.
-    monitor.watchedSince?.getTime() ?? 0,
-    startedAt.getTime(),
+  const from = new Date(
+    Math.max(
+      heard.getTime(),
+      // Absent on Monitors stored before pausing existed.
+      monitor.watchedSince?.getTime() ?? 0,
+      startedAt.getTime(),
+    ),
   );
-  return new Date(from + (monitor.intervalSec + monitor.graceSec) * 1000);
+  const graceMs = monitor.graceSec * 1000;
+  if (!monitor.schedule) {
+    return new Date(
+      from.getTime() + (monitor.intervalSec ?? 0) * 1000 + graceMs,
+    );
+  }
+  const { schedule } = monitor;
+  const waitsFor = [nextScheduledTime(schedule, from)];
+  // A Heartbeat from before the last unpause or edit counts for no run: the Monitor waits for the next one.
+  const watchedSince = monitor.watchedSince?.getTime() ?? 0;
+  if (monitor.state === "up" && heard.getTime() > watchedSince) {
+    waitsFor.push(runAfterHeartbeat(schedule, heard, graceMs));
+  }
+  if (waitsFor.some((t) => t === null)) return null;
+  return new Date(Math.max(...waitsFor.map((t) => t!.getTime())) + graceMs);
+}
+
+/** The scheduled time after the run that a Heartbeat at `at` counts for. */
+function runAfterHeartbeat(
+  schedule: Schedule,
+  at: Date,
+  graceMs: number,
+): Date | null {
+  const before = previousScheduledTime(schedule, at);
+  const late = before && at.getTime() <= before.getTime() + graceMs;
+  const countsFor = late ? before : nextScheduledTime(schedule, at);
+  return countsFor && nextScheduledTime(schedule, countsFor);
 }
 
 /**
@@ -345,7 +386,17 @@ function onUnpause(current: MonitorStateFields, now: Date): Transition {
   };
 }
 
-/** A changed Interval, Grace period or Max run time counts from the edit, so a shorter one can't backdate an Incident. */
+function sameSchedule(
+  a: Schedule | null | undefined,
+  b: Schedule | null | undefined,
+): boolean {
+  return (
+    (a?.cron ?? null) === (b?.cron ?? null) &&
+    (a?.timeZone ?? null) === (b?.timeZone ?? null)
+  );
+}
+
+/** A changed Interval, Schedule, Grace period or Max run time counts from the edit, so a shorter one can't backdate an Incident. */
 function onEdit(
   current: MonitorStateFields & MonitorTiming,
   timing: MonitorTiming,
@@ -354,6 +405,7 @@ function onEdit(
   const fields = stateFields(current);
   const changed =
     timing.intervalSec !== current.intervalSec ||
+    !sameSchedule(timing.schedule, current.schedule) ||
     timing.graceSec !== current.graceSec ||
     (timing.maxRunTimeSec ?? null) !== (current.maxRunTimeSec ?? null);
   return {
