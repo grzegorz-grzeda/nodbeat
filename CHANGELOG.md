@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.26.1] - 2026-11-11
+
+### Fixed
+
+- CI: the test MongoDB no longer runs its TTL monitor, which deleted test sessions by the real wall clock (the tests use a fake clock) and made slow runs fail. No change to nodbeat itself; 0.26.0's CI run failed this way.
+
 ## [0.26.0] - 2026-11-11
 
 ### Added
@@ -228,7 +234,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.1...HEAD
+[0.26.1]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.23.0...v0.24.0
