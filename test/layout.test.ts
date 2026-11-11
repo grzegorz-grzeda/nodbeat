@@ -127,6 +127,25 @@ describe("HTML pages", () => {
     }
   });
 
+  it("link to Feedback in the footer: landing, Dashboard and error pages", async () => {
+    const { app, browser } = await loggedInWithMonitor();
+    const footer = (body: string) =>
+      /<footer class="site-footer">[\s\S]*?<\/footer>/.exec(body)?.[0];
+
+    const landing = await app.inject({ method: "GET", url: "/" });
+    const dashboard = await browser.get("/");
+    const notFound = await browser.get("/no-such-page");
+    expect(landing.body).not.toContain('action="/logout"');
+    expect(dashboard.body).toContain('action="/logout"');
+    expect(notFound.statusCode).toBe(404);
+
+    for (const res of [landing, dashboard, notFound]) {
+      expect(footer(res.body)).toMatch(
+        /<a [^>]*href="https:\/\/github\.com\/grzegorz-grzeda\/nodbeat\/issues"[^>]*>Feedback<\/a>/,
+      );
+    }
+  });
+
   it("show the nav with the User's email only when logged in", async () => {
     const { app, browser } = await loggedInWithMonitor();
 
