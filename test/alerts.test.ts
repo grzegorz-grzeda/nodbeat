@@ -444,12 +444,30 @@ describe("Alerts", () => {
 
       expect(ctx.telegram.sent).toHaveLength(1);
       const [up] = ctx.telegram.sent;
-      expect(up!.options).toEqual({ parseMode: "HTML" });
+      expect(up!.options).toEqual({
+        parseMode: "HTML",
+        disableNotification: true,
+      });
       expect(up!.text).toBe(
         "🟢 <b>Garden sensor</b> is Up again\n" +
           "At 2026-01-01 01:02:01 (Europe/Warsaw), after 31 s Down\n" +
           `<a href="https://nodbeat.test${m.page}">Open Monitor</a>`,
       );
+    });
+
+    it("sends the Up Alert silently and the Down Alert with a sound", async () => {
+      const ctx = await loggedIn();
+      await linkChat(ctx, ctx.browser, PRIVATE_CHAT);
+      const m = await createMonitor(ctx.browser);
+      await goDown(ctx, m.hb);
+      await ctx.app.inject({ method: "GET", url: m.hb });
+      await ctx.app.tick();
+
+      const [down, up] = ctx.telegram.sent;
+      expect(down!.text).toContain("is Down");
+      expect(down!.options.disableNotification).toBeUndefined();
+      expect(up!.text).toContain("is Up again");
+      expect(up!.options.disableNotification).toBe(true);
     });
 
     it("escapes the Monitor name and the Heartbeat message for Telegram HTML", async () => {
