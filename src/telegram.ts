@@ -15,6 +15,12 @@ export interface SendMessageOptions {
   disableNotification?: boolean;
 }
 
+/** An entry in the bot's command menu. */
+export interface BotCommand {
+  command: string;
+  description: string;
+}
+
 /** The small slice of the Telegram Bot API nodbeat needs. */
 export interface TelegramClient {
   /**
@@ -27,7 +33,13 @@ export interface TelegramClient {
     options?: SendMessageOptions,
   ): Promise<void>;
   getChatMember(chatId: number, userId: number): Promise<ChatMemberStatus>;
-  setWebhook(url: string, secretToken: string): Promise<void>;
+  /** `allowedUpdates` limits which kinds of Update Telegram sends to the webhook. */
+  setWebhook(
+    url: string,
+    secretToken: string,
+    allowedUpdates: string[],
+  ): Promise<void>;
+  setMyCommands(commands: BotCommand[]): Promise<void>;
 }
 
 /** Telegram answered HTTP 403: the bot can no longer write to that chat. */
@@ -101,8 +113,15 @@ export function createHttpTelegramClient(
       }
       return status;
     },
-    setWebhook: async (url, secretToken) => {
-      await call("setWebhook", { url, secret_token: secretToken });
+    setWebhook: async (url, secretToken, allowedUpdates) => {
+      await call("setWebhook", {
+        url,
+        secret_token: secretToken,
+        allowed_updates: allowedUpdates,
+      });
+    },
+    setMyCommands: async (commands) => {
+      await call("setMyCommands", { commands });
     },
   };
 }
