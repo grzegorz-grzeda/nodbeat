@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- "Send test" on every Alert channel in Settings sends a test Alert at once (not queued, no retries) and shows in a Flash message whether it got through, with the error if not. A test that gets through clears Failing. At most 5 tests per User per minute.
+
 ### Changed
 
 - Linked chats are now Alert channels. Settings has one "Alert channels" list showing each channel's kind and name, where a channel can be renamed or removed. Relinking a chat keeps the name it was given. Existing Linked chats and queued Alerts are moved over at startup.
