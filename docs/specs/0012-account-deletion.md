@@ -28,6 +28,8 @@ A User deletes their own account from Settings by confirming their password. Eve
 - **Routes**: `GET /settings/delete-account` (confirmation page listing counts: Monitors, Alert channels) and `POST /settings/delete-account` (password + CSRF). Wrong password → page again with an error, counted towards the login limit (issue 0020).
 - **Order of deletion**: sessions first (so the User is logged out even if a later step fails), then queued Alerts, Monitors and their logs/periods/Incidents, Linked chats, Link codes, then the User. Each step is idempotent, so a retry after a crash finishes the job. A User document gets `deletingAt` before the first step; login refuses a User with `deletingAt`, and the startup sweep finishes any half-done deletion.
 - **Linked chats shared by two Users**: only the deleting User's link is removed; the chat keeps getting the other User's Alerts.
+- **Pro Users** (once spec 0016 ships): the Stripe subscription is cancelled at once, before any data is deleted, with no refund for the rest of the period. The confirmation page says so. The Stripe customer itself stays in Stripe as long as tax records require; nodbeat keeps no copy of it.
+- **Login methods** (once spec 0013 ships): Google and GitHub links are deleted with the User, so the same Google/GitHub account can sign up again later. A User without a password confirms deletion by logging in again with Google/GitHub instead of typing a password.
 - **Invites**: `usedBy` stays as a dangling id; the Invite list shows "(deleted User)" when the id resolves to nothing.
 - **Admin guard**: the button and both routes are absent for `isAdmin` Users (`404`).
 - **Reuse**: Monitor deletion reuses the existing per-Monitor delete path (`deleteAlertsOf`, logs, periods) in a loop.

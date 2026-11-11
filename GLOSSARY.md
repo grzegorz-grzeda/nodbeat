@@ -122,6 +122,14 @@ _Avoid_: Pairing code, token
 A person with a nodbeat account who owns Monitors and Alert channels. A User may delete their own account, which removes everything they own.
 _Avoid_: Account, customer, member
 
+**Login method**:
+A way a User logs in: a password, a Google account or a GitHub account. A User has at least one and can't remove the last.
+_Avoid_: Identity, provider, SSO, social login
+
+**Plan**:
+What a User's account is entitled to: how many Monitors, how short an Interval, which Alert channels and features, how many log entries are kept. Either **Free** or **Pro** (paid). On a self-hosted instance without billing, Plans don't apply.
+_Avoid_: Tier, subscription, package, license
+
 **Admin**:
 A User who can manage the whole nodbeat instance, not just their own Monitors.
 _Avoid_: Superuser, root, owner
