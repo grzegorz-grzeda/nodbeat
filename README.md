@@ -94,7 +94,7 @@ An Invite link works once and expires after 7 days. Whoever opens it picks their
 
 1. In Settings, click **Generate Link code** (8 characters, single use, valid 10 minutes).
 2. In the chat you want Alerts in (private or group), send `/start <code>` to the bot.
-3. Bot commands: `/status` lists your Monitors and their states; `/unlink` stops Alerts in that chat. Linked chats can also be removed in Settings.
+3. Bot commands: `/status` lists your Monitors and their states; `/unlink` stops Alerts in that chat. A Linked chat is an Alert channel: Settings lists all your Alert channels, where you can rename or remove them (at most 10 per User).
 
 ## Development
 

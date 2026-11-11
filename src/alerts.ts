@@ -1,39 +1,41 @@
-import { ObjectId, type Db } from "mongodb";
+import { ObjectId, type Db, type PullOperator } from "mongodb";
+import {
+  listAlertChannels,
+  type AlertChannelDoc,
+  type AlertChannelKind,
+  type AlertChannelOf,
+} from "./alert-channels.js";
 import type { Clock } from "./clock.js";
 import { formatDateTime, formatDuration } from "./format.js";
 import type { IncidentDoc } from "./incidents.js";
 import type { IncidentCause } from "./monitor-state.js";
-import {
-  listLinkedChats,
-  moveLinkedChats,
-  unlinkChat,
-} from "./linked-chats.js";
-import {
-  TelegramChatMigratedError,
-  TelegramForbiddenError,
-  type SendMessageOptions,
-  type TelegramClient,
-} from "./telegram.js";
+import { findLinkedChatByChatId, moveLinkedChats } from "./linked-chats.js";
+import type { SendMessageOptions } from "./telegram.js";
 import { DEFAULT_TIME_ZONE, findUserById } from "./users.js";
 
-/** An Alert waiting in the outbox. Removed once every Linked chat has it, or when it is given up on. */
+/** An Alert waiting in the outbox. Removed once every Alert channel it is addressed to has it, or when it is given up on. */
 export interface AlertDoc {
   _id: ObjectId;
   monitorId: ObjectId;
   ownerId: ObjectId;
   kind: AlertKind;
   incidentId: ObjectId;
-  /** The message, formatted when the Alert was enqueued. */
+  /** The message in Telegram HTML, formatted when the Alert was enqueued. */
   text: string;
   /** How `text` is sent. Absent on Alerts enqueued before Alerts were Telegram HTML: those are plain text. */
   options?: SendMessageOptions;
-  /** Linked chats that still have to receive it. */
-  chatIds: number[];
+  /** Alert channels that still have to receive it. */
+  channelIds: ObjectId[];
   attempts: number;
   createdAt: Date;
   /** Starts the retry window; null until a send fails. */
   firstFailedAt: Date | null;
   nextAttemptAt: Date;
+}
+
+/** An outbox entry as stored before Alert channels existed: addressed to Telegram chat ids. */
+interface LegacyAlertDoc extends Omit<AlertDoc, "channelIds"> {
+  chatIds: number[];
 }
 
 export type AlertKind = "down" | "up";
@@ -42,6 +44,29 @@ export type AlertKind = "down" | "up";
 export interface AlertLog {
   warn(obj: object, msg: string): void;
 }
+
+/** What one dispatch of an Alert has achieved so far, keyed by Alert channel id. Senders record into it. */
+export interface DeliveryAttempt {
+  /** Channels that got the Alert in this dispatch: none is sent it twice. */
+  readonly delivered: Set<string>;
+  /** Channels whose send failed and is retried, with the error. */
+  readonly failed: Map<string, string>;
+}
+
+/**
+ * Sends an Alert to one Alert channel of its kind and records the outcome in `attempt`: `delivered` on success,
+ * `failed` for a send worth retrying. Recording neither means the channel is done with (e.g. it was removed).
+ */
+export type AlertSender<C extends AlertChannelDoc> = (
+  channel: C,
+  alert: AlertDoc,
+  attempt: DeliveryAttempt,
+) => Promise<void>;
+
+/** One sender per Alert channel kind; the dispatcher picks it by the channel's `kind`. */
+export type AlertSenders = {
+  [K in AlertChannelKind]: AlertSender<AlertChannelOf<K>>;
+};
 
 /** A failed send is retried for this long after the first failure, then dropped. */
 export const ALERT_RETRY_WINDOW_MS = 60 * 60 * 1000;
@@ -56,6 +81,30 @@ export async function ensureAlertIndexes(db: Db): Promise<void> {
   ]);
 }
 
+/**
+ * Readdresses Alerts queued before Alert channels existed from Telegram chat ids to the owner's Linked chats. Run
+ * after the Linked chats are migrated; running it again changes nothing.
+ */
+export async function migrateAlertOutbox(db: Db): Promise<void> {
+  const legacy = db.collection<LegacyAlertDoc>("alertOutbox");
+  for (const alert of await legacy
+    .find({ chatIds: { $exists: true } })
+    .toArray()) {
+    const channels = await Promise.all(
+      alert.chatIds.map((chatId) =>
+        findLinkedChatByChatId(db, alert.ownerId, chatId),
+      ),
+    );
+    await db.collection("alertOutbox").updateOne(
+      { _id: alert._id },
+      {
+        $set: { channelIds: channels.flatMap((c) => (c ? [c._id] : [])) },
+        $unset: { chatIds: "" },
+      },
+    );
+  }
+}
+
 /** The part of a Monitor an Alert is built from. */
 export interface AlertedMonitor {
   _id: ObjectId;
@@ -65,7 +114,7 @@ export interface AlertedMonitor {
   lastMessage: string | null;
 }
 
-/** Puts an Alert about `incident` in the outbox, addressed to the owner's Linked chats at this moment. */
+/** Puts an Alert about `incident` in the outbox, addressed to the owner's Alert channels at this moment. */
 export async function enqueueAlert(
   db: Db,
   monitor: AlertedMonitor,
@@ -74,11 +123,11 @@ export async function enqueueAlert(
   now: Date,
   publicBaseUrl: string,
 ): Promise<void> {
-  const [owner, chats] = await Promise.all([
+  const [owner, channels] = await Promise.all([
     findUserById(db, monitor.ownerId),
-    listLinkedChats(db, monitor.ownerId),
+    listAlertChannels(db, monitor.ownerId),
   ]);
-  if (chats.length === 0) return;
+  if (channels.length === 0) return;
   const timeZone = owner?.timeZone ?? DEFAULT_TIME_ZONE;
   await outbox(db).insertOne({
     _id: new ObjectId(),
@@ -89,7 +138,7 @@ export async function enqueueAlert(
     text: alertText(monitor, kind, incident, timeZone, publicBaseUrl),
     // An Up Alert is good news: it shouldn't wake the User.
     options: { parseMode: "HTML", disableNotification: kind === "up" },
-    chatIds: chats.map((c) => c.chatId),
+    channelIds: channels.map((c) => c._id),
     attempts: 0,
     createdAt: now,
     firstFailedAt: null,
@@ -154,31 +203,33 @@ function alertText(
   ].join("\n");
 }
 
-/** Follows a group upgraded to a supergroup: its Linked chats and its pending Alerts move to the new chat id. */
+/**
+ * Follows a group upgraded to a supergroup: its Linked chats move to the new chat id. Where an owner already had the
+ * new id linked, the old Linked chat is merged into that one, and its pending Alerts are readdressed to it.
+ */
 export async function migrateChat(
   db: Db,
   fromChatId: number,
   toChatId: number,
 ): Promise<void> {
-  await moveLinkedChats(db, fromChatId, toChatId);
-  await outbox(db).updateMany({ chatIds: fromChatId }, [
-    {
-      $set: {
-        chatIds: {
-          $setUnion: [
-            {
-              $map: {
-                input: "$chatIds",
-                in: {
-                  $cond: [{ $eq: ["$$this", fromChatId] }, toChatId, "$$this"],
+  for (const { from, to } of await moveLinkedChats(db, fromChatId, toChatId)) {
+    await outbox(db).updateMany({ channelIds: from }, [
+      {
+        $set: {
+          channelIds: {
+            $setUnion: [
+              {
+                $map: {
+                  input: "$channelIds",
+                  in: { $cond: [{ $eq: ["$$this", from] }, to, "$$this"] },
                 },
               },
-            },
-          ],
+            ],
+          },
         },
       },
-    },
-  ]);
+    ]);
+  }
 }
 
 /** A Down Alert not yet delivered when its Incident closes is stale: the Up Alert says it all. */
@@ -198,17 +249,18 @@ export async function deleteAlertsOf(
 }
 
 /**
- * Sends due Alerts. Per Monitor, Alerts go out strictly in order: one that is still being retried holds back
- * the ones after it. A failed send is retried with exponential backoff until ALERT_RETRY_WINDOW_MS after the first
- * failure, then the Alert is dropped with a log entry.
+ * Sends due Alerts, each to its Alert channels through the sender of the channel's kind. Per Monitor, Alerts go out
+ * strictly in order: one that is still being retried holds back the ones after it. A failed send is retried (to the
+ * channels that failed only) with exponential backoff until ALERT_RETRY_WINDOW_MS after the first failure, then the
+ * Alert is dropped with a log entry.
  */
 export function createAlertDispatcher(deps: {
   db: Db;
   clock: Clock;
-  telegram: TelegramClient;
+  senders: AlertSenders;
   log: AlertLog;
 }): () => Promise<void> {
-  const { db, clock, telegram, log } = deps;
+  const { db, clock, senders, log } = deps;
   let running: Promise<void> | null = null;
 
   const dispatch = async (): Promise<void> => {
@@ -232,91 +284,72 @@ export function createAlertDispatcher(deps: {
     }
   };
 
-  /** Sends to the chats still missing the Alert; true once it is done with (delivered or given up on). */
+  const sendTo = (
+    channel: AlertChannelDoc,
+    alert: AlertDoc,
+    attempt: DeliveryAttempt,
+  ): Promise<void> =>
+    (senders[channel.kind] as AlertSender<AlertChannelDoc>)(
+      channel,
+      alert,
+      attempt,
+    );
+
+  /** Sends to the channels still missing the Alert; true once it is done with (delivered or given up on). */
   const deliver = async (loaded: AlertDoc, now: Date): Promise<boolean> => {
     // Re-read: the Alert may have been dropped (its Incident closed, its Monitor deleted) since the outbox was loaded.
     const alert = await outbox(db).findOne({ _id: loaded._id });
     if (!alert) return true;
-    // A chat unlinked since the Alert was enqueued no longer gets it.
-    const linked = new Set(
-      (await listLinkedChats(db, alert.ownerId)).map((c) => c.chatId),
+    // A channel removed since the Alert was enqueued no longer gets it.
+    const channels = new Map(
+      (await listAlertChannels(db, alert.ownerId)).map((c) => [
+        String(c._id),
+        c,
+      ]),
     );
-    const failed: number[] = [];
-    /** Chats that got the Alert in this dispatch, so a group migrating onto one of them isn't sent it twice. */
-    const delivered = new Set<number>();
-    /** Sends to one chat; a chat that moved is followed once, so two migration answers in a row can't loop. */
-    const send = async (
-      chatId: number,
-      followMigration = true,
-    ): Promise<void> => {
-      if (delivered.has(chatId)) return;
-      try {
-        await telegram.sendMessage(chatId, alert.text, alert.options ?? {});
-        delivered.add(chatId);
-      } catch (err) {
-        if (err instanceof TelegramChatMigratedError && followMigration) {
-          // The group became a supergroup: follow it and send to the new id at once.
-          try {
-            await migrateChat(db, chatId, err.newChatId);
-          } catch (migrateErr) {
-            // Retried with the old id: Telegram answers the same and the migration is followed again.
-            failed.push(chatId);
-            log.warn(
-              { err: migrateErr, chatId, newChatId: err.newChatId },
-              "Following a group upgraded to a supergroup failed",
-            );
-            return;
-          }
-          log.warn(
-            { chatId, newChatId: err.newChatId },
-            "Linked chat moved: the group was upgraded to a supergroup",
-          );
-          await send(err.newChatId, false);
-        } else if (err instanceof TelegramForbiddenError) {
-          // The bot was blocked or removed: retrying can't help, and the chat is gone for every owner.
-          await unlinkChat(db, chatId);
-          log.warn(
-            { chatId, monitorId: String(alert.monitorId) },
-            "Linked chat unlinked: Telegram answered 403 (bot blocked or removed)",
-          );
-        } else {
-          failed.push(chatId);
-        }
-      }
+    const attempt: DeliveryAttempt = {
+      delivered: new Set(),
+      failed: new Map(),
     };
-    for (const chatId of alert.chatIds.filter((id) => linked.has(id))) {
-      await send(chatId);
+    for (const id of alert.channelIds) {
+      const channel = channels.get(String(id));
+      if (channel && !attempt.delivered.has(String(id))) {
+        await sendTo(channel, alert, attempt);
+      }
     }
+    const { failed } = attempt;
     const attempts = alert.attempts + 1;
     const firstFailedAt = alert.firstFailedAt ?? now;
     const giveUpAt = firstFailedAt.getTime() + ALERT_RETRY_WINDOW_MS;
-    const givingUp = failed.length > 0 && now.getTime() >= giveUpAt;
-    if (failed.length === 0 || givingUp) {
+    const givingUp = failed.size > 0 && now.getTime() >= giveUpAt;
+    if (failed.size === 0 || givingUp) {
       await outbox(db).deleteOne({ _id: alert._id });
       if (givingUp) {
         log.warn(
           {
             monitorId: String(alert.monitorId),
             kind: alert.kind,
-            chatIds: failed,
+            channelIds: [...failed.keys()],
+            errors: [...failed.values()],
             attempts,
           },
-          `Alert dropped: Telegram send kept failing for ${ALERT_RETRY_WINDOW_MS / 60_000} min`,
+          `Alert dropped: sending kept failing for ${ALERT_RETRY_WINDOW_MS / 60_000} min`,
         );
       }
       return true;
     }
     const delay = FIRST_RETRY_DELAY_MS * 2 ** (attempts - 1);
-    // Remove only the chats done with, rather than writing `failed` back: a group upgraded to a supergroup
-    // while this dispatch ran has had its id replaced in the outbox, and the old id mustn't come back.
-    const stillFailing = new Set(failed);
-    const done = [...alert.chatIds, ...delivered].filter(
-      (id) => !stillFailing.has(id),
-    );
+    // Remove only the channels done with, rather than writing `failed` back: a Linked chat merged into another
+    // while this dispatch ran (a group upgraded to a supergroup) has had its id replaced, and the old id mustn't
+    // come back.
+    const done = [
+      ...alert.channelIds,
+      ...[...attempt.delivered].map((id) => new ObjectId(id)),
+    ].filter((id) => !failed.has(String(id)));
     await outbox(db).updateOne(
       { _id: alert._id },
       {
-        $pull: { chatIds: { $in: done } },
+        $pull: { channelIds: { $in: done } } as PullOperator<AlertDoc>,
         $set: {
           attempts,
           firstFailedAt,

@@ -4,7 +4,10 @@ import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { formatAgo, formatDuration } from "./format.js";
+import { AlertChannelLimitError } from "./alert-channels.js";
 import { migrateChat } from "./alerts.js";
+import type { KeyedLock } from "./keyed-lock.js";
+import { limitsFor } from "./limits.js";
 import {
   linkChat,
   ownersOfChat,
@@ -105,9 +108,16 @@ function truncate(text: string): string {
 /** The Telegram webhook and the bot commands behind it. Registers the webhook with Telegram on startup. */
 export function registerTelegramBot(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock; telegram: TelegramClient; config: Config },
+  deps: {
+    db: Db;
+    clock: Clock;
+    telegram: TelegramClient;
+    config: Config;
+    /** Guards the per-User Alert channel limit. */
+    channelLock: KeyedLock;
+  },
 ): void {
-  const { db, clock, telegram, config } = deps;
+  const { db, clock, telegram, config, channelLock } = deps;
   const expectedSecret = Buffer.from(config.telegramWebhookSecret);
   const startLimiter = new SlidingWindowLimiter(
     clock,
@@ -140,11 +150,22 @@ export function registerTelegramBot(
     if (!owner) {
       return `That Link code is invalid, already used or expired. Generate a new one at ${settingsUrl}.`;
     }
-    await linkChat(
-      db,
-      { ownerId: owner._id, chatId: chat.id, title: chatTitle(chat) },
-      now,
-    );
+    try {
+      await linkChat(
+        db,
+        channelLock,
+        {
+          ownerId: owner._id,
+          chatId: chat.id,
+          title: chatTitle(chat),
+          limit: limitsFor(owner).maxAlertChannels,
+        },
+        now,
+      );
+    } catch (err) {
+      if (!(err instanceof AlertChannelLimitError)) throw err;
+      return `You already have ${err.limit} Alert channels, the most allowed. Remove one at ${settingsUrl} first.`;
+    }
     return "This chat is now linked to your nodbeat account. Alerts will arrive here.";
   };
 

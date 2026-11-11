@@ -7,12 +7,15 @@ import { setFlash } from "./flash.js";
 import { formatDateTime } from "./format.js";
 import { csrfField, html, timeZoneOptions } from "./html.js";
 import {
-  createLinkCode,
-  findActiveLinkCode,
-  findLinkedChat,
-  listLinkedChats,
-  removeLinkedChat,
-} from "./linked-chats.js";
+  CHANNEL_KIND_LABELS,
+  findAlertChannel,
+  listAlertChannels,
+  MAX_CHANNEL_NAME_LENGTH,
+  removeAlertChannel,
+  renameAlertChannel,
+  validChannelName,
+} from "./alert-channels.js";
+import { createLinkCode, findActiveLinkCode } from "./linked-chats.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
 import {
   authenticate,
@@ -47,13 +50,17 @@ export function registerSettings(
   const settingsPage = async (
     req: FastifyRequest,
     reply: FastifyReply,
-    options: { passwordError?: string; linkCodeError?: string } = {},
+    options: {
+      passwordError?: string;
+      linkCodeError?: string;
+      channelError?: string;
+    } = {},
   ) => {
     const user = req.user!;
     const csrf = auth.csrfToken(req, reply);
-    const [code, chats] = await Promise.all([
+    const [code, channels] = await Promise.all([
       findActiveLinkCode(db, user._id, clock.now()),
-      listLinkedChats(db, user._id),
+      listAlertChannels(db, user._id),
     ]);
     return reply.page({
       title: "Settings",
@@ -69,26 +76,41 @@ export function registerSettings(
           >
           <button type="submit">Save time zone</button>
         </form>
-        <h2>Linked chats</h2>
+        <h2>Alert channels</h2>
         ${
-          chats.length === 0
-            ? html`<p>No Linked chats yet.</p>`
-            : html`<ul class="plain">
-                ${chats.map(
-                  (c) =>
-                    html`<li>
-                      ${c.title}
-                      <small
-                        >linked
-                        ${formatDateTime(c.linkedAt, user.timeZone)}</small
-                      >
-                      <a
-                        href="/settings/linked-chats/${String(c._id)}/delete"
-                        class="button secondary"
-                        >Remove</a
-                      >
-                    </li>`,
-                )}
+          options.channelError
+            ? html`<p class="error">${options.channelError}</p>`
+            : ""
+        }
+        ${
+          channels.length === 0
+            ? html`<p>No Alert channels yet.</p>`
+            : html`<ul class="plain alert-channels">
+                ${channels.map((c) => {
+                  const path = `/settings/channels/${String(c._id)}`;
+                  return html`<li>
+                    <span class="channel-kind"
+                      >${CHANNEL_KIND_LABELS[c.kind]}</span
+                    >
+                    <form method="post" action="${path}/rename">
+                      ${csrfField(csrf)}
+                      <input
+                        type="text"
+                        name="name"
+                        value="${c.name}"
+                        aria-label="Name"
+                        maxlength="${String(MAX_CHANNEL_NAME_LENGTH)}"
+                        required
+                      />
+                      <button type="submit" class="secondary">Rename</button>
+                    </form>
+                    <small
+                      >added
+                      ${formatDateTime(c.createdAt, user.timeZone)}</small
+                    >
+                    <a href="${path}/delete" class="button secondary">Remove</a>
+                  </li>`;
+                })}
               </ul>`
         }
         <h2>Link a Telegram chat</h2>
@@ -251,30 +273,58 @@ export function registerSettings(
     },
   );
 
-  app.get<{ Params: { id: string } }>(
-    "/settings/linked-chats/:id/delete",
+  app.post<{ Params: { id: string } }>(
+    "/settings/channels/:id/rename",
     { preHandler: requireUser },
     async (req, reply) => {
-      const chat = await findLinkedChat(db, req.user!._id, req.params.id);
-      if (!chat) return reply.redirect("/settings", 303);
+      const name = validChannelName(
+        (req.body as Record<string, unknown> | undefined)?.name,
+      );
+      if (!name) {
+        reply.code(400);
+        return settingsPage(req, reply, {
+          channelError: `A name needs 1 to ${MAX_CHANNEL_NAME_LENGTH} characters.`,
+        });
+      }
+      const channel = await renameAlertChannel(
+        db,
+        req.user!._id,
+        req.params.id,
+        name,
+      );
+      if (channel) setFlash(reply, `Renamed to ${channel.name}.`);
+      return reply.redirect("/settings", 303);
+    },
+  );
+
+  app.get<{ Params: { id: string } }>(
+    "/settings/channels/:id/delete",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const channel = await findAlertChannel(db, req.user!._id, req.params.id);
+      if (!channel) return reply.redirect("/settings", 303);
       return sendConfirmPage(reply, auth.csrfToken(req, reply), {
-        title: "Remove Linked chat",
-        question: `Remove ${chat.title}?`,
-        explanation: html`Alerts stop arriving in this chat. You can link it
-        again later with a new Link code.`,
-        action: `/settings/linked-chats/${String(chat._id)}/delete`,
-        button: "Remove chat",
+        title: "Remove Alert channel",
+        question: `Remove ${channel.name}?`,
+        explanation: html`Alerts stop arriving here. A Telegram chat can be
+        linked again later with a new Link code.`,
+        action: `/settings/channels/${String(channel._id)}/delete`,
+        button: "Remove channel",
         cancel: "/settings",
       });
     },
   );
 
   app.post<{ Params: { id: string } }>(
-    "/settings/linked-chats/:id/delete",
+    "/settings/channels/:id/delete",
     { preHandler: requireUser },
     async (req, reply) => {
-      const chat = await removeLinkedChat(db, req.user!._id, req.params.id);
-      if (chat) setFlash(reply, `${chat.title} removed.`);
+      const channel = await removeAlertChannel(
+        db,
+        req.user!._id,
+        req.params.id,
+      );
+      if (channel) setFlash(reply, `${channel.name} removed.`);
       return reply.redirect("/settings", 303);
     },
   );
