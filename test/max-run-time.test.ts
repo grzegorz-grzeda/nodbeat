@@ -105,6 +105,31 @@ describe("Max run time", () => {
     expect(text).toContain("Since 2026-01-01 01:05:00");
   });
 
+  it("keeps the Max run time on the Incident, so a later edit doesn't change what it says", async () => {
+    const ctx = await loggedIn();
+    const m = await createMonitor(ctx.browser, "5");
+    await ctx.app.inject({ method: "GET", url: m.hb });
+    await ctx.app.inject({ method: "GET", url: `${m.hb}/start` });
+    ctx.clock.advance(5 * MIN);
+    await ctx.app.tick();
+    expect(await stateOf(ctx.browser, m.page)).toBe("Down");
+
+    await ctx.browser.submit(`${m.page}/edit`, `${m.page}/edit`, {
+      name: "Nightly backup",
+      interval: "1",
+      intervalUnit: "h",
+      grace: "10",
+      graceUnit: "m",
+      maxRunTime: "",
+      maxRunTimeUnit: "m",
+    });
+    const incident = await ctx.db.collection("incidents").findOne({});
+    expect(incident).toMatchObject({
+      cause: "run-too-long",
+      maxRunTimeSec: 5 * 60,
+    });
+  });
+
   it("stays Up when the Run succeeds before the Max run time", async () => {
     const ctx = await loggedIn();
     const m = await createMonitor(ctx.browser, "5");

@@ -26,12 +26,12 @@ export async function applyEffects(
   for (const effect of effects) {
     switch (effect.kind) {
       case "open-incident":
-        incident = await openIncident(
-          db,
-          monitor,
-          effect.startedAt,
-          effect.cause,
-        );
+        incident = await openIncident(db, monitor, effect.startedAt, {
+          cause: effect.cause,
+          ...(effect.maxRunTimeSec !== undefined && {
+            maxRunTimeSec: effect.maxRunTimeSec,
+          }),
+        });
         break;
       case "close-incident":
         incident = await closeOpenIncident(db, monitor._id, now, effect.reason);

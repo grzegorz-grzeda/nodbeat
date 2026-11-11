@@ -5,7 +5,7 @@ import { requireUser, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { parseObjectId } from "./ids.js";
-import { formatDuration } from "./format.js";
+import { formatDuration, formatDurationOrEmpty } from "./format.js";
 import { setFlash } from "./flash.js";
 import { listHeartbeatsSince, type HeartbeatDoc } from "./heartbeats.js";
 import { listIncidents, type IncidentDoc } from "./incidents.js";
@@ -287,10 +287,7 @@ export function registerMonitors(
       const csrf = auth.csrfToken(req, reply);
       const curlGet = `curl -fsS -m 10 --retry 3 ${url}`;
       const curlPost = `curl -fsS -m 10 --retry 3 --data-raw "battery 3.7V" ${url}`;
-      const lastRun =
-        monitor.lastRunDurationSec != null
-          ? formatDuration(monitor.lastRunDurationSec)
-          : null;
+      const lastRun = formatDurationOrEmpty(monitor.lastRunDurationSec);
       // Start signal, then the job; success or Fail signal ends the Run.
       const cronRun = `curl -fsS -m 10 ${url}/start; /path/to/job.sh && curl -fsS -m 10 ${url} || curl -fsS -m 10 ${url}/fail`;
       return reply.page({

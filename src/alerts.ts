@@ -2,6 +2,7 @@ import { ObjectId, type Db } from "mongodb";
 import type { Clock } from "./clock.js";
 import { formatDateTime, formatDuration } from "./format.js";
 import type { IncidentDoc } from "./incidents.js";
+import type { IncidentCause } from "./monitor-state.js";
 import {
   listLinkedChats,
   moveLinkedChats,
@@ -62,8 +63,6 @@ export interface AlertedMonitor {
   name: string;
   /** The last Heartbeat's message; a Down Alert carries it. */
   lastMessage: string | null;
-  /** A too long Run's Down Alert names it. Absent on Monitors stored before Max run times existed. */
-  maxRunTimeSec?: number | null;
 }
 
 /** Puts an Alert about `incident` in the outbox, addressed to the owner's Linked chats at this moment. */
@@ -106,6 +105,17 @@ const escapeTelegramHtml = (text: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
+/** A Down Alert's first line after the name, by why the Incident opened. */
+const DOWN_HEADLINES: Record<IncidentCause, (incident: IncidentDoc) => string> =
+  {
+    missed: () => "is Down",
+    failed: () => "reported a failure",
+    "run-too-long": ({ maxRunTimeSec }) =>
+      maxRunTimeSec !== undefined
+        ? `ran longer than ${formatDuration(maxRunTimeSec)}`
+        : "ran longer than its Max run time",
+  };
+
 /** The Alert in Telegram HTML: bold name, state, when, details, and a link to the Monitor page. */
 function alertText(
   monitor: AlertedMonitor,
@@ -119,13 +129,13 @@ function alertText(
   const url = `${publicBaseUrl}/monitors/${String(monitor._id)}`;
   const link = `<a href="${escapeTelegramHtml(url)}">Open Monitor</a>`;
   if (kind === "down") {
-    const failed = incident.cause === "failed";
-    const headline = failed
-      ? `🔴 ${name} reported a failure`
-      : incident.cause === "run-too-long"
-        ? `🔴 ${name} ran longer than ${formatDuration(monitor.maxRunTimeSec ?? 0)}`
-        : `🔴 ${name} is Down`;
-    const lines = [headline, `Since ${at(incident.startedAt)}`];
+    // Missing on Incidents stored before causes existed: those are missed deadlines.
+    const cause = incident.cause ?? "missed";
+    const failed = cause === "failed";
+    const lines = [
+      `🔴 ${name} ${DOWN_HEADLINES[cause](incident)}`,
+      `Since ${at(incident.startedAt)}`,
+    ];
     if (monitor.lastMessage) {
       // A failure's message is the Fail signal's own.
       const label = failed ? "Message" : "Last message";

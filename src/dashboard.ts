@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
-import { formatAgo, formatDateTime, formatDuration } from "./format.js";
+import { formatAgo, formatDateTime, formatDurationOrEmpty } from "./format.js";
 import { html, type SafeHtml } from "./html.js";
 import { landingBody } from "./landing.js";
 import { stateBadge } from "./layout.js";
@@ -52,10 +52,7 @@ async function dashboardMonitors(
           : "",
         lastMessage: m.lastMessage,
         lastRunDurationSec: m.lastRunDurationSec ?? null,
-        lastRunDurationText:
-          m.lastRunDurationSec != null
-            ? formatDuration(m.lastRunDurationSec)
-            : "",
+        lastRunDurationText: formatDurationOrEmpty(m.lastRunDurationSec),
         uptime7d: uptime,
         uptime7dText: formatUptime(uptime),
       };

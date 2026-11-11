@@ -1,4 +1,8 @@
-import { formatDateTime, formatDuration } from "./format.js";
+import {
+  formatDateTime,
+  formatDuration,
+  formatDurationOrEmpty,
+} from "./format.js";
 import type { HeartbeatDoc, SignalKind } from "./heartbeats.js";
 import { html, type SafeHtml } from "./html.js";
 import type { IncidentDoc } from "./incidents.js";
@@ -79,13 +83,7 @@ export function heartbeatsTable(
             html`<tr>
               <td>${formatDateTime(h.receivedAt, timeZone)}</td>
               <td>${SIGNAL_LABELS[h.kind ?? "success"]}</td>
-              <td>
-                ${
-                  h.runDurationSec != null
-                    ? formatDuration(h.runDurationSec)
-                    : ""
-                }
-              </td>
+              <td>${formatDurationOrEmpty(h.runDurationSec)}</td>
               <td>${h.message ?? ""}</td>
             </tr>`,
         )}

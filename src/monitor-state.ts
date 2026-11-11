@@ -55,7 +55,13 @@ export type IncidentCause = "missed" | "failed" | "run-too-long";
 
 export type Effect =
   /** A missed deadline's or too long Run's Incident starts at that deadline, not when the checker noticed. */
-  | { kind: "open-incident"; startedAt: Date; cause: IncidentCause }
+  | {
+      kind: "open-incident";
+      startedAt: Date;
+      cause: IncidentCause;
+      /** For a too long Run: the Max run time it passed, kept so later edits don't change what the Incident says. */
+      maxRunTimeSec?: number;
+    }
   | { kind: "close-incident"; reason: "heartbeat" | "paused" }
   /** New and pause periods are left out of Uptime. */
   | { kind: "start-period"; state: UncountedState }
@@ -73,6 +79,8 @@ export const STATE_LABELS: Record<MonitorState, string> = {
 export interface Transition {
   fields: MonitorStateFields;
   effects: Effect[];
+  /** The duration in seconds of the Run this event ended; absent if it ended none. */
+  endedRunDurationSec?: number;
 }
 
 /**
@@ -161,22 +169,26 @@ function stateFields(current: MonitorStateFields): MonitorStateFields {
   };
 }
 
-/** The fields after a Heartbeat or Fail signal: the device was heard from, and an open Run ends. */
+/** After a Heartbeat or Fail signal: the Monitor was heard from, and an open Run ends. */
 function heardFrom(
   current: MonitorStateFields,
   message: string | null,
   now: Date,
-): MonitorStateFields {
+): Pick<Transition, "fields" | "endedRunDurationSec"> {
   const fields = {
     ...stateFields(current),
     lastHeartbeatAt: now,
     lastMessage: message,
   };
-  if (!fields.runStartedAt) return fields;
+  if (!fields.runStartedAt) return { fields };
+  const endedRunDurationSec = runDurationSec(fields.runStartedAt, now);
   return {
-    ...fields,
-    runStartedAt: null,
-    lastRunDurationSec: runDurationSec(fields.runStartedAt, now),
+    fields: {
+      ...fields,
+      runStartedAt: null,
+      lastRunDurationSec: endedRunDurationSec,
+    },
+    endedRunDurationSec,
   };
 }
 
@@ -200,16 +212,16 @@ function onHeartbeat(
   message: string | null,
   now: Date,
 ): Transition {
-  const seen = heardFrom(current, message, now);
-  const { state } = current;
-  switch (state) {
+  const { fields: seen, ...ended } = heardFrom(current, message, now);
+  switch (current.state) {
     case "new":
       return {
         fields: { ...seen, state: "up" },
         effects: [{ kind: "end-period", state: "new" }],
+        ...ended,
       };
     case "up":
-      return { fields: { ...seen, state: "up" }, effects: [] };
+      return { fields: { ...seen, state: "up" }, effects: [], ...ended };
     case "down":
       return {
         fields: { ...seen, state: "up" },
@@ -217,24 +229,28 @@ function onHeartbeat(
           { kind: "close-incident", reason: "heartbeat" },
           ...alertEffects(current, "up"),
         ],
+        ...ended,
       };
     case "paused":
-      return { fields: { ...seen, state: "paused" }, effects: [] };
+      return { fields: { ...seen, state: "paused" }, effects: [], ...ended };
   }
 }
 
-/** New or Up goes Down at once; Down and Paused only record it. Either way the device was heard from. */
+/**
+ * New or Up goes Down at once; Down only records it, as heard from. Paused only records it, like a Start signal:
+ * pausing means silence, so it neither counts as heard from nor ends a Run.
+ */
 function onFail(
   current: MonitorStateFields & MonitorSettings,
   message: string | null,
   now: Date,
 ): Transition {
-  const seen = heardFrom(current, message, now);
   const { state } = current;
-  if (state === "down" || state === "paused") {
-    return { fields: seen, effects: [] };
-  }
+  if (state === "paused") return { fields: stateFields(current), effects: [] };
+  const { fields: seen, ...ended } = heardFrom(current, message, now);
+  if (state === "down") return { fields: seen, effects: [], ...ended };
   return {
+    ...ended,
     fields: { ...seen, state: "down" },
     effects: [
       ...(state === "new"
@@ -263,10 +279,13 @@ function onDeadlineCheck(
     .sort((a, b) => a[0].getTime() - b[0].getTime())[0];
   if (!first) return { fields, effects: [] };
   const [deadline, cause] = first;
+  // runDeadline() is null without a Max run time, so it is set here.
+  const limit =
+    cause === "run-too-long" ? { maxRunTimeSec: current.maxRunTimeSec! } : {};
   return {
     fields: { ...fields, state: "down" },
     effects: [
-      { kind: "open-incident", startedAt: deadline, cause },
+      { kind: "open-incident", startedAt: deadline, cause, ...limit },
       ...alertEffects(current, "down"),
     ],
   };

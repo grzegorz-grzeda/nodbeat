@@ -18,6 +18,13 @@ export function formatDuration(totalSec: number): string {
   return parts.length > 0 ? parts.join(" ") : "0 s";
 }
 
+/** Like formatDuration, or empty for no duration (e.g. no Run has ended). */
+export function formatDurationOrEmpty(
+  totalSec: number | null | undefined,
+): string {
+  return totalSec != null ? formatDuration(totalSec) : "";
+}
+
 export function formatAgo(since: Date | null, now: Date): string {
   if (!since) return "never";
   return `${formatDuration((now.getTime() - since.getTime()) / 1000)} ago`;
