@@ -844,9 +844,144 @@ ul.alert-channels input[name="name"] {
   display: block;
 }
 
+.hero-actions {
+  display: flex;
+  gap: var(--space-3);
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* App previews: the app's own markup with demo data, framed like a window. */
+.preview {
+  margin: 0 0 var(--space-4);
+  min-width: 0;
+}
+
+.preview-frame {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.08);
+  overflow: hidden;
+}
+
+.preview-frame .table-wrap {
+  margin: 0;
+}
+
+.preview figcaption {
+  margin-top: var(--space-2);
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.preview-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-3);
+}
+
+/* Dates break at their hyphens otherwise. */
+.preview-pair table {
+  font-size: 0.875rem;
+}
+
+.preview-pair td {
+  white-space: nowrap;
+}
+
+.preview-pair th,
+.preview-pair td {
+  padding-left: var(--space-2);
+  padding-right: var(--space-2);
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.chat-head {
+  font-weight: 600;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.chat-bubble {
+  margin: 0;
+  max-width: 26rem;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) var(--radius) 2px;
+  font-size: 0.9375rem;
+  overflow-wrap: anywhere;
+}
+
+.examples {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.examples > .card {
+  margin: 0;
+  min-width: 0;
+}
+
+/* Code keeps its lines; a long one scrolls inside its card. */
+.examples pre {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.invite-request {
+  margin: var(--space-5) auto var(--space-4);
+  scroll-margin-top: var(--space-4);
+}
+
+.invite-request textarea {
+  width: 100%;
+}
+
+.small {
+  font-size: 0.875rem;
+}
+
+/* A field for bots only: off-screen rather than hidden, which some bots skip. */
+.honeypot {
+  position: absolute;
+  left: -10000px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.row-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.row-actions > form {
+  margin: 0;
+}
+
 @media (max-width: 40rem) {
   .hero {
     padding-top: var(--space-4);
+  }
+
+  .preview-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .preview-pair td {
+    white-space: normal;
   }
 
   .hero h1 {

@@ -14,6 +14,11 @@ import {
   type LegalDocs,
 } from "./legal.js";
 import { copyButton, csrfField, html, timeZoneOptions } from "./html.js";
+import {
+  inviteRequestsTable,
+  listInviteRequests,
+  takeInviteRequest,
+} from "./invite-requests.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
 import {
   createUser,
@@ -187,10 +192,52 @@ export function registerInvites(
     ACCEPT_WINDOW_MS,
   );
 
+  /** The new Invite's link, shown once; with `email`, also as a ready-to-send email to that address. */
+  const inviteCreatedPage = (
+    reply: FastifyReply,
+    code: string,
+    email?: string,
+  ) => {
+    const link = `${config.publicBaseUrl}/invite/${code}`;
+    const mailto =
+      email &&
+      `mailto:${email}?subject=${encodeURIComponent("Your nodbeat Invite")}&body=${encodeURIComponent(
+        `Here's your Invite to nodbeat. It works once and expires in 7 days:\n\n${link}\n`,
+      )}`;
+    return reply.page({
+      title: "Invite created",
+      // Enhances the copy button; without JS it stays hidden and the link is still selectable.
+      scripts: ["copy.js"],
+      body: html`<div class="card narrow">
+        <h1>Invite created</h1>
+        <p>
+          Send this link to ${email ?? "the person you're inviting"}. It's shown
+          only now: nodbeat keeps no copy of it.
+        </p>
+        <div class="copy-row">
+          <input
+            type="text"
+            id="invite-link"
+            readonly
+            value="${link}"
+            aria-label="Invite link"
+          />
+          ${copyButton("invite-link")}
+        </div>
+        ${mailto && html`<p><a href="${mailto}" class="button">Email it to ${email}</a></p>`}
+        <p><a href="/admin/invites">Back to Invites</a></p>
+      </div>`,
+    });
+  };
+
   const listPage = async (req: FastifyRequest, reply: FastifyReply) => {
     const now = clock.now();
     const timeZone = req.user!.timeZone;
-    const list = await listInvites(db);
+    const [list, requests] = await Promise.all([
+      listInvites(db),
+      listInviteRequests(db, now),
+    ]);
+    const csrf = auth.csrfToken(req, reply);
     const emails = await emailsByUserId(
       db,
       list.flatMap((i) => (i.usedBy ? [i.usedBy] : [])),
@@ -202,6 +249,8 @@ export function registerInvites(
           An Invite is a link that lets one person create a User. It works once
           and expires after 7 days.
         </p>
+        ${requests.length > 0 && inviteRequestsTable(requests, csrf, timeZone)}
+        <h2>Invites</h2>
         ${
           list.length === 0
             ? html`<p class="muted">No Invites yet.</p>`
@@ -240,7 +289,7 @@ export function registerInvites(
               </div>`
         }
         <form method="post" action="/admin/invites" class="card narrow">
-          ${csrfField(auth.csrfToken(req, reply))}
+          ${csrfField(csrf)}
           <label
             >Note (optional, only you see it)
             <input
@@ -305,30 +354,34 @@ export function registerInvites(
         createdBy: req.user!._id,
         now: clock.now(),
       });
-      const link = `${config.publicBaseUrl}/invite/${code}`;
-      return reply.page({
-        title: "Invite created",
-        // Enhances the copy button; without JS it stays hidden and the link is still selectable.
-        scripts: ["copy.js"],
-        body: html`<div class="card narrow">
-          <h1>Invite created</h1>
-          <p>
-            Send this link to the person you're inviting. It's shown only now:
-            nodbeat keeps no copy of it.
-          </p>
-          <div class="copy-row">
-            <input
-              type="text"
-              id="invite-link"
-              readonly
-              value="${link}"
-              aria-label="Invite link"
-            />
-            ${copyButton("invite-link")}
-          </div>
-          <p><a href="/admin/invites">Back to Invites</a></p>
-        </div>`,
+      return inviteCreatedPage(reply, code);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/admin/invite-requests/:id/invite",
+    { preHandler: requireAdmin },
+    async (req, reply) => {
+      const now = clock.now();
+      const request = await takeInviteRequest(db, req.params.id, now);
+      if (!request) return reply.redirect("/admin/invites", 303);
+      const code = await createInvite(db, {
+        note: request.email,
+        createdBy: req.user!._id,
+        now,
       });
+      return inviteCreatedPage(reply, code, request.email);
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    "/admin/invite-requests/:id/dismiss",
+    { preHandler: requireAdmin },
+    async (req, reply) => {
+      if (await takeInviteRequest(db, req.params.id, clock.now())) {
+        setFlash(reply, "Invite request dismissed.");
+      }
+      return reply.redirect("/admin/invites", 303);
     },
   );
 

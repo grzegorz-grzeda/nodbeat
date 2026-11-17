@@ -138,6 +138,16 @@ export async function findUserById(
   return users(db).findOne({ _id: id });
 }
 
+/** True when a User already has this email (normalized here). */
+export async function userEmailExists(db: Db, email: string): Promise<boolean> {
+  return (
+    (await users(db).countDocuments(
+      { email: normalizeEmail(email) },
+      { limit: 1 },
+    )) > 0
+  );
+}
+
 /** Returns the User when the email and password match, null otherwise. */
 export async function authenticate(
   db: Db,

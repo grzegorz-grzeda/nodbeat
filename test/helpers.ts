@@ -161,6 +161,7 @@ export const testConfig: Config = {
   selfHeartbeatUrl: undefined,
   trustedProxyIp: "172.18.0.2",
   legalDir: undefined,
+  inviteRequests: false,
 };
 
 /** The Content-Security-Policy sent on every response. */
@@ -200,10 +201,14 @@ afterEach(async () => {
 
 /**
  * Builds the full app on a fresh, isolated database. `logLevel` "info" also records request logs; `legalDir` is
- * `LEGAL_DIR` (a fixture directory: the repo holds no real legal text).
+ * `LEGAL_DIR` (a fixture directory: the repo holds no real legal text); `inviteRequests` is `INVITE_REQUESTS`.
  */
 export async function buildTestApp(
-  options: { logLevel?: "warn" | "info"; legalDir?: string } = {},
+  options: {
+    logLevel?: "warn" | "info";
+    legalDir?: string;
+    inviteRequests?: boolean;
+  } = {},
 ): Promise<TestContext> {
   const client = new MongoClient(inject("mongoUri"));
   await client.connect();
@@ -212,7 +217,11 @@ export async function buildTestApp(
   const telegram = new RecordingTelegram();
   const http = new RecordingHttp();
   const logs: TestContext["logs"] = [];
-  const config: Config = { ...testConfig, legalDir: options.legalDir };
+  const config: Config = {
+    ...testConfig,
+    legalDir: options.legalDir,
+    inviteRequests: options.inviteRequests ?? false,
+  };
   const app = await createApp({
     db,
     clock,

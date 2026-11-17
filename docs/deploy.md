@@ -74,16 +74,17 @@ chmod 600 .env
 
 Fill it in:
 
-| Variable                  | Value                                                       |
-| ------------------------- | ----------------------------------------------------------- |
-| `MONGODB_URI`             | the string from step 1                                      |
-| `PUBLIC_BASE_URL`         | `https://nodbeat.g2labs.pl`                                 |
-| `SESSION_SECRET`          | `openssl rand -base64 48`                                   |
-| `TELEGRAM_BOT_TOKEN`      | from step 2                                                 |
-| `TELEGRAM_WEBHOOK_SECRET` | from step 2                                                 |
-| `TRUSTED_PROXY_IP`        | the edge Caddy's fixed IP from step 4 (e.g. `172.30.0.10`)  |
-| `SELF_HEARTBEAT_URL`      | from step 9 (leave empty for now; set it and restart then)  |
-| `LEGAL_DIR`               | `/legal` once step 10's files exist (empty: no legal pages) |
+| Variable                  | Value                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------- |
+| `MONGODB_URI`             | the string from step 1                                                           |
+| `PUBLIC_BASE_URL`         | `https://nodbeat.g2labs.pl`                                                      |
+| `SESSION_SECRET`          | `openssl rand -base64 48`                                                        |
+| `TELEGRAM_BOT_TOKEN`      | from step 2                                                                      |
+| `TELEGRAM_WEBHOOK_SECRET` | from step 2                                                                      |
+| `TRUSTED_PROXY_IP`        | the edge Caddy's fixed IP from step 4 (e.g. `172.30.0.10`)                       |
+| `SELF_HEARTBEAT_URL`      | from step 9 (leave empty for now; set it and restart then)                       |
+| `LEGAL_DIR`               | `/legal` once step 10's files exist (empty: no legal pages)                      |
+| `INVITE_REQUESTS`         | `true` to show "Request an Invite" on the landing page (empty: off; see step 10) |
 
 ## 6. Start
 
@@ -191,6 +192,8 @@ The Operator writes the legal text; it isn't in the repo or the image. `compose.
   ```
 
 Set `LEGAL_DIR=/legal` in `.env` and `docker compose up -d`. `/terms` (starting with the Operator's details) and `/privacy` appear, and every page's footer links to both and names the Operator. The files are read at startup: restart after editing them. A malformed file stops startup with its name in the error. `taxId` (shown as "Tax ID"; your NIP in Poland) is optional; the other three are required. With `LEGAL_DIR` unset or any of the three files missing, there are no legal pages, footer links or Operator details (a self-hosted instance without its own); with `LEGAL_DIR` set, startup logs a warning naming the missing files.
+
+With `INVITE_REQUESTS=true`, `privacy.md` must also cover Invite requests: the email and optional note a visitor leaves on the landing page, used only to send them an Invite, kept until the Admin creates the Invite or dismisses the request, or at most 30 days. No IP is stored with them.
 
 ## 11. Releases (ADR 0005, ADR 0006)
 

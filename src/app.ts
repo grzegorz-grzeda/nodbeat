@@ -1,3 +1,8 @@
+import {
+  ensureInviteRequestIndexes,
+  registerInviteRequests,
+} from "./invite-requests.js";
+import { landingBody } from "./landing.js";
 import { createHmac } from "node:crypto";
 import cookie from "@fastify/cookie";
 import formbody from "@fastify/formbody";
@@ -131,6 +136,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     ensureStatePeriodIndexes(db),
     ensureAlertIndexes(db),
     ensureInviteIndexes(db),
+    ensureInviteRequestIndexes(db),
   ]);
   // Linked chats and queued Alerts from before Alert channels existed; idempotent.
   await migrateLinkedChats(db);
@@ -157,7 +163,25 @@ export async function createApp(deps: AppDeps): Promise<App> {
   });
   registerLegalPages(app, { legal });
   registerErrorPages(app);
-  registerDashboard(app, { db, clock, config, startedAt });
+  const inviteRequestForm = registerInviteRequests(app, {
+    db,
+    clock,
+    auth,
+    enabled: config.inviteRequests,
+    hasPrivacyPolicy: legal !== undefined,
+    landingPage: (reply, form) =>
+      reply.page({
+        title: "Uptime monitoring",
+        body: landingBody(config.publicBaseUrl, form),
+      }),
+  });
+  registerDashboard(app, {
+    db,
+    clock,
+    config,
+    startedAt,
+    inviteRequestForm,
+  });
   registerMonitors(app, { db, clock, config, auth, startedAt });
   registerMonitorManagement(app, {
     db,

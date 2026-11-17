@@ -141,3 +141,7 @@ _Avoid_: Provider, owner, host, vendor
 **Invite**:
 A single-use link from the Admin that lets one person create a User. It expires after 7 days and can be revoked.
 _Avoid_: Registration, sign-up code, token
+
+**Invite request**:
+A visitor's request for an Invite, left on the landing page with their email. The Admin either creates an Invite for it or dismisses it; either way, or after 30 days, it's deleted.
+_Avoid_: Waitlist, sign-up request, application

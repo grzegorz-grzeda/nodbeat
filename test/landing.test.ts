@@ -24,6 +24,44 @@ describe("landing page", () => {
     expect(body).toContain("Telegram");
   });
 
+  it("previews the Dashboard, Incidents and a Telegram Alert, out of the tab order", async () => {
+    const { app } = await buildTestApp();
+
+    const body = (await app.inject({ method: "GET", url: "/" })).body;
+
+    expect(body).toContain("What it looks like");
+    expect(body.match(/class="preview-frame" inert/g)).toHaveLength(3);
+    expect(body).toContain("Nightly database backup");
+    expect(body).toContain('class="badge badge-down"');
+    expect(body).toContain("Reminders");
+    expect(body).toContain("reported a failure");
+  });
+
+  it("shows usage examples with the instance's Heartbeat URL and current features", async () => {
+    const { app } = await buildTestApp();
+
+    const body = (await app.inject({ method: "GET", url: "/" })).body;
+
+    for (const example of [
+      "cron",
+      "systemd",
+      "ESP32",
+      "Start and Fail signals",
+    ]) {
+      expect(body).toContain(example);
+    }
+    expect(body).toContain("https://nodbeat.test/hb/&lt;token&gt;/fail");
+    for (const feature of [
+      "Schedule",
+      "Max run time",
+      "Reminders",
+      "Webhooks",
+      "ntfy",
+    ]) {
+      expect(body).toContain(feature);
+    }
+  });
+
   it("offers no sign-up", async () => {
     const { app } = await buildTestApp();
 

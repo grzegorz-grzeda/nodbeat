@@ -3,41 +3,16 @@ import type { Db, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { formatAgo, formatDateTime, formatDurationOrEmpty } from "./format.js";
-import { html, type SafeHtml } from "./html.js";
+import { html } from "./html.js";
+import type { InviteRequestForm } from "./invite-requests.js";
+import { monitorsTable, type DashboardMonitor } from "./dashboard-table.js";
+export type { DashboardMonitor } from "./dashboard-table.js";
 import { landingBody } from "./landing.js";
-import { stateBadge } from "./layout.js";
-import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
+import { STATE_LABELS } from "./monitor-state.js";
 import { listMonitors, nextExpected } from "./monitors.js";
 import { formatUptime, sevenDayUptime } from "./uptime.js";
 import { listAlertChannels } from "./alert-channels.js";
 import { channelsOfMonitor } from "./monitor-alert-channels.js";
-
-/** One Monitor as the Dashboard JSON reports it. The `*Text` fields are ready to display. */
-export interface DashboardMonitor {
-  id: string;
-  name: string;
-  state: MonitorState;
-  stateText: string;
-  lastHeartbeatAt: string | null;
-  /** "2 min ago" or "never". */
-  lastHeartbeatText: string;
-  /** The last Heartbeat's time in the User's time zone; empty if never. */
-  lastHeartbeatTitle: string;
-  lastMessage: string | null;
-  /** The last finished Run's duration in seconds; null if none. */
-  lastRunDurationSec: number | null;
-  /** "42 s", or empty if no Run has ended. */
-  lastRunDurationText: string;
-  /** When the next Heartbeat is due, as the Down checker decides; null for Paused and Down. */
-  nextExpectedAt: string | null;
-  /** "14:05" in the User's time zone (with the date if not today); empty for Paused and Down. */
-  nextExpectedText: string;
-  /** 0..1, null when the Monitor was neither Up nor Down in the last 7 days. */
-  uptime7d: number | null;
-  uptime7dText: string;
-  /** The Monitor has no Alert channels: its Alerts go nowhere. */
-  alertsGoNowhere: boolean;
-}
 
 async function dashboardMonitors(
   db: Db,
@@ -76,24 +51,6 @@ async function dashboardMonitors(
   );
 }
 
-/** `data-label` heads each cell when the table turns into cards on a phone. */
-function row(m: DashboardMonitor): SafeHtml {
-  return html`<tr>
-    <td class="cell-name">
-      <a href="/monitors/${m.id}">${m.name}</a>
-      ${m.alertsGoNowhere && html`<small class="warning">Alerts go nowhere</small>`}
-    </td>
-    <td data-label="State">${stateBadge(m.state)}</td>
-    <td data-label="Last Heartbeat" title="${m.lastHeartbeatTitle}">
-      ${m.lastHeartbeatText}
-    </td>
-    <td data-label="Last message">${m.lastMessage ?? ""}</td>
-    <td data-label="Last Run">${m.lastRunDurationText}</td>
-    <td data-label="Next expected by">${m.nextExpectedText}</td>
-    <td data-label="7-day Uptime">${m.uptime7dText}</td>
-  </tr>`;
-}
-
 export function registerDashboard(
   app: FastifyInstance,
   deps: {
@@ -102,9 +59,11 @@ export function registerDashboard(
     config: Config;
     /** When this nodbeat process started, for nextDueAt()'s startup grace. */
     startedAt: Date;
+    /** The landing page's "Request an Invite" form; none when Invite requests are off. */
+    inviteRequestForm: InviteRequestForm | undefined;
   },
 ): void {
-  const { db, clock, config, startedAt } = deps;
+  const { db, clock, config, startedAt, inviteRequestForm } = deps;
 
   // A visitor without a session gets the landing page; a User's bookmark keeps working.
   app.get("/", async (req, reply) => {
@@ -112,7 +71,10 @@ export function registerDashboard(
     if (!user) {
       return reply.page({
         title: "Uptime monitoring",
-        body: landingBody(config.publicBaseUrl),
+        body: landingBody(
+          config.publicBaseUrl,
+          inviteRequestForm?.(req, reply),
+        ),
       });
     }
     const list = await dashboardMonitors(db, user, clock.now(), startedAt);
@@ -142,22 +104,7 @@ export function registerDashboard(
           id="monitors-table"
           ${list.length === 0 && html`hidden`}
         >
-          <table class="cards">
-            <thead>
-              <tr>
-                <th>Monitor</th>
-                <th>State</th>
-                <th>Last Heartbeat</th>
-                <th>Last message</th>
-                <th>Last Run</th>
-                <th>Next expected by</th>
-                <th>7-day Uptime</th>
-              </tr>
-            </thead>
-            <tbody id="monitors">
-              ${list.map(row)}
-            </tbody>
-          </table>
+          ${monitorsTable(list, "monitors")}
         </div>`,
     });
   });

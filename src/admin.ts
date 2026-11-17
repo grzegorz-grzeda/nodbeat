@@ -8,6 +8,7 @@ import {
 } from "./heartbeats.js";
 import { html, type SafeHtml } from "./html.js";
 import { countIncidentsSince } from "./incidents.js";
+import { countInviteRequests } from "./invite-requests.js";
 import { formatDateTime } from "./format.js";
 import { countLinkedChats, countLinkedChatsByOwner } from "./linked-chats.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
@@ -163,6 +164,7 @@ export function registerAdmin(
       traffic,
       incidents7d,
       incidents30d,
+      inviteRequests,
     ] = await Promise.all([
       listUserActivity(db, daysAgo(7)),
       countMonitorsByState(db),
@@ -172,6 +174,7 @@ export function registerAdmin(
       summarizeHeartbeatTraffic(db, daysAgo(7)),
       countIncidentsSince(db, daysAgo(7)),
       countIncidentsSince(db, daysAgo(30)),
+      countInviteRequests(db, new Date(nowMs)),
     ]);
     const monitorCount = STATES.reduce((sum, s) => sum + byState[s], 0);
 
@@ -182,7 +185,14 @@ export function registerAdmin(
           Usage of this nodbeat instance. Counts and User emails only: nothing
           here shows what Users watch.
         </p>
-        <p><a href="/admin/invites">Invites</a></p>
+        <p>
+          <a href="/admin/invites"
+            >Invites${
+              inviteRequests > 0 &&
+              ` (${String(inviteRequests)} ${inviteRequests === 1 ? "request" : "requests"})`
+            }</a
+          >
+        </p>
         ${statTable("Totals", [
           ["Users", userActivity.length],
           ["Monitors", monitorCount],

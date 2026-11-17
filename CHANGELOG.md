@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Landing page: "What it looks like" previews of the Dashboard, a Monitor's Incidents and Telegram Alerts, built from the app's own markup with demo data (so they follow the light and dark theme); copy-paste examples for cron, a shell script with Start and Fail signals, systemd and an ESP32/Arduino, using the instance's Heartbeat URL; and a features list covering Schedules, Start and Fail signals, Max run time, Reminders, Webhooks and ntfy.
+- Invite requests: with the new optional `INVITE_REQUESTS=true`, the landing page has a "Request an Invite" form (email and an optional note). Requests are listed on `/admin/invites`, where the Admin creates an Invite for one (shown with a ready-to-send `mailto:` link) or dismisses it; `/admin` shows how many are pending. A request is deleted once handled or after 30 days, one per email, with no IP stored. The visitor sees the same thank-you whether or not the email already has a User. Limits: 3 per IP per hour (`429`), 200 pending at most (`503`). Off by default; the Operator's Privacy policy has to cover it (see `docs/deploy.md`).
+
 ## [0.27.0] - 2026-11-11
 
 ### Added

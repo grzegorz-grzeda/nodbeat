@@ -12,6 +12,8 @@ export interface Config {
   trustedProxyIp: string;
   /** The Operator's directory with `terms.md`, `privacy.md` and `operator.md`; no legal pages when unset. */
   legalDir: string | undefined;
+  /** Shows "Request an Invite" on the landing page (`INVITE_REQUESTS=true`); off by default. */
+  inviteRequests: boolean;
 }
 
 export class ConfigError extends Error {
@@ -84,6 +86,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   }
 
   const legalDir = env.LEGAL_DIR?.trim() || undefined;
+  const inviteRequests = env.INVITE_REQUESTS?.trim() === "true";
 
   if (problems.length > 0) throw new ConfigError(problems);
 
@@ -96,6 +99,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     selfHeartbeatUrl,
     trustedProxyIp,
     legalDir,
+    inviteRequests,
   };
 }
 
