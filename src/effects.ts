@@ -2,6 +2,7 @@ import type { Db } from "mongodb";
 import {
   dropPendingDownAlerts,
   enqueueAlert,
+  enqueueChangeAlert,
   type AlertedMonitor,
 } from "./alerts.js";
 import {
@@ -62,6 +63,9 @@ export async function applyEffects(
             publicBaseUrl,
           );
         }
+        break;
+      case "enqueue-change-alert":
+        await enqueueChangeAlert(db, monitor, effect, now, publicBaseUrl);
         break;
     }
   }

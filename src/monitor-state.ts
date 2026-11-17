@@ -1,4 +1,4 @@
-import type { AlertKind } from "./alerts.js";
+import type { IncidentAlertKind } from "./alerts.js";
 import { MAX_EARLY_HEARTBEAT_SEC } from "./limits.js";
 import {
   nextScheduledTime,
@@ -28,6 +28,11 @@ export interface MonitorStateFields {
   runStartedAt?: Date | null;
   /** The last finished Run's duration in seconds; null if none. Absent on Monitors stored before Start signals existed. */
   lastRunDurationSec?: number | null;
+  /**
+   * The last non-empty message of a plain Heartbeat, which a Change Alert compares the next one against; null if none
+   * yet. Kept whether Change Alerts are on or not. Absent on Monitors stored before Change Alerts existed.
+   */
+  changeBaseline?: string | null;
 }
 
 /** A Monitor's Interval or its Schedule: exactly one is set. */
@@ -50,6 +55,8 @@ export type MonitorTiming = MonitorPeriod & {
 export type MonitorSettings = MonitorTiming & {
   /** Off: state and Incidents are still tracked, but no Alerts are enqueued. */
   alertsEnabled: boolean;
+  /** Send a Change Alert when a Heartbeat's message changes. Absent on Monitors stored before Change Alerts existed. */
+  changeAlerts?: boolean;
 };
 
 /**
@@ -93,7 +100,9 @@ export type Effect =
   | { kind: "start-period"; state: UncountedState }
   | { kind: "end-period"; state: UncountedState }
   /** Down: about the Incident just opened. Up: about the Incident just closed. */
-  | { kind: "enqueue-alert"; alert: AlertKind };
+  | { kind: "enqueue-alert"; alert: IncidentAlertKind }
+  /** A Heartbeat's message differs from the one before it. */
+  | { kind: "enqueue-change-alert"; previousMessage: string; message: string };
 
 export const STATE_LABELS: Record<MonitorState, string> = {
   new: "New",
@@ -230,7 +239,10 @@ export function transition(
   }
 }
 
-function alertEffects(current: MonitorSettings, kind: AlertKind): Effect[] {
+function alertEffects(
+  current: MonitorSettings,
+  kind: IncidentAlertKind,
+): Effect[] {
   return current.alertsEnabled ? [{ kind: "enqueue-alert", alert: kind }] : [];
 }
 
@@ -243,6 +255,7 @@ function stateFields(current: MonitorStateFields): MonitorStateFields {
     watchedSince,
     runStartedAt,
     lastRunDurationSec,
+    changeBaseline,
   } = current;
   return {
     state,
@@ -252,6 +265,7 @@ function stateFields(current: MonitorStateFields): MonitorStateFields {
     watchedSince: watchedSince ?? null,
     runStartedAt: runStartedAt ?? null,
     lastRunDurationSec: lastRunDurationSec ?? null,
+    changeBaseline: changeBaseline ?? null,
   };
 }
 
@@ -298,28 +312,54 @@ function onHeartbeat(
   message: string | null,
   now: Date,
 ): Transition {
-  const { fields: seen, ...ended } = heardFrom(current, message, now);
+  const { fields: heard, ...ended } = heardFrom(current, message, now);
+  // Only plain Heartbeats with a message move the baseline.
+  const seen = message ? { ...heard, changeBaseline: message } : heard;
+  const change = changeEffects(current, message);
   switch (current.state) {
     case "new":
       return {
         fields: { ...seen, state: "up" },
-        effects: [{ kind: "end-period", state: "new" }],
+        effects: [{ kind: "end-period", state: "new" }, ...change],
         ...ended,
       };
     case "up":
-      return { fields: { ...seen, state: "up" }, effects: [], ...ended };
+      return { fields: { ...seen, state: "up" }, effects: change, ...ended };
     case "down":
       return {
         fields: { ...seen, state: "up" },
         effects: [
           { kind: "close-incident", reason: "heartbeat" },
           ...alertEffects(current, "up"),
+          ...change,
         ],
         ...ended,
       };
     case "paused":
       return { fields: { ...seen, state: "paused" }, effects: [], ...ended };
   }
+}
+
+/**
+ * A Change Alert when the Heartbeat's message differs from the baseline. The first message only sets the baseline, a
+ * Heartbeat without one is ignored, and nothing is sent while Paused or with Alerts off (the baseline still moves).
+ */
+function changeEffects(
+  current: MonitorStateFields & MonitorSettings,
+  message: string | null,
+): Effect[] {
+  const previousMessage = current.changeBaseline ?? null;
+  if (
+    !current.changeAlerts ||
+    !current.alertsEnabled ||
+    current.state === "paused" ||
+    !message ||
+    previousMessage === null ||
+    message === previousMessage
+  ) {
+    return [];
+  }
+  return [{ kind: "enqueue-change-alert", previousMessage, message }];
 }
 
 /**

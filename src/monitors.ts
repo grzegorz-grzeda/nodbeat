@@ -41,6 +41,7 @@ import {
   periodSec,
   type DueFields,
   type MonitorPeriod,
+  type MonitorSettings,
   type MonitorState,
   type MonitorStateFields,
   type MonitorTiming,
@@ -57,7 +58,8 @@ import {
 export type MonitorDoc = MonitorStateFields &
   AlertChannelChoice &
   MonitorTiming &
-  ReminderSettings & {
+  ReminderSettings &
+  Pick<MonitorSettings, "changeAlerts"> & {
     _id: ObjectId;
     ownerId: ObjectId;
     name: string;
@@ -319,6 +321,7 @@ export function registerMonitors(
         watchedSince: null,
         runStartedAt: null,
         lastRunDurationSec: null,
+        changeBaseline: null,
         createdAt: clock.now(),
       };
       await monitors(db).insertOne(doc);
@@ -425,6 +428,7 @@ export function registerMonitors(
                 }
               </li>
               <li>Reminders: ${reminderText(monitor)}</li>
+              <li>Change Alerts: ${monitor.changeAlerts ? "on" : "off"}</li>
               ${
                 monitor.schedule
                   ? html`<li>

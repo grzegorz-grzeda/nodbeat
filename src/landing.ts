@@ -34,6 +34,10 @@ const FEATURES: Array<[string, string]> = [
     'Send a short text with each Heartbeat, like "battery 3.7V", and see it on the Dashboard and in the Alert.',
   ],
   [
+    "Change Alerts",
+    'Get an Alert when a Heartbeat\'s message changes, like "door=open" to "door=closed".',
+  ],
+  [
     "Uptime and Incidents",
     "7-day Uptime per Monitor and a history of every Incident, with Paused time left out.",
   ],

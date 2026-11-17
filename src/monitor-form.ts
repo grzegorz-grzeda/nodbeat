@@ -54,6 +54,7 @@ export interface MonitorForm {
   alertChannelIds: string[];
   /** A Reminder cadence in seconds, or "" for never. */
   reminderEvery: string;
+  changeAlerts: boolean;
 }
 
 /** An Alert channel the form offers. */
@@ -72,6 +73,7 @@ export type MonitorSettings = MonitorTiming &
     notes: string;
     alertChannels: MonitorAlertChannels;
     reminderEverySec: ReminderEverySec | null;
+    changeAlerts: boolean;
   };
 
 /** The submitted form; `defaultTimeZone` (the owner's) when no time zone was sent. */
@@ -97,6 +99,7 @@ export function readForm(body: unknown, defaultTimeZone: string): MonitorForm {
       : [b.alertChannelIds]
     ).filter((v): v is string => typeof v === "string"),
     reminderEvery: field("reminderEvery"),
+    changeAlerts: field("changeAlerts") === "true",
   };
 }
 
@@ -110,6 +113,7 @@ export function formFor(
     Pick<ReminderSettings, "reminderEverySec"> & {
       name: string;
       notes: string;
+      changeAlerts?: boolean;
     },
   defaultTimeZone: string,
 ): MonitorForm {
@@ -141,6 +145,7 @@ export function formFor(
     ...alertChannelsForm(choiceOf(monitor)),
     reminderEvery:
       monitor.reminderEverySec != null ? String(monitor.reminderEverySec) : "",
+    changeAlerts: monitor.changeAlerts ?? false,
   };
 }
 
@@ -280,6 +285,7 @@ export function validate(
       maxRunTimeSec,
       alertChannels,
       reminderEverySec,
+      changeAlerts: form.changeAlerts,
     },
   };
 }
@@ -485,6 +491,15 @@ ${form.notes}</textarea>
               </option>`,
           )}
         </select></label
+      >
+      <label
+        ><input
+          type="checkbox"
+          name="changeAlerts"
+          value="true"
+          ${form.changeAlerts ? html`checked` : ""}
+        />
+        Change Alerts (alert when the Heartbeat message changes)</label
       >
       <button type="submit">${editing ? "Save" : "Create Monitor"}</button>
     </form>`;

@@ -77,8 +77,12 @@ _Avoid_: Overview, home, status page
 ## Notifications
 
 **Alert**:
-A message sent to a Monitor's Alert channels when it goes Down or comes back Up. Not sent while the Monitor's Alerts are switched off.
+A message sent to a Monitor's Alert channels when it goes Down, comes back Up, or (if it asks for it) a Change Alert. Not sent while the Monitor's Alerts are switched off or it is Paused.
 _Avoid_: Notification, ping
+
+**Change Alert**:
+An Alert sent when a Heartbeat's message differs from the message of the last Heartbeat before it that had one, for Monitors that ask for it. Heartbeats without a message are ignored. Never changes Monitor state and is never repeated as a Reminder.
+_Avoid_: Payload alert, diff notification, message alert
 
 **Test Alert**:
 An Alert a User sends to one of their Alert channels from Settings, to check it works. It is about no Monitor, is sent once (never retried), and getting through clears Failing.

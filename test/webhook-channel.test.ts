@@ -109,6 +109,7 @@ describe("Webhook channel", () => {
       kind: "down",
       at: "2026-01-01T00:01:30.000Z",
       message: null,
+      previousMessage: null,
       incidentId: expect.stringMatching(/^[0-9a-f]{24}$/),
     });
   });

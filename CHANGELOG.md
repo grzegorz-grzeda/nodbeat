@@ -10,6 +10,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Landing page: "What it looks like" previews of the Dashboard, a Monitor's Incidents and Telegram Alerts, built from the app's own markup with demo data (so they follow the light and dark theme); copy-paste examples for cron, a shell script with Start and Fail signals, systemd and an ESP32/Arduino, using the instance's Heartbeat URL; and a features list covering Schedules, Start and Fail signals, Max run time, Reminders, Webhooks and ntfy.
 - Invite requests: with the new optional `INVITE_REQUESTS=true`, the landing page has a "Request an Invite" form (email and an optional note). Requests are listed on `/admin/invites`, where the Admin creates an Invite for one (shown with a ready-to-send `mailto:` link) or dismisses it; `/admin` shows how many are pending. A request is deleted once handled or after 30 days, one per email, with no IP stored. The visitor sees the same thank-you whether or not the email already has a User. Limits: 3 per IP per hour (`429`), 200 pending at most (`503`). Off by default; the Operator's Privacy policy has to cover it (see `docs/deploy.md`).
+- Change Alerts: a new per-Monitor option on the Monitor form, off by default. When a Heartbeat's message differs from the message of the last Heartbeat before it that had one, an Alert goes to the Monitor's Alert channels: 🔄 "<name> has a new message" with `old → new`, quiet on Telegram, at ntfy priority 3. Heartbeats without a message, and Fail signals, are ignored. The first message only sets the baseline. The baseline keeps up while the option is off, Alerts are off or the Monitor is Paused, so nothing stale is sent later. Change Alerts never change Monitor state and are never repeated as Reminders. When a Heartbeat brings a Monitor Up and changes its message, the Up Alert goes first.
+
+### Changed
+
+- Webhook body: a new `previousMessage` field (null except on `change`), and `incidentId` is null on the new `kind` `change`.
 
 ## [0.27.0] - 2026-11-11
 

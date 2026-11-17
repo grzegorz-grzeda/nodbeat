@@ -31,7 +31,8 @@ export interface AlertDoc {
   monitorId: ObjectId;
   ownerId: ObjectId;
   kind: SentAlertKind;
-  incidentId: ObjectId;
+  /** The Incident a Down or Up Alert or Reminder is about; null on a Change Alert. */
+  incidentId: ObjectId | null;
   /** The message in Telegram HTML, formatted when the Alert was enqueued. */
   text: string;
   /** How `text` is sent. Absent on Alerts enqueued before Alerts were Telegram HTML: those are plain text. */
@@ -59,10 +60,15 @@ export interface AlertDetails {
   monitorName: string;
   /** The Monitor page. */
   monitorUrl: string;
-  /** When the Monitor went Down (Incident start; also on a Reminder) or came Up (Incident end). */
+  /** When the Monitor went Down (Incident start; also on a Reminder), came Up (Incident end) or its message changed. */
   at: Date;
-  /** A Down Alert's or Reminder's last Heartbeat or Fail signal message; null on Up Alerts or when there's none. */
+  /**
+   * A Down Alert's or Reminder's last Heartbeat or Fail signal message, or a Change Alert's new message; null on Up
+   * Alerts or when there's none.
+   */
   message: string | null;
+  /** A Change Alert's message before the change. Absent on other kinds. */
+  previousMessage?: string;
   /** Monitor name and state in plain text, e.g. "Garden sensor is Down". */
   title: string;
   /** The rest of the Alert in plain text, one line each: when, and the message. */
@@ -77,8 +83,10 @@ interface LegacyAlertDoc extends Omit<AlertDoc, "channelIds" | "retries"> {
   nextAttemptAt: Date;
 }
 
-/** What a Monitor's Alert says happened: it went Down, came Up, or is still Down (a Reminder). */
-export type AlertKind = "down" | "up" | "reminder";
+/** What an Alert about an Incident says happened: it went Down, came Up, or is still Down (a Reminder). */
+export type IncidentAlertKind = "down" | "up" | "reminder";
+/** What a Monitor's Alert says happened: an Incident's news, or a Change Alert (its Heartbeat message changed). */
+export type AlertKind = IncidentAlertKind | "change";
 /** Any Alert sent: a Monitor's, or a test Alert (sent from Settings, never queued). */
 export type SentAlertKind = AlertKind | "test";
 
@@ -86,7 +94,7 @@ export type SentAlertKind = AlertKind | "test";
 interface AlertKindTraits {
   /** Says the Monitor is Down: dated from the Incident's start, carries the last message, dropped once it's Up. */
   aboutDown: boolean;
-  /** Notifies with sound on Telegram. An Up Alert is good news: it shouldn't wake the User. */
+  /** Notifies with sound on Telegram. Up and Change Alerts aren't urgent: they shouldn't wake the User. */
   loud: boolean;
   /** Leads the Telegram text. */
   emoji: string;
@@ -113,6 +121,13 @@ export const ALERT_KINDS: Record<SentAlertKind, AlertKindTraits> = {
     emoji: "🟢",
     ntfyPriority: "2",
     ntfyTag: "green_circle",
+  },
+  change: {
+    aboutDown: false,
+    loud: false,
+    emoji: "🔄",
+    ntfyPriority: "3",
+    ntfyTag: "arrows_counterclockwise",
   },
   test: {
     aboutDown: false,
@@ -235,13 +250,62 @@ export interface AlertedMonitor extends AlertChannelChoice {
  * Puts an Alert about `incident` in the outbox, addressed to the Monitor's Alert channels at this moment; none →
  * nothing. Returns whether it was enqueued.
  */
-export async function enqueueAlert(
+export function enqueueAlert(
   db: Db,
   monitor: AlertedMonitor,
-  kind: AlertKind,
+  kind: IncidentAlertKind,
   incident: IncidentDoc,
   now: Date,
   publicBaseUrl: string,
+): Promise<boolean> {
+  const { aboutDown } = ALERT_KINDS[kind];
+  return addToOutbox(db, monitor, kind, incident._id, now, publicBaseUrl, {
+    at: aboutDown
+      ? incident.startedAt
+      : (incident.endedAt ?? incident.startedAt),
+    message: aboutDown ? monitor.lastMessage : null,
+    parts: (timeZone) => alertParts(monitor, kind, incident, timeZone, now),
+  });
+}
+
+/** Puts a Change Alert in the outbox, as enqueueAlert() does: the Monitor's Heartbeat message went from one to another. */
+export function enqueueChangeAlert(
+  db: Db,
+  monitor: AlertedMonitor,
+  change: { previousMessage: string; message: string },
+  now: Date,
+  publicBaseUrl: string,
+): Promise<boolean> {
+  const { previousMessage, message } = change;
+  return addToOutbox(db, monitor, "change", null, now, publicBaseUrl, {
+    at: now,
+    message,
+    previousMessage,
+    parts: (timeZone) => ({
+      emoji: ALERT_KINDS.change.emoji,
+      state: "has a new message",
+      lines: [`${previousMessage} → ${message}`, `At ${atText(now, timeZone)}`],
+    }),
+  });
+}
+
+/** What one Alert says, besides the Monitor it's about. */
+interface AlertContent {
+  at: Date;
+  message: string | null;
+  previousMessage?: string;
+  /** Its text, in the owner's time zone. */
+  parts: (timeZone: string) => AlertParts;
+}
+
+async function addToOutbox(
+  db: Db,
+  monitor: AlertedMonitor,
+  kind: AlertKind,
+  incidentId: ObjectId | null,
+  now: Date,
+  publicBaseUrl: string,
+  content: AlertContent,
 ): Promise<boolean> {
   const [owner, ownerChannels] = await Promise.all([
     findUserById(db, monitor.ownerId),
@@ -251,15 +315,15 @@ export async function enqueueAlert(
   if (channels.length === 0) return false;
   const timeZone = owner?.timeZone ?? DEFAULT_TIME_ZONE;
   const url = monitorUrl(publicBaseUrl, monitor);
-  const parts = alertParts(monitor, kind, incident, timeZone, now);
-  const { aboutDown, loud } = ALERT_KINDS[kind];
+  const parts = content.parts(timeZone);
   const details: AlertDetails = {
     monitorName: monitor.name,
     monitorUrl: url,
-    at: aboutDown
-      ? incident.startedAt
-      : (incident.endedAt ?? incident.startedAt),
-    message: aboutDown ? monitor.lastMessage : null,
+    at: content.at,
+    message: content.message,
+    ...(content.previousMessage !== undefined && {
+      previousMessage: content.previousMessage,
+    }),
     title: `${monitor.name} ${parts.state}`,
     summary: parts.lines.join("\n"),
   };
@@ -268,9 +332,12 @@ export async function enqueueAlert(
     monitorId: monitor._id,
     ownerId: monitor.ownerId,
     kind,
-    incidentId: incident._id,
+    incidentId,
     text: alertText(monitor, parts, url),
-    options: { parseMode: "HTML", disableNotification: !loud },
+    options: {
+      parseMode: "HTML",
+      disableNotification: !ALERT_KINDS[kind].loud,
+    },
     details,
     channelIds: channels.map((c) => c._id),
     createdAt: now,
@@ -278,6 +345,10 @@ export async function enqueueAlert(
   });
   return true;
 }
+
+/** A time as Alerts show it: in the owner's time zone, named. */
+const atText = (date: Date, timeZone: string) =>
+  `${formatDateTime(date, timeZone)} (${timeZone})`;
 
 const monitorUrl = (publicBaseUrl: string, monitor: AlertedMonitor) =>
   `${publicBaseUrl}/monitors/${String(monitor._id)}`;
@@ -312,12 +383,12 @@ interface AlertParts {
 
 function alertParts(
   monitor: AlertedMonitor,
-  kind: AlertKind,
+  kind: IncidentAlertKind,
   incident: IncidentDoc,
   timeZone: string,
   now: Date,
 ): AlertParts {
-  const at = (date: Date) => `${formatDateTime(date, timeZone)} (${timeZone})`;
+  const at = (date: Date) => atText(date, timeZone);
   if (ALERT_KINDS[kind].aboutDown) {
     // Missing on Incidents stored before causes existed: those are missed deadlines.
     const cause = incident.cause ?? "missed";

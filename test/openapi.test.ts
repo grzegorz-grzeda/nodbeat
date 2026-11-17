@@ -60,7 +60,14 @@ describe("GET /openapi.yaml", () => {
     const ref = op!.requestBody.content["application/json"]!.schema.$ref;
     const schema = doc.components.schemas[ref.split("/").pop()!]!;
     expect(schema.required.sort()).toEqual(
-      ["at", "incidentId", "kind", "message", "monitor"].sort(),
+      [
+        "at",
+        "incidentId",
+        "kind",
+        "message",
+        "monitor",
+        "previousMessage",
+      ].sort(),
     );
   });
 

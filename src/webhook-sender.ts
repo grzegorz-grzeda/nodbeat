@@ -20,7 +20,8 @@ export function webhookBody(alert: AlertDoc): string | null {
     kind: alert.kind,
     at: details.at.toISOString(),
     message: details.message,
-    incidentId: String(alert.incidentId),
+    previousMessage: details.previousMessage ?? null,
+    incidentId: alert.incidentId ? String(alert.incidentId) : null,
   });
 }
 
