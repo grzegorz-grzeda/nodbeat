@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-17
+
 ### Added
 
 - Landing page: "What it looks like" previews of the Dashboard, a Monitor's Incidents and Telegram Alerts, built from the app's own markup with demo data (so they follow the light and dark theme); copy-paste examples for cron, a shell script with Start and Fail signals, systemd and an ESP32/Arduino, using the instance's Heartbeat URL; and a features list covering Schedules, Start and Fail signals, Max run time, Reminders, Webhooks and ntfy.
@@ -252,7 +254,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.1...v0.27.0
 [0.26.1]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.0...v0.26.1
 [0.26.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.25.0...v0.26.0
