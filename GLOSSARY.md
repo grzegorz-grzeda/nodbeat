@@ -53,7 +53,7 @@ Extra time allowed after the Interval or the scheduled time before a missing Hea
 _Avoid_: Tolerance, timeout
 
 **Monitor state**:
-One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval or scheduled time + Grace period passed with no Heartbeat, or a Fail signal, or a Run longer than its Max run time) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
+One of **New** (no Heartbeat received yet, or none during the pause it was just unpaused from), **Up** (Heartbeats arriving on time), **Down** (Interval or scheduled time + Grace period passed with no Heartbeat, or a Fail signal, or a Run longer than its Max run time), **Unreachable** (silent while its Parent is Down or Unreachable) or **Paused** (deliberately not watched: never goes Down, sends no Alerts).
 _Avoid_: Status, health
 
 **New period**:
@@ -62,12 +62,20 @@ A stretch of time a Monitor spent New, from its creation or the unpause that lef
 **Pause period**:
 A stretch of time a Monitor spent Paused, from pause to unpause. Kept so Uptime can leave it out.
 
+**Parent**:
+The one Monitor a Monitor depends on to reach nodbeat, e.g. the home router for a Raspberry Pi behind it. Owned by the same User; chains are allowed, cycles are not. A Monitor with a Parent is its **Child**. A New or Paused Parent has no effect on its Children.
+_Avoid_: Upstream, gateway, dependency, depends-on
+
+**Unreachable**:
+The Monitor state of a Child that went silent while its Parent was Down or Unreachable. Its own fate is unknown, so it gets no Alerts or Reminders and its time is left out of Uptime. A Child that goes silent while its Parent is silent too waits for the Parent's deadline before going Down. A Fail signal always makes a Child Down at once. When the Parent comes back Up, it goes Up on its next Heartbeat without an Up Alert, or Down if none arrives within its Interval (or next scheduled time) + Grace period.
+_Avoid_: Blocked, unknown, suppressed
+
 **Incident**:
 A period during which a Monitor was Down, from the moment it went Down to the Heartbeat that brought it back Up.
 _Avoid_: Outage, downtime event, alert
 
 **Uptime**:
-The share of a time window a Monitor spent Up, out of the time it spent Up or Down. Time spent New or Paused is left out.
+The share of a time window a Monitor spent Up, out of the time it spent Up or Down. Time spent New, Unreachable or Paused is left out.
 _Avoid_: Availability, SLA
 
 **Dashboard**:
