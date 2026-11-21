@@ -35,7 +35,7 @@ This is not a general rule engine: there are no AND/OR gates and no separate ala
 ## Implementation Decisions
 
 - **Monitor field**: `parentId: ObjectId | null` (default `null`). The Parent must belong to the same User, may not be the Monitor itself, and may not create a cycle. Chains of any depth are allowed. Deleting a Monitor detaches its Children (`parentId = null`).
-- **Form / API**: a "Depends on" select on the Monitor form listing the User's other Monitors (excluding ones that would make a cycle). The Monitor API reads and writes `parentId` with the same checks. `api/openapi.yaml` and the in-app API docs are updated; the change is additive.
+- **Form / API**: a "Depends on" select on the Monitor form listing the User's other Monitors (excluding ones that would make a cycle). There is no Monitor API, so the form is the only way to set it.
 - **Effective Parent**: a Parent counts only while it is Up, Down or Unreachable. A New or Paused Parent, or one on a User whose Plan has no Parents (issue 0087), is treated as no Parent. A Parent whose Alerts are switched off still counts: switching Alerts off doesn't change its state.
 - **New state**: `MonitorState` gains `"unreachable"`. It is an uncounted state like New and Paused (`start-period` / `end-period`, left out of Uptime). No Incident is opened. Dashboard and Monitor page show "Unreachable — <Parent name> Down" (or "… Unreachable") with a link to the Parent. The Monitor page lists the Monitor's Children.
 - **Deadline check of a Child** (Up, own deadline or Max run time passed), with P the effective Parent:
@@ -58,7 +58,7 @@ This is not a general rule engine: there are no AND/OR gates and no separate ala
 
 - Unit-test the pure state machine for the new `unreachable` state and its events (to Unreachable, Heartbeat → Up without Alert, fresh deadline → Down with Incident, pause, Fail signal).
 - Unit-test the decision function for a Child's deadline check over every Parent case above, including chains and the held case.
-- Seam tests (`buildTestApp`, fake clock): router 5 min + Pi 1 min, both silent → exactly one Down Alert (router, listing Pi), Pi Unreachable, no Pi Uptime loss; router back + Pi back → one Up Alert (router); router back, Pi silent → Pi Down Alert after its Interval + Grace; router alive, Pi silent → Pi Down Alert at the router's deadline; Pi Fail signal while router silent → immediate Alert; cycle and cross-User Parent refused by form and API.
+- Seam tests (`buildTestApp`, fake clock): router 5 min + Pi 1 min, both silent → exactly one Down Alert (router, listing Pi), Pi Unreachable, no Pi Uptime loss; router back + Pi back → one Up Alert (router); router back, Pi silent → Pi Down Alert after its Interval + Grace; router alive, Pi silent → Pi Down Alert at the router's deadline; Pi Fail signal while router silent → immediate Alert; cycle and cross-User Parent refused by the form.
 
 ## Out of Scope
 

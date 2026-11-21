@@ -8,6 +8,11 @@ import {
 } from "./monitor-state.js";
 import type { ObjectId } from "mongodb";
 import {
+  checkParent,
+  parentChoices,
+  type ParentOption,
+} from "./monitor-parents.js";
+import {
   choiceOf,
   type AlertChannelChoice,
   type MonitorAlertChannels,
@@ -55,6 +60,8 @@ export interface MonitorForm {
   /** A Reminder cadence in seconds, or "" for never. */
   reminderEvery: string;
   changeAlerts: boolean;
+  /** The Parent's id, or "" for none. */
+  parentId: string;
 }
 
 /** An Alert channel the form offers. */
@@ -74,6 +81,7 @@ export type MonitorSettings = MonitorTiming &
     alertChannels: MonitorAlertChannels;
     reminderEverySec: ReminderEverySec | null;
     changeAlerts: boolean;
+    parentId: ObjectId | null;
   };
 
 /** The submitted form; `defaultTimeZone` (the owner's) when no time zone was sent. */
@@ -100,6 +108,7 @@ export function readForm(body: unknown, defaultTimeZone: string): MonitorForm {
     ).filter((v): v is string => typeof v === "string"),
     reminderEvery: field("reminderEvery"),
     changeAlerts: field("changeAlerts") === "true",
+    parentId: field("parentId"),
   };
 }
 
@@ -114,6 +123,7 @@ export function formFor(
       name: string;
       notes: string;
       changeAlerts?: boolean;
+      parentId?: ObjectId | null;
     },
   defaultTimeZone: string,
 ): MonitorForm {
@@ -146,6 +156,7 @@ export function formFor(
     reminderEvery:
       monitor.reminderEverySec != null ? String(monitor.reminderEverySec) : "",
     changeAlerts: monitor.changeAlerts ?? false,
+    parentId: monitor.parentId ? String(monitor.parentId) : "",
   };
 }
 
@@ -180,11 +191,15 @@ export function schedulePreview(
   };
 }
 
-/** Checks the form; chosen Alert channels must be among `ownChannels`, the owner's. */
+/**
+ * Checks the form; chosen Alert channels must be among `ownChannels`, the owner's, and the Parent among `parents.own`,
+ * the owner's Monitors, without closing a cycle through `parents.editing` (null for a new Monitor).
+ */
 export function validate(
   form: MonitorForm,
   limits: Limits,
   ownChannels: ChannelOption[],
+  parents: { own: ParentOption[]; editing: ObjectId | null },
   now: Date,
 ): { settings: MonitorSettings } | { errors: string[] } {
   const errors: string[] = [];
@@ -273,7 +288,15 @@ export function validate(
     else errors.push("Reminders must be every 1 h, 6 h or 24 h, or never.");
   }
 
-  if (errors.length > 0 || period === null || graceSec === null) {
+  const parent = checkParent(form.parentId, parents.own, parents.editing);
+  if ("error" in parent) errors.push(parent.error);
+
+  if (
+    errors.length > 0 ||
+    period === null ||
+    graceSec === null ||
+    "error" in parent
+  ) {
     return { errors };
   }
   return {
@@ -286,6 +309,7 @@ export function validate(
       alertChannels,
       reminderEverySec,
       changeAlerts: form.changeAlerts,
+      parentId: parent.parentId,
     },
   };
 }
@@ -297,12 +321,27 @@ export function monitorFormBody(options: {
   limits: Limits;
   /** The owner's Alert channels, to choose from. */
   channels: ChannelOption[];
+  /** The owner's Monitors, to choose a Parent from. */
+  monitors: ParentOption[];
   /** For the Schedule preview shown before any typing (or without JS). */
   now: Date;
   errors?: string[];
   editing?: string;
 }): SafeHtml {
-  const { csrf, form, limits, channels, now, errors = [], editing } = options;
+  const {
+    csrf,
+    form,
+    limits,
+    channels,
+    monitors,
+    now,
+    errors = [],
+    editing,
+  } = options;
+  const parents = parentChoices(
+    monitors,
+    monitors.find((m) => String(m._id) === editing)?._id ?? null,
+  );
   const chosen = form.alertChannels === "chosen";
   const scheduled = form.timing === "schedule";
   const checked = new Set(form.alertChannelIds);
@@ -500,6 +539,24 @@ ${form.notes}</textarea>
           ${form.changeAlerts ? html`checked` : ""}
         />
         Change Alerts (alert when the Heartbeat message changes)</label
+      >
+      <label
+        >Depends on (the Monitor this one needs to reach nodbeat, e.g. the
+        router it sits behind)
+        <select name="parentId">
+          <option value="" ${form.parentId === "" ? html`selected` : ""}>
+            Nothing
+          </option>
+          ${parents.map(
+            (m) =>
+              html`<option
+                value="${String(m._id)}"
+                ${String(m._id) === form.parentId ? html`selected` : ""}
+              >
+                ${m.name}
+              </option>`,
+          )}
+        </select></label
       >
       <button type="submit">${editing ? "Save" : "Create Monitor"}</button>
     </form>`;

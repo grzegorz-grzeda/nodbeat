@@ -15,6 +15,7 @@ import { listAlertChannels } from "./alert-channels.js";
 import type { KeyedLock } from "./keyed-lock.js";
 import { transition, type MonitorEvent } from "./monitor-state.js";
 import { deleteStatePeriodsOf } from "./state-periods.js";
+import { detachChildren, listParentOptions } from "./monitor-parents.js";
 import {
   formFor,
   MONITOR_FORM_SCRIPT,
@@ -104,6 +105,7 @@ export function registerMonitorManagement(
         csrf,
         limits: limitsFor(req.user!),
         channels: await listAlertChannels(db, req.user!._id),
+        monitors: await listParentOptions(db, req.user!._id),
         now: clock.now(),
         editing: req.params.id,
         ...options,
@@ -128,6 +130,10 @@ export function registerMonitorManagement(
         form,
         limitsFor(req.user!),
         await listAlertChannels(db, req.user!._id),
+        {
+          own: await listParentOptions(db, req.user!._id),
+          editing: monitor._id,
+        },
         clock.now(),
       );
       if ("errors" in result) {
@@ -250,6 +256,7 @@ export function registerMonitorManagement(
           deleteIncidentsOf(db, monitor._id),
           deleteStatePeriodsOf(db, monitor._id),
           deleteAlertsOf(db, monitor._id),
+          detachChildren(db, monitor._id),
         ]);
       });
       setFlash(reply, `${monitor.name} deleted.`);

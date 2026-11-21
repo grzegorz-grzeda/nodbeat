@@ -49,6 +49,7 @@ import {
 import { startPeriod } from "./state-periods.js";
 import { reminderText, type ReminderSettings } from "./reminders.js";
 import { listAlertChannels } from "./alert-channels.js";
+import { listChildren, listParentOptions } from "./monitor-parents.js";
 import {
   channelsOfMonitor,
   choiceOf,
@@ -61,6 +62,8 @@ export type MonitorDoc = MonitorStateFields &
   ReminderSettings &
   Pick<MonitorSettings, "changeAlerts"> & {
     _id: ObjectId;
+    /** The Parent; missing on Monitors from before Parents. */
+    parentId?: ObjectId | null;
     ownerId: ObjectId;
     name: string;
     notes: string;
@@ -270,6 +273,7 @@ export function registerMonitors(
         form: readForm({}, req.user!.timeZone),
         limits: limitsFor(req.user!),
         channels: await listAlertChannels(db, req.user!._id),
+        monitors: await listParentOptions(db, req.user!._id),
         now: clock.now(),
       }),
     }),
@@ -296,7 +300,14 @@ export function registerMonitors(
     const limits = limitsFor(user);
     const form = readForm(req.body, user.timeZone);
     const channels = await listAlertChannels(db, user._id);
-    const result = validate(form, limits, channels, clock.now());
+    const ownMonitors = await listParentOptions(db, user._id);
+    const result = validate(
+      form,
+      limits,
+      channels,
+      { own: ownMonitors, editing: null },
+      clock.now(),
+    );
     const errors = "errors" in result ? result.errors : [];
     // Count and insert under the owner's lock, so parallel requests can't all pass the limit check.
     const monitor = await ownerLock.run(String(user._id), async () => {
@@ -336,6 +347,7 @@ export function registerMonitors(
           form,
           limits,
           channels,
+          monitors: ownMonitors,
           now: clock.now(),
           errors,
         }),
@@ -356,16 +368,24 @@ export function registerMonitors(
       const url = heartbeatUrl(monitor);
       const now = clock.now();
       // One extra row tells whether there is more than fits, i.e. whether to link the full log.
-      const [incidentList, heartbeatList, ownerChannels] = await Promise.all([
-        listIncidents(db, monitor._id, MONITOR_PAGE_LOG_ROWS + 1),
-        listHeartbeatsSince(
-          db,
-          monitor._id,
-          heartbeatWindowStart(now),
-          MONITOR_PAGE_LOG_ROWS + 1,
-        ),
-        listAlertChannels(db, monitor.ownerId),
-      ]);
+      const [incidentList, heartbeatList, ownerChannels, parent, children] =
+        await Promise.all([
+          listIncidents(db, monitor._id, MONITOR_PAGE_LOG_ROWS + 1),
+          listHeartbeatsSince(
+            db,
+            monitor._id,
+            heartbeatWindowStart(now),
+            MONITOR_PAGE_LOG_ROWS + 1,
+          ),
+          listAlertChannels(db, monitor.ownerId),
+          monitor.parentId
+            ? monitors(db).findOne({
+                _id: monitor.parentId,
+                ownerId: monitor.ownerId,
+              })
+            : null,
+          listChildren(db, monitor),
+        ]);
       const alerted = channelsOfMonitor(monitor, ownerChannels);
       const timeZone = req.user!.timeZone;
       const csrf = auth.csrfToken(req, reply);
@@ -429,6 +449,26 @@ export function registerMonitors(
               </li>
               <li>Reminders: ${reminderText(monitor)}</li>
               <li>Change Alerts: ${monitor.changeAlerts ? "on" : "off"}</li>
+              ${
+                parent &&
+                html`<li>
+                  Depends on:
+                  <a href="/monitors/${String(parent._id)}">${parent.name}</a>
+                </li>`
+              }
+              ${
+                children.length > 0 &&
+                html`<li>
+                  Depended on by:
+                  ${children.map(
+                    (c, i) =>
+                      html`${i > 0 ? ", " : ""}<a
+                          href="/monitors/${String(c._id)}"
+                          >${c.name}</a
+                        >`,
+                  )}
+                </li>`
+              }
               ${
                 monitor.schedule
                   ? html`<li>
