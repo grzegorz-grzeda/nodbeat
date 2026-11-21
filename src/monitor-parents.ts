@@ -1,4 +1,5 @@
 import type { Db, ObjectId } from "mongodb";
+import { STATE_LABELS } from "./monitor-state.js";
 import { monitors, type MonitorDoc } from "./monitors.js";
 
 /** One of the owner's Monitors as the Parent choice sees it. */
@@ -67,6 +68,15 @@ export function checkParent(
     };
   }
   return { parentId: parent._id };
+}
+
+/** Why an Unreachable Monitor is: "Router Down". Empty for other states or without the Parent at hand. */
+export function unreachableNote(
+  monitor: Pick<MonitorDoc, "state">,
+  parent: Pick<MonitorDoc, "name" | "state"> | null | undefined,
+): string {
+  if (monitor.state !== "unreachable" || !parent) return "";
+  return `${parent.name} ${STATE_LABELS[parent.state]}`;
 }
 
 /** A Monitor's Children, oldest first. */

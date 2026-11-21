@@ -60,16 +60,20 @@ export async function sevenDayUptime(
     end: nowMs,
   };
   const since = new Date(window.start);
-  const [incidents, newPeriods, pausePeriods] = await Promise.all([
-    listIncidentsSince(db, monitor._id, since),
-    listPeriodsSince(db, "new", monitor._id, since),
-    listPeriodsSince(db, "paused", monitor._id, since),
-  ]);
+  const [incidents, newPeriods, unreachablePeriods, pausePeriods] =
+    await Promise.all([
+      listIncidentsSince(db, monitor._id, since),
+      listPeriodsSince(db, "new", monitor._id, since),
+      listPeriodsSince(db, "unreachable", monitor._id, since),
+      listPeriodsSince(db, "paused", monitor._id, since),
+    ]);
   const toSpan = (p: { startedAt: Date; endedAt: Date | null }): Span => ({
     start: p.startedAt.getTime(),
     end: (p.endedAt ?? now).getTime(),
   });
-  const uncounted = [...newPeriods, ...pausePeriods].map(toSpan);
+  const uncounted = [...newPeriods, ...unreachablePeriods, ...pausePeriods].map(
+    toSpan,
+  );
   // Monitors stored before New periods were recorded have none open while New. They have been New since their last
   // unpause, or since creation if never paused in the window (an older pause lies outside it anyway).
   if (monitor.state === "new" && !newPeriods.some((p) => !p.endedAt)) {

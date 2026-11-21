@@ -21,7 +21,7 @@ import {
 import { listUserEmails } from "./users.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const STATES: MonitorState[] = ["new", "up", "down", "paused"];
+const STATES: MonitorState[] = ["new", "up", "down", "unreachable", "paused"];
 
 /** A two-column table of labelled numbers. */
 function statTable(caption: string, rows: Array<[string, number]>): SafeHtml {

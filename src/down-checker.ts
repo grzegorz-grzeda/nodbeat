@@ -1,4 +1,4 @@
-import type { Db, Filter } from "mongodb";
+import type { Db, Filter, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import { enqueueAlert } from "./alerts.js";
 import { applyEffects } from "./effects.js";
@@ -17,7 +17,8 @@ import { monitors, type MonitorDoc } from "./monitors.js";
 
 /**
  * Up Monitors that may be overdue: Interval Monitors past nextDueAt() or with a Run past runDeadline(), the same
- * rules written as a query, and every Schedule Monitor (scheduled times can't be worked out in a query).
+ * rules written as a query, and every Schedule Monitor (scheduled times can't be worked out in a query). Also every
+ * Unreachable Monitor, which waits on its Parent.
  */
 export function maybeOverdueQuery(
   startedAt: Date,
@@ -39,18 +40,25 @@ export function maybeOverdueQuery(
     },
   });
   return {
-    state: "up",
     $or: [
-      { schedule: { $ne: null } },
       {
-        intervalSec: { $ne: null },
-        ...passed("$lastHeartbeatAt", { $add: ["$intervalSec", "$graceSec"] }),
+        state: "up",
+        $or: [
+          { schedule: { $ne: null } },
+          {
+            intervalSec: { $ne: null },
+            ...passed("$lastHeartbeatAt", {
+              $add: ["$intervalSec", "$graceSec"],
+            }),
+          },
+          {
+            runStartedAt: { $ne: null },
+            maxRunTimeSec: { $ne: null },
+            ...passed("$runStartedAt", "$maxRunTimeSec"),
+          },
+        ],
       },
-      {
-        runStartedAt: { $ne: null },
-        maxRunTimeSec: { $ne: null },
-        ...passed("$runStartedAt", "$maxRunTimeSec"),
-      },
+      { state: "unreachable" },
     ],
   } as Filter<MonitorDoc>;
 }
@@ -100,10 +108,52 @@ async function sendDueReminders(
   }
 }
 
+/** Parent states that make a silent Child Unreachable. A New or Paused Parent doesn't count: it says nothing. */
+const PARENT_DOWN_STATES = new Set(["down", "unreachable"]);
+
+/** Whether the Monitor's Parent counts and is Down or Unreachable. */
+async function isParentDown(
+  db: Db,
+  monitor: Pick<MonitorDoc, "ownerId" | "parentId">,
+): Promise<boolean> {
+  if (!monitor.parentId) return false;
+  const parent = await monitors(db).findOne(
+    { _id: monitor.parentId, ownerId: monitor.ownerId },
+    { projection: { state: 1 } },
+  );
+  return parent !== null && PARENT_DOWN_STATES.has(parent.state);
+}
+
+/**
+ * Orders Monitors so each comes after its Parent when both are in the list, so a Child sees its Parent's state from
+ * this same pass. A stored cycle (possible through simultaneous edits) is broken at an arbitrary point.
+ */
+export function parentsFirst<
+  T extends { _id: ObjectId; parentId?: ObjectId | null },
+>(list: T[]): T[] {
+  const byId = new Map(list.map((m) => [String(m._id), m]));
+  const done = new Set<string>();
+  const visiting = new Set<string>();
+  const ordered: T[] = [];
+  const visit = (m: T) => {
+    const id = String(m._id);
+    if (done.has(id) || visiting.has(id)) return;
+    visiting.add(id);
+    const parent = m.parentId ? byId.get(String(m.parentId)) : undefined;
+    if (parent) visit(parent);
+    visiting.delete(id);
+    done.add(id);
+    ordered.push(m);
+  };
+  list.forEach(visit);
+  return ordered;
+}
+
 /**
  * Moves Up Monitors past their deadline, or with a Run past their Max run time, to Down. `startedAt` is when this
  * nodbeat process started: no Monitor goes Down before a full Interval (or its next scheduled time) + Grace period
- * after it, or before startedAt + Max run time.
+ * after it, or before startedAt + Max run time. A Monitor whose Parent is Down or Unreachable goes Unreachable
+ * instead, and back to a fresh deadline once the Parent isn't.
  */
 export function createDownChecker(deps: {
   db: Db;
@@ -128,12 +178,14 @@ export function createDownChecker(deps: {
           graceSec: 1,
           runStartedAt: 1,
           maxRunTimeSec: 1,
+          parentId: 1,
         },
       })
       .toArray();
     // The query picked the overdue Interval Monitors; Schedule Monitors are checked here. transition() decides.
     const overdue = candidates.filter(
       (m) =>
+        m.state === "unreachable" ||
         !m.schedule ||
         [nextDueAt(m, startedAt), runDeadline(m, startedAt)].some(
           (d) => d !== null && d <= now,
@@ -142,17 +194,21 @@ export function createDownChecker(deps: {
 
     await sendDueReminders(db, lock, now, publicBaseUrl);
 
-    for (const { _id } of overdue) {
+    for (const { _id } of parentsFirst(overdue)) {
       await lock.run(String(_id), async () => {
         // Re-read under the lock: a Heartbeat may have arrived since the query above.
         const monitor = await monitors(db).findOne({ _id });
         if (!monitor) return;
+        const parentDown = await isParentDown(db, monitor);
         const { fields, effects } = transition(
           monitor,
-          { kind: "deadline-check", startedAt },
+          { kind: "deadline-check", startedAt, parentDown },
           now,
         );
-        if (effects.length === 0) return;
+        const parentUpAtMoved =
+          (fields.parentUpAt?.getTime() ?? null) !==
+          (monitor.parentUpAt?.getTime() ?? null);
+        if (effects.length === 0 && !parentUpAtMoved) return;
         await monitors(db).updateOne({ _id }, { $set: fields });
         await applyEffects(db, monitor, effects, now, publicBaseUrl);
         pruner.mark(_id);

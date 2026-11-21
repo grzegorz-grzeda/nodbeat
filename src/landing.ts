@@ -88,6 +88,7 @@ function demo(
   return {
     id: "demo",
     stateText: "",
+    stateNote: "",
     lastHeartbeatAt: null,
     lastHeartbeatTitle: "",
     lastMessage: null,

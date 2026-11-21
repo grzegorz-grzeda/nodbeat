@@ -36,6 +36,12 @@
     badge.className = "badge badge-" + m.state;
     badge.textContent = m.stateText;
     state.append(badge);
+    if (m.stateNote) {
+      const note = document.createElement("small");
+      note.className = "state-note";
+      note.textContent = m.stateNote;
+      state.append(" ", note);
+    }
     tr.append(
       name,
       state,

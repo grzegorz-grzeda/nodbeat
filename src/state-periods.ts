@@ -1,7 +1,7 @@
 import { ObjectId, type Db } from "mongodb";
 import type { UncountedState } from "./monitor-state.js";
 
-/** A stretch of time a Monitor spent New or Paused. */
+/** A stretch of time a Monitor spent New, Unreachable or Paused. */
 export interface StatePeriodDoc {
   _id: ObjectId;
   monitorId: ObjectId;
@@ -13,6 +13,7 @@ export interface StatePeriodDoc {
 
 const COLLECTIONS: Record<UncountedState, string> = {
   new: "newPeriods",
+  unreachable: "unreachablePeriods",
   paused: "pausePeriods",
 };
 
@@ -70,7 +71,7 @@ export function listPeriodsSince(
     .toArray();
 }
 
-/** Removes all of the Monitor's New and pause periods (when the Monitor is deleted). */
+/** Removes all of the Monitor's New, Unreachable and pause periods (when the Monitor is deleted). */
 export async function deleteStatePeriodsOf(
   db: Db,
   monitorId: ObjectId,

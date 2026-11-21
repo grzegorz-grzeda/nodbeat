@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.29.0] - 2026-11-21
+
+### Added
+
+- Monitor Parents: a new "Depends on" choice on the Monitor form picks the Monitor this one needs to reach nodbeat, e.g. the router a Raspberry Pi sits behind. Only the User's own Monitors are offered, and none that would close a cycle; chains (fibre → router → Pi) are fine. The Monitor page shows "Depends on" and "Depended on by". Deleting a Monitor leaves its Children without a Parent.
+- Unreachable, a new Monitor state: a Child that misses its deadline while its Parent is Down or Unreachable becomes Unreachable instead of Down. It gets no Alert, Reminder or Incident, and its time is left out of Uptime. The Dashboard and Monitor page show why ("Router Down"). When the Parent isn't Down any more (Up again, Paused, New, deleted or detached), the Child gets a fresh deadline: a Heartbeat in time brings it Up without an Up Alert, otherwise it goes Down with a normal Down Alert. A Fail signal makes it Down at once. A New or Paused Parent has no effect. For now, a Child whose own deadline passes before its Parent's still goes Down and alerts, so give a Parent the shorter Interval + Grace period.
+
 ## [0.28.0] - 2026-11-17
 
 ### Added
@@ -254,7 +261,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.29.0...HEAD
+[0.29.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.27.0...v0.28.0
 [0.27.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.1...v0.27.0
 [0.26.1]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.26.0...v0.26.1

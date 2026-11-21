@@ -8,6 +8,8 @@ export interface DashboardMonitor {
   name: string;
   state: MonitorState;
   stateText: string;
+  /** Why an Unreachable Monitor is: its Parent and the Parent's state ("Router Down"); empty otherwise. */
+  stateNote: string;
   lastHeartbeatAt: string | null;
   /** "2 min ago" or "never". */
   lastHeartbeatText: string;
@@ -36,7 +38,10 @@ function row(m: DashboardMonitor): SafeHtml {
       <a href="/monitors/${m.id}">${m.name}</a>
       ${m.alertsGoNowhere && html`<small class="warning">Alerts go nowhere</small>`}
     </td>
-    <td data-label="State">${stateBadge(m.state)}</td>
+    <td data-label="State">
+      ${stateBadge(m.state)}
+      ${m.stateNote && html`<small class="state-note">${m.stateNote}</small>`}
+    </td>
     <td data-label="Last Heartbeat" title="${m.lastHeartbeatTitle}">
       ${m.lastHeartbeatText}
     </td>

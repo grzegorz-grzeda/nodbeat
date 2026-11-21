@@ -589,6 +589,18 @@ ul.alert-channels input[name="name"] {
   background: var(--paused-bg);
 }
 
+/* Unknown, not known bad: Paused colours with a dashed edge. */
+.badge-unreachable {
+  color: var(--paused-fg);
+  background: var(--paused-bg);
+  outline: 1px dashed currentColor;
+  outline-offset: -1px;
+}
+
+.state-note {
+  color: var(--text-muted);
+}
+
 /* Header and nav */
 
 .site-header {

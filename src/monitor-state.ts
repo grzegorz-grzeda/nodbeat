@@ -7,10 +7,13 @@ import {
   type Schedule,
 } from "./schedule.js";
 
-export type MonitorState = "new" | "up" | "down" | "paused";
+export type MonitorState = "new" | "up" | "down" | "unreachable" | "paused";
 
 /** States whose time Uptime leaves out. Each is recorded as periods, from entering the state to leaving it. */
-export type UncountedState = Extract<MonitorState, "new" | "paused">;
+export type UncountedState = Extract<
+  MonitorState,
+  "new" | "unreachable" | "paused"
+>;
 
 /** The part of a Monitor the state machine reads and changes. */
 export interface MonitorStateFields {
@@ -33,6 +36,11 @@ export interface MonitorStateFields {
    * yet. Kept whether Change Alerts are on or not. Absent on Monitors stored before Change Alerts existed.
    */
   changeBaseline?: string | null;
+  /**
+   * When the Parent of this Unreachable Monitor was seen not Down (or not counting) again: its fresh deadline counts
+   * from here. Null while the Parent is still Down, and outside Unreachable. Absent on Monitors stored before Parents.
+   */
+  parentUpAt?: Date | null;
 }
 
 /** A Monitor's Interval or its Schedule: exactly one is set. */
@@ -76,8 +84,11 @@ export type MonitorEvent =
   | { kind: "fail"; message: string | null }
   /** A Start signal: a job began. Not a Heartbeat. */
   | { kind: "start" }
-  /** The Down checker's look at the Monitor. `startedAt` is when this nodbeat process started (startup grace). */
-  | { kind: "deadline-check"; startedAt: Date }
+  /**
+   * The Down checker's look at the Monitor. `startedAt` is when this nodbeat process started (startup grace).
+   * `parentDown`: the Monitor has a Parent that counts and is Down or Unreachable.
+   */
+  | { kind: "deadline-check"; startedAt: Date; parentDown?: boolean }
   | { kind: "pause" }
   | { kind: "unpause" }
   /** New settings saved. Only the timing matters to the state machine. */
@@ -96,7 +107,7 @@ export type Effect =
       maxRunTimeSec?: number;
     }
   | { kind: "close-incident"; reason: "heartbeat" | "paused" }
-  /** New and pause periods are left out of Uptime. */
+  /** New, Unreachable and pause periods are left out of Uptime. */
   | { kind: "start-period"; state: UncountedState }
   | { kind: "end-period"; state: UncountedState }
   /** Down: about the Incident just opened. Up: about the Incident just closed. */
@@ -108,6 +119,7 @@ export const STATE_LABELS: Record<MonitorState, string> = {
   new: "New",
   up: "Up",
   down: "Down",
+  unreachable: "Unreachable",
   paused: "Paused",
 };
 
@@ -121,7 +133,7 @@ export interface Transition {
 /** What nextDueAt() reads: the state, when the Monitor was last heard from or created, and its timing. */
 export type DueFields = Pick<
   MonitorStateFields,
-  "state" | "lastHeartbeatAt" | "watchedSince"
+  "state" | "lastHeartbeatAt" | "watchedSince" | "parentUpAt"
 > &
   MonitorTiming & {
     /** Needed for a New Monitor's due time; without it a New Monitor has none. */
@@ -130,11 +142,11 @@ export type DueFields = Pick<
 
 /**
  * The one rule for when a Monitor's next Heartbeat is due. An Up Monitor past it goes Down (a New one waits for its
- * first Heartbeat); "next expected by" shows it. Null for Paused and Down Monitors. A Run's Max run time is a separate
- * deadline: see runDeadline().
+ * first Heartbeat); "next expected by" shows it. Null for Paused and Down Monitors, and for Unreachable ones until
+ * their Parent is back. A Run's Max run time is a separate deadline: see runDeadline().
  *
  * It counts from the last Heartbeat (Up) or creation (New), the last unpause or edit, or nodbeat's start, whichever is
- * latest. An Interval Monitor is due Interval + Grace period after that. A Schedule Monitor is due Grace period after
+ * latest; an Unreachable Monitor's counts from when its Parent was back. An Interval Monitor is due Interval + Grace period after that. A Schedule Monitor is due Grace period after
  * the scheduled time it waits for: the first one after that point, except that a Heartbeat counts for a scheduled
  * time (the coming one if it is at most the early window before it, otherwise the one before it), so the Monitor then
  * waits for the scheduled time after that one. A Heartbeat from before the last unpause or edit counts for none.
@@ -145,7 +157,9 @@ export function nextDueAt(monitor: DueFields, startedAt: Date): Date | null {
       ? monitor.lastHeartbeatAt
       : monitor.state === "new"
         ? (monitor.createdAt ?? null)
-        : null;
+        : monitor.state === "unreachable"
+          ? (monitor.parentUpAt ?? null)
+          : null;
   if (!heard) return null;
   const from = new Date(
     Math.max(
@@ -229,7 +243,7 @@ export function transition(
     case "start":
       return onStart(current, now);
     case "deadline-check":
-      return onDeadlineCheck(current, event.startedAt, now);
+      return onDeadlineCheck(current, event, now);
     case "pause":
       return onPause(current, now);
     case "unpause":
@@ -256,6 +270,7 @@ function stateFields(current: MonitorStateFields): MonitorStateFields {
     runStartedAt,
     lastRunDurationSec,
     changeBaseline,
+    parentUpAt,
   } = current;
   return {
     state,
@@ -266,6 +281,7 @@ function stateFields(current: MonitorStateFields): MonitorStateFields {
     runStartedAt: runStartedAt ?? null,
     lastRunDurationSec: lastRunDurationSec ?? null,
     changeBaseline: changeBaseline ?? null,
+    parentUpAt: parentUpAt ?? null,
   };
 }
 
@@ -279,6 +295,7 @@ function heardFrom(
     ...stateFields(current),
     lastHeartbeatAt: now,
     lastMessage: message,
+    parentUpAt: null,
   };
   if (!fields.runStartedAt) return { fields };
   const endedRunDurationSec = runDurationSec(fields.runStartedAt, now);
@@ -335,6 +352,13 @@ function onHeartbeat(
         ],
         ...ended,
       };
+    case "unreachable":
+      // Never alerted as Down, so no Up Alert either.
+      return {
+        fields: { ...seen, state: "up" },
+        effects: [{ kind: "end-period", state: "unreachable" }, ...change],
+        ...ended,
+      };
     case "paused":
       return { fields: { ...seen, state: "paused" }, effects: [], ...ended };
   }
@@ -363,7 +387,7 @@ function changeEffects(
 }
 
 /**
- * New or Up goes Down at once; Down only records it, as heard from. Paused only records it, like a Start signal:
+ * New, Up or Unreachable goes Down at once (a Fail signal proves the Monitor reached nodbeat); Down only records it, as heard from. Paused only records it, like a Start signal:
  * pausing means silence, so it neither counts as heard from nor ends a Run.
  */
 function onFail(
@@ -379,8 +403,8 @@ function onFail(
     ...ended,
     fields: { ...seen, state: "down" },
     effects: [
-      ...(state === "new"
-        ? [{ kind: "end-period", state: "new" } as const]
+      ...(state === "new" || state === "unreachable"
+        ? [{ kind: "end-period", state } as const]
         : []),
       { kind: "open-incident", startedAt: now, cause: "failed" },
       ...alertEffects(current, "down"),
@@ -390,10 +414,14 @@ function onFail(
 
 function onDeadlineCheck(
   current: MonitorStateFields & MonitorSettings,
-  startedAt: Date,
+  event: { startedAt: Date; parentDown?: boolean },
   now: Date,
 ): Transition {
+  const { startedAt, parentDown = false } = event;
   const fields = stateFields(current);
+  if (fields.state === "unreachable") {
+    return onUnreachableCheck(current, startedAt, parentDown, now);
+  }
   if (fields.state !== "up") return { fields, effects: [] };
   // The earliest passed deadline decides when the Incident started and why.
   const deadlines: Array<[Date | null, IncidentCause]> = [
@@ -405,6 +433,13 @@ function onDeadlineCheck(
     .sort((a, b) => a[0].getTime() - b[0].getTime())[0];
   if (!first) return { fields, effects: [] };
   const [deadline, cause] = first;
+  // Silent behind a Down Parent: its own fate is unknown.
+  if (parentDown) {
+    return {
+      fields: { ...fields, state: "unreachable", parentUpAt: null },
+      effects: [{ kind: "start-period", state: "unreachable" }],
+    };
+  }
   // runDeadline() is null without a Max run time, so it is set here.
   const limit =
     cause === "run-too-long" ? { maxRunTimeSec: current.maxRunTimeSec! } : {};
@@ -417,17 +452,47 @@ function onDeadlineCheck(
   };
 }
 
+/**
+ * An Unreachable Monitor waits while its Parent is Down. Once the Parent isn't, it gets a fresh deadline from then
+ * (parentUpAt); missing that makes it Down with an Incident and a Down Alert like any missed deadline.
+ */
+function onUnreachableCheck(
+  current: MonitorStateFields & MonitorSettings,
+  startedAt: Date,
+  parentDown: boolean,
+  now: Date,
+): Transition {
+  const fields = stateFields(current);
+  if (parentDown) {
+    // The Parent went Down again before this Monitor was heard from: wait again.
+    return { fields: { ...fields, parentUpAt: null }, effects: [] };
+  }
+  if (!fields.parentUpAt) {
+    return { fields: { ...fields, parentUpAt: now }, effects: [] };
+  }
+  const deadline = nextDueAt(current, startedAt);
+  if (!deadline || deadline > now) return { fields, effects: [] };
+  return {
+    fields: { ...fields, state: "down", parentUpAt: null },
+    effects: [
+      { kind: "end-period", state: "unreachable" },
+      { kind: "open-incident", startedAt: deadline, cause: "missed" },
+      ...alertEffects(current, "down"),
+    ],
+  };
+}
+
 function onPause(current: MonitorStateFields, now: Date): Transition {
   const fields = stateFields(current);
   if (fields.state === "paused") return { fields, effects: [] };
   return {
-    fields: { ...fields, state: "paused", pausedAt: now },
+    fields: { ...fields, state: "paused", pausedAt: now, parentUpAt: null },
     effects: [
       ...(fields.state === "down"
         ? [{ kind: "close-incident", reason: "paused" } as const]
         : []),
-      ...(fields.state === "new"
-        ? [{ kind: "end-period", state: "new" } as const]
+      ...(fields.state === "new" || fields.state === "unreachable"
+        ? [{ kind: "end-period", state: fields.state } as const]
         : []),
       { kind: "start-period", state: "paused" },
     ],

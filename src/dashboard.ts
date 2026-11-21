@@ -13,6 +13,7 @@ import { listMonitors, nextExpected } from "./monitors.js";
 import { formatUptime, sevenDayUptime } from "./uptime.js";
 import { listAlertChannels } from "./alert-channels.js";
 import { channelsOfMonitor } from "./monitor-alert-channels.js";
+import { unreachableNote } from "./monitor-parents.js";
 
 async function dashboardMonitors(
   db: Db,
@@ -24,6 +25,7 @@ async function dashboardMonitors(
     listMonitors(db, user._id),
     listAlertChannels(db, user._id),
   ]);
+  const byId = new Map(list.map((m) => [String(m._id), m]));
   return Promise.all(
     list.map(async (m) => {
       const uptime = await sevenDayUptime(db, m, now);
@@ -33,6 +35,10 @@ async function dashboardMonitors(
         name: m.name,
         state: m.state,
         stateText: STATE_LABELS[m.state],
+        stateNote: unreachableNote(
+          m,
+          m.parentId ? byId.get(String(m.parentId)) : undefined,
+        ),
         lastHeartbeatAt: m.lastHeartbeatAt?.toISOString() ?? null,
         lastHeartbeatText: formatAgo(m.lastHeartbeatAt, now),
         lastHeartbeatTitle: m.lastHeartbeatAt

@@ -279,3 +279,111 @@ describe("transition: Max run time", () => {
     });
   });
 });
+
+describe("transition: Unreachable", () => {
+  const LATE = new Date("2026-01-01T00:01:31Z");
+  const check = (parentDown: boolean) =>
+    ({ kind: "deadline-check", startedAt: T0, parentDown }) as const;
+
+  it("makes a silent Up Monitor Unreachable when its Parent is Down: no Incident, no Alert", () => {
+    const { fields, effects } = transition(monitor(), check(true), LATE);
+    expect(fields).toMatchObject({ state: "unreachable", parentUpAt: null });
+    expect(effects).toEqual([{ kind: "start-period", state: "unreachable" }]);
+  });
+
+  it("does nothing before the deadline, Parent Down or not", () => {
+    expect(transition(monitor(), check(true), NOW).effects).toEqual([]);
+    expect(transition(monitor(), check(true), NOW).fields.state).toBe("up");
+  });
+
+  it("waits while the Parent stays Down", () => {
+    const later = new Date(LATE.getTime() + 3600_000);
+    const { fields, effects } = transition(
+      monitor({ state: "unreachable" }),
+      check(true),
+      later,
+    );
+    expect(fields.state).toBe("unreachable");
+    expect(effects).toEqual([]);
+  });
+
+  it("starts a fresh deadline once the Parent isn't Down, then goes Down when it passes", () => {
+    const back = new Date(LATE.getTime() + 600_000);
+    const released = transition(
+      monitor({ state: "unreachable" }),
+      check(false),
+      back,
+    );
+    expect(released.fields).toMatchObject({
+      state: "unreachable",
+      parentUpAt: back,
+    });
+    expect(released.effects).toEqual([]);
+
+    const due = new Date(back.getTime() + 90_000);
+    const stillWaiting = transition(
+      monitor({ state: "unreachable", parentUpAt: back }),
+      check(false),
+      new Date(due.getTime() - 1),
+    );
+    expect(stillWaiting.effects).toEqual([]);
+
+    const { fields, effects } = transition(
+      monitor({ state: "unreachable", parentUpAt: back }),
+      check(false),
+      due,
+    );
+    expect(fields).toMatchObject({ state: "down", parentUpAt: null });
+    expect(effects).toEqual([
+      { kind: "end-period", state: "unreachable" },
+      { kind: "open-incident", startedAt: due, cause: "missed" },
+      { kind: "enqueue-alert", alert: "down" },
+    ]);
+  });
+
+  it("forgets the Parent's return if the Parent goes Down again", () => {
+    const { fields } = transition(
+      monitor({ state: "unreachable", parentUpAt: LATE }),
+      check(true),
+      new Date(LATE.getTime() + 10_000),
+    );
+    expect(fields).toMatchObject({ state: "unreachable", parentUpAt: null });
+  });
+
+  it("goes Up on a Heartbeat without an Up Alert", () => {
+    const { fields, effects } = transition(
+      monitor({ state: "unreachable" }),
+      { kind: "heartbeat", message: null },
+      LATE,
+    );
+    expect(fields).toMatchObject({ state: "up", parentUpAt: null });
+    expect(effects).toEqual([{ kind: "end-period", state: "unreachable" }]);
+  });
+
+  it("goes Down at once on a Fail signal", () => {
+    const { fields, effects } = transition(
+      monitor({ state: "unreachable" }),
+      fail,
+      LATE,
+    );
+    expect(fields.state).toBe("down");
+    expect(effects).toEqual([
+      { kind: "end-period", state: "unreachable" },
+      { kind: "open-incident", startedAt: LATE, cause: "failed" },
+      { kind: "enqueue-alert", alert: "down" },
+    ]);
+  });
+
+  it("ends the Unreachable period on pause", () => {
+    const { fields, effects } = transition(
+      monitor({ state: "unreachable" }),
+      { kind: "pause" },
+      LATE,
+    );
+    expect(fields.state).toBe("paused");
+    expect(effects).toEqual([
+      { kind: "end-period", state: "unreachable" },
+      { kind: "start-period", state: "paused" },
+    ]);
+  });
+});

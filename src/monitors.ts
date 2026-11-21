@@ -42,6 +42,7 @@ import {
   type DueFields,
   type MonitorPeriod,
   type MonitorSettings,
+  STATE_LABELS,
   type MonitorState,
   type MonitorStateFields,
   type MonitorTiming,
@@ -49,7 +50,11 @@ import {
 import { startPeriod } from "./state-periods.js";
 import { reminderText, type ReminderSettings } from "./reminders.js";
 import { listAlertChannels } from "./alert-channels.js";
-import { listChildren, listParentOptions } from "./monitor-parents.js";
+import {
+  listChildren,
+  listParentOptions,
+  unreachableNote,
+} from "./monitor-parents.js";
 import {
   channelsOfMonitor,
   choiceOf,
@@ -96,6 +101,7 @@ export async function countMonitorsByState(
     new: 0,
     up: 0,
     down: 0,
+    unreachable: 0,
     paused: 0,
   };
   const groups = await monitors(db)
@@ -408,6 +414,14 @@ export function registerMonitors(
           <div class="title-row">
             <h1>${monitor.name}</h1>
             ${stateBadge(monitor.state)}
+            ${
+              parent &&
+              unreachableNote(monitor, parent) &&
+              html`<small class="state-note"
+                ><a href="/monitors/${String(parent._id)}">${parent.name}</a>
+                ${STATE_LABELS[parent.state]}</small
+              >`
+            }
           </div>
           ${actionsSection(monitor, csrf)}
           <div class="card">
