@@ -103,6 +103,55 @@ describe("Unreachable Children", () => {
     expect(dashboard).toMatch(/class="state-note">\s*Router Down/);
   });
 
+  it("names the Unreachable Children in the Parent's Down Alert on every channel", async () => {
+    const ctx = await loggedIn();
+    await ctx.browser.submit("/settings", "/settings/ntfy", {
+      name: "Phone",
+      url: "https://ntfy.sh/home",
+      token: "",
+    });
+    await ctx.browser.submit("/settings", "/settings/webhooks", {
+      name: "Hook",
+      url: "https://hooks.example.com/nodbeat",
+      secret: "",
+    });
+    const router = await createMonitor(ctx.browser, "Router");
+    const pi = await createMonitor(ctx.browser, "Pi", router.id);
+    const nas = await createMonitor(ctx.browser, "NAS", router.id);
+    for (const m of [router, pi, nas]) {
+      await ctx.app.inject({ method: "GET", url: m.hb });
+    }
+    ctx.clock.advance(91 * SEC);
+    await ctx.app.tick();
+
+    expect(ctx.telegram.sent).toHaveLength(1);
+    expect(ctx.telegram.sent[0]!.text).toContain("Also unreachable: Pi, NAS");
+    const ntfy = ctx.http.requests.filter((r) => r.url.includes("ntfy.sh"));
+    expect(ntfy).toHaveLength(1);
+    expect(ntfy[0]!.body).toContain("Also unreachable: Pi, NAS");
+    const hooks = ctx.http.requests.filter((r) =>
+      r.url.includes("hooks.example.com"),
+    );
+    expect(hooks).toHaveLength(1);
+    expect(JSON.parse(hooks[0]!.body)).toMatchObject({
+      kind: "down",
+      unreachableChildren: [
+        { id: pi.id, name: "Pi" },
+        { id: nas.id, name: "NAS" },
+      ],
+    });
+
+    // The Up Alert names nobody.
+    await ctx.app.inject({ method: "GET", url: router.hb });
+    await ctx.app.tick();
+    expect(ctx.telegram.sent).toHaveLength(2);
+    expect(ctx.telegram.sent[1]!.text).not.toContain("unreachable");
+    const upHook = ctx.http.requests.filter((r) =>
+      r.url.includes("hooks.example.com"),
+    )[1]!;
+    expect(JSON.parse(upHook.body).unreachableChildren).toEqual([]);
+  });
+
   it("brings the Child back Up quietly once the Parent is back", async () => {
     const ctx = await routerDown();
     await ctx.app.inject({ method: "GET", url: ctx.router.hb });

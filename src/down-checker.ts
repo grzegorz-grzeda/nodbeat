@@ -1,7 +1,7 @@
 import type { Db, Filter, ObjectId } from "mongodb";
 import type { Clock } from "./clock.js";
 import { enqueueAlert } from "./alerts.js";
-import { applyEffects } from "./effects.js";
+import { applyEffects, sendDeferredDownAlert } from "./effects.js";
 import {
   claimReminder,
   countReminder,
@@ -206,6 +206,8 @@ export function createDownChecker(deps: {
 
     await sendDueReminders(db, lock, now, publicBaseUrl);
 
+    // Down Alerts wait for the end of the pass, so they can name the Children that went Unreachable in it.
+    const deferred: Array<{ _id: ObjectId; incidentId: ObjectId }> = [];
     for (const { _id } of parentsFirst(overdue)) {
       await lock.run(String(_id), async () => {
         // Re-read under the lock: a Heartbeat may have arrived since the query above.
@@ -222,8 +224,31 @@ export function createDownChecker(deps: {
           (monitor.parentUpAt?.getTime() ?? null);
         if (effects.length === 0 && !parentUpAtMoved) return;
         await monitors(db).updateOne({ _id }, { $set: fields });
-        await applyEffects(db, monitor, effects, now, publicBaseUrl);
+        const { deferredDownAlert } = await applyEffects(
+          db,
+          monitor,
+          effects,
+          now,
+          publicBaseUrl,
+          { deferDownAlert: true },
+        );
+        if (deferredDownAlert) {
+          deferred.push({ _id, incidentId: deferredDownAlert._id });
+        }
         pruner.mark(_id);
+      });
+    }
+    for (const { _id, incidentId } of deferred) {
+      await lock.run(String(_id), async () => {
+        const monitor = await monitors(db).findOne({ _id });
+        if (!monitor) return;
+        await sendDeferredDownAlert(
+          db,
+          monitor,
+          incidentId,
+          now,
+          publicBaseUrl,
+        );
       });
     }
   };

@@ -69,6 +69,8 @@ export interface AlertDetails {
   message: string | null;
   /** A Change Alert's message before the change. Absent on other kinds. */
   previousMessage?: string;
+  /** A Down Alert's Children that were Unreachable when it was sent. Absent on other kinds and older Alerts. */
+  unreachableChildren?: UnreachableChild[];
   /** Monitor name and state in plain text, e.g. "Garden sensor is Down". */
   title: string;
   /** The rest of the Alert in plain text, one line each: when, and the message. */
@@ -237,6 +239,23 @@ export async function migrateAlertOutbox(db: Db): Promise<void> {
   }
 }
 
+/** A Child a Down Alert names as Unreachable. */
+export interface UnreachableChild {
+  id: string;
+  name: string;
+}
+
+/** How many Unreachable Children a Down Alert's text names; the rest are counted. */
+const MAX_NAMED_CHILDREN = 10;
+
+/** "Also unreachable: Pi, NAS" (or "…, and 3 more"); null for none. */
+export function unreachableLine(children: UnreachableChild[]): string | null {
+  if (children.length === 0) return null;
+  const named = children.slice(0, MAX_NAMED_CHILDREN).map((c) => c.name);
+  const more = children.length - named.length;
+  return `Also unreachable: ${named.join(", ")}${more > 0 ? ` and ${more} more` : ""}`;
+}
+
 /** The part of a Monitor an Alert is built from and addressed by. */
 export interface AlertedMonitor extends AlertChannelChoice {
   _id: ObjectId;
@@ -248,7 +267,7 @@ export interface AlertedMonitor extends AlertChannelChoice {
 
 /**
  * Puts an Alert about `incident` in the outbox, addressed to the Monitor's Alert channels at this moment; none →
- * nothing. Returns whether it was enqueued.
+ * nothing. Returns whether it was enqueued. A Down Alert names `unreachableChildren`.
  */
 export function enqueueAlert(
   db: Db,
@@ -257,14 +276,21 @@ export function enqueueAlert(
   incident: IncidentDoc,
   now: Date,
   publicBaseUrl: string,
+  unreachableChildren: UnreachableChild[] = [],
 ): Promise<boolean> {
   const { aboutDown } = ALERT_KINDS[kind];
+  const children = kind === "down" ? unreachableChildren : [];
   return addToOutbox(db, monitor, kind, incident._id, now, publicBaseUrl, {
     at: aboutDown
       ? incident.startedAt
       : (incident.endedAt ?? incident.startedAt),
     message: aboutDown ? monitor.lastMessage : null,
-    parts: (timeZone) => alertParts(monitor, kind, incident, timeZone, now),
+    ...(kind === "down" && { unreachableChildren: children }),
+    parts: (timeZone) => {
+      const parts = alertParts(monitor, kind, incident, timeZone, now);
+      const line = unreachableLine(children);
+      return line ? { ...parts, lines: [...parts.lines, line] } : parts;
+    },
   });
 }
 
@@ -294,6 +320,7 @@ interface AlertContent {
   at: Date;
   message: string | null;
   previousMessage?: string;
+  unreachableChildren?: UnreachableChild[];
   /** Its text, in the owner's time zone. */
   parts: (timeZone: string) => AlertParts;
 }
@@ -323,6 +350,9 @@ async function addToOutbox(
     message: content.message,
     ...(content.previousMessage !== undefined && {
       previousMessage: content.previousMessage,
+    }),
+    ...(content.unreachableChildren && {
+      unreachableChildren: content.unreachableChildren,
     }),
     title: `${monitor.name} ${parts.state}`,
     summary: parts.lines.join("\n"),

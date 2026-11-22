@@ -79,6 +79,21 @@ export function unreachableNote(
   return `${parent.name} ${STATE_LABELS[parent.state]}`;
 }
 
+/** A Monitor's Unreachable Children, oldest first, as a Down Alert names them. */
+export async function listUnreachableChildren(
+  db: Db,
+  monitor: Pick<MonitorDoc, "_id" | "ownerId">,
+): Promise<Array<{ id: string; name: string }>> {
+  const list = await monitors(db)
+    .find(
+      { ownerId: monitor.ownerId, parentId: monitor._id, state: "unreachable" },
+      { projection: { _id: 1, name: 1 } },
+    )
+    .sort({ createdAt: 1 })
+    .toArray();
+  return list.map((m) => ({ id: String(m._id), name: m.name }));
+}
+
 /** A Monitor's Children, oldest first. */
 export function listChildren(
   db: Db,

@@ -21,6 +21,7 @@ export function webhookBody(alert: AlertDoc): string | null {
     at: details.at.toISOString(),
     message: details.message,
     previousMessage: details.previousMessage ?? null,
+    unreachableChildren: details.unreachableChildren ?? [],
     incidentId: alert.incidentId ? String(alert.incidentId) : null,
   });
 }

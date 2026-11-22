@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- A Parent's Down Alert names its Children that are Unreachable when it is sent: "Also unreachable: Pi, NAS" on Telegram and ntfy (the first 10 named, the rest counted). Down Alerts from the down checker wait for the end of its pass, so they include the Children that went Unreachable in that same pass. The landing page's features list mentions Parents.
+
 ### Changed
+
+- Webhook body: a new `unreachableChildren` field, `[{ id, name }]` on a Down Alert and empty on every other kind (documented in `api/openapi.yaml`).
 
 - A Child that misses its deadline while its Parent is Up but has sent nothing since the Child's last Heartbeat now waits for the Parent: if the Parent goes Down, the Child becomes Unreachable with no Alert; if the Parent sends a Heartbeat, the Child goes Down with its Alert then, late, and the Incident starts at the Child's own deadline. So a Child on a shorter Interval than its Parent no longer alerts first. A Fail signal still alerts at once.
 

@@ -110,6 +110,7 @@ describe("Webhook channel", () => {
       at: "2026-01-01T00:01:30.000Z",
       message: null,
       previousMessage: null,
+      unreachableChildren: [],
       incidentId: expect.stringMatching(/^[0-9a-f]{24}$/),
     });
   });

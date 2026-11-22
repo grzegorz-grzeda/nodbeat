@@ -128,6 +128,15 @@ export function closeOpenIncident(
   );
 }
 
+/** The Monitor's open Incident, if it has one and it is `id`. */
+export function findOpenIncident(
+  db: Db,
+  monitorId: ObjectId,
+  id: ObjectId,
+): Promise<IncidentDoc | null> {
+  return incidents(db).findOne({ _id: id, monitorId, endedAt: null });
+}
+
 /** The Monitor's Incidents, newest first: at most `limit`, after skipping the newest `skip`. */
 export function listIncidents(
   db: Db,

@@ -242,6 +242,7 @@ describe("Change Alerts", () => {
       at: "2026-01-01T00:00:08.000Z",
       message: "door=closed",
       previousMessage: "door=open",
+      unreachableChildren: [],
       incidentId: null,
     });
   });

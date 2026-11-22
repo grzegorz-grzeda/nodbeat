@@ -38,6 +38,10 @@ const FEATURES: Array<[string, string]> = [
     'Get an Alert when a Heartbeat\'s message changes, like "door=open" to "door=closed".',
   ],
   [
+    "Parents",
+    "Say a Raspberry Pi depends on the router it sits behind. When the router or the line goes down, you get one Alert naming the Pi, not one per device.",
+  ],
+  [
     "Uptime and Incidents",
     "7-day Uptime per Monitor and a history of every Incident, with Paused time left out.",
   ],

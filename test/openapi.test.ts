@@ -67,6 +67,7 @@ describe("GET /openapi.yaml", () => {
         "message",
         "monitor",
         "previousMessage",
+        "unreachableChildren",
       ].sort(),
     );
   });
