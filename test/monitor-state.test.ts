@@ -282,8 +282,12 @@ describe("transition: Max run time", () => {
 
 describe("transition: Unreachable", () => {
   const LATE = new Date("2026-01-01T00:01:31Z");
-  const check = (parentDown: boolean) =>
-    ({ kind: "deadline-check", startedAt: T0, parentDown }) as const;
+  const check = (down: boolean) =>
+    ({
+      kind: "deadline-check",
+      startedAt: T0,
+      ...(down && { parent: "down" as const }),
+    }) as const;
 
   it("makes a silent Up Monitor Unreachable when its Parent is Down: no Incident, no Alert", () => {
     const { fields, effects } = transition(monitor(), check(true), LATE);
@@ -372,6 +376,26 @@ describe("transition: Unreachable", () => {
       { kind: "open-incident", startedAt: LATE, cause: "failed" },
       { kind: "enqueue-alert", alert: "down" },
     ]);
+  });
+
+  it("holds a silent Up Monitor while its Parent is silent too", () => {
+    const { fields, effects } = transition(
+      monitor(),
+      { kind: "deadline-check", startedAt: T0, parent: "silent" },
+      LATE,
+    );
+    expect(fields.state).toBe("up");
+    expect(effects).toEqual([]);
+  });
+
+  it("goes Down as usual when its Parent is alive", () => {
+    const { fields, effects } = transition(
+      monitor(),
+      { kind: "deadline-check", startedAt: T0, parent: "alive" },
+      LATE,
+    );
+    expect(fields.state).toBe("down");
+    expect(effects).toContainEqual({ kind: "enqueue-alert", alert: "down" });
   });
 
   it("ends the Unreachable period on pause", () => {

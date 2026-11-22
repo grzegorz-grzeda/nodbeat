@@ -86,13 +86,20 @@ export type MonitorEvent =
   | { kind: "start" }
   /**
    * The Down checker's look at the Monitor. `startedAt` is when this nodbeat process started (startup grace).
-   * `parentDown`: the Monitor has a Parent that counts and is Down or Unreachable.
+   * `parent`: what its Parent says, absent without one that counts.
    */
-  | { kind: "deadline-check"; startedAt: Date; parentDown?: boolean }
+  | { kind: "deadline-check"; startedAt: Date; parent?: ParentStatus }
   | { kind: "pause" }
   | { kind: "unpause" }
   /** New settings saved. Only the timing matters to the state machine. */
   | { kind: "edit"; timing: MonitorTiming };
+
+/**
+ * What a Monitor's Parent (one that counts: Up, Down or Unreachable) says about it: **down** (Down or Unreachable),
+ * **silent** (Up, but no Heartbeat since the Monitor's last one: maybe going Down too) or **alive** (Up and heard
+ * from since).
+ */
+export type ParentStatus = "down" | "silent" | "alive";
 
 /** Why an Incident opened: a missed deadline, a Fail signal or a Run longer than the Max run time. */
 export type IncidentCause = "missed" | "failed" | "run-too-long";
@@ -414,13 +421,13 @@ function onFail(
 
 function onDeadlineCheck(
   current: MonitorStateFields & MonitorSettings,
-  event: { startedAt: Date; parentDown?: boolean },
+  event: { startedAt: Date; parent?: ParentStatus },
   now: Date,
 ): Transition {
-  const { startedAt, parentDown = false } = event;
+  const { startedAt, parent } = event;
   const fields = stateFields(current);
   if (fields.state === "unreachable") {
-    return onUnreachableCheck(current, startedAt, parentDown, now);
+    return onUnreachableCheck(current, startedAt, parent, now);
   }
   if (fields.state !== "up") return { fields, effects: [] };
   // The earliest passed deadline decides when the Incident started and why.
@@ -433,8 +440,10 @@ function onDeadlineCheck(
     .sort((a, b) => a[0].getTime() - b[0].getTime())[0];
   if (!first) return { fields, effects: [] };
   const [deadline, cause] = first;
+  // Held: the Parent may be about to go Down for the same reason. Checked again on every pass until it says more.
+  if (parent === "silent") return { fields, effects: [] };
   // Silent behind a Down Parent: its own fate is unknown.
-  if (parentDown) {
+  if (parent === "down") {
     return {
       fields: { ...fields, state: "unreachable", parentUpAt: null },
       effects: [{ kind: "start-period", state: "unreachable" }],
@@ -459,11 +468,11 @@ function onDeadlineCheck(
 function onUnreachableCheck(
   current: MonitorStateFields & MonitorSettings,
   startedAt: Date,
-  parentDown: boolean,
+  parent: ParentStatus | undefined,
   now: Date,
 ): Transition {
   const fields = stateFields(current);
-  if (parentDown) {
+  if (parent === "down") {
     // The Parent went Down again before this Monitor was heard from: wait again.
     return { fields: { ...fields, parentUpAt: null }, effects: [] };
   }
@@ -471,7 +480,10 @@ function onUnreachableCheck(
     return { fields: { ...fields, parentUpAt: now }, effects: [] };
   }
   const deadline = nextDueAt(current, startedAt);
-  if (!deadline || deadline > now) return { fields, effects: [] };
+  // A silent Parent holds it here too, as for an Up Monitor.
+  if (!deadline || deadline > now || parent === "silent") {
+    return { fields, effects: [] };
+  }
   return {
     fields: { ...fields, state: "down", parentUpAt: null },
     effects: [

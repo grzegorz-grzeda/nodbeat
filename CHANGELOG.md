@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- A Child that misses its deadline while its Parent is Up but has sent nothing since the Child's last Heartbeat now waits for the Parent: if the Parent goes Down, the Child becomes Unreachable with no Alert; if the Parent sends a Heartbeat, the Child goes Down with its Alert then, late, and the Incident starts at the Child's own deadline. So a Child on a shorter Interval than its Parent no longer alerts first. A Fail signal still alerts at once.
+
 ## [0.29.0] - 2026-11-21
 
 ### Added

@@ -50,10 +50,15 @@ async function linkChat(ctx: TestContext, browser: Browser) {
 }
 
 /** Creates a Monitor (Interval 60 s, Grace period 30 s) and returns its page, id and Heartbeat path. */
-async function createMonitor(browser: Browser, name: string, parentId = "") {
+async function createMonitor(
+  browser: Browser,
+  name: string,
+  parentId = "",
+  intervalSec = 60,
+) {
   const res = await browser.submit("/monitors/new", "/monitors", {
     name,
-    interval: "60",
+    interval: String(intervalSec),
     intervalUnit: "s",
     grace: "30",
     graceUnit: "s",
@@ -170,6 +175,65 @@ describe("Unreachable Children", () => {
     expect(await stateOf(ctx.browser, fibre.page)).toBe("Down");
     expect(await stateOf(ctx.browser, router.page)).toBe("Unreachable");
     expect(await stateOf(ctx.browser, pi.page)).toBe("Unreachable");
+    expect(alerts(ctx)).toHaveLength(1);
+  });
+
+  it("holds a Child on a shorter Interval until its silent Parent goes Down", async () => {
+    const ctx = await loggedIn();
+    const router = await createMonitor(ctx.browser, "Router", "", 300);
+    const pi = await createMonitor(ctx.browser, "Pi", router.id);
+    await ctx.app.inject({ method: "GET", url: router.hb });
+    await ctx.app.inject({ method: "GET", url: pi.hb });
+
+    ctx.clock.advance(91 * SEC);
+    await ctx.app.tick();
+    expect(await stateOf(ctx.browser, pi.page)).toBe("Up");
+    ctx.clock.advance(200 * SEC);
+    await ctx.app.tick();
+    expect(await stateOf(ctx.browser, pi.page)).toBe("Up");
+    expect(alerts(ctx)).toEqual([]);
+
+    // Router: 300 s + 30 s.
+    ctx.clock.advance(40 * SEC);
+    await ctx.app.tick();
+    expect(await stateOf(ctx.browser, router.page)).toBe("Down");
+    expect(await stateOf(ctx.browser, pi.page)).toBe("Unreachable");
+    expect(alerts(ctx)).toHaveLength(1);
+    expect(alerts(ctx)[0]).toContain("Router");
+  });
+
+  it("alerts for a held Child, late, once its Parent is heard from", async () => {
+    const ctx = await loggedIn();
+    const router = await createMonitor(ctx.browser, "Router", "", 300);
+    const pi = await createMonitor(ctx.browser, "Pi", router.id);
+    await ctx.app.inject({ method: "GET", url: router.hb });
+    await ctx.app.inject({ method: "GET", url: pi.hb });
+    ctx.clock.advance(91 * SEC);
+    await ctx.app.tick();
+    expect(alerts(ctx)).toEqual([]);
+
+    ctx.clock.advance(100 * SEC);
+    await ctx.app.inject({ method: "GET", url: router.hb });
+    await ctx.app.tick();
+    expect(await stateOf(ctx.browser, pi.page)).toBe("Down");
+    expect(alerts(ctx)).toHaveLength(1);
+    expect(alerts(ctx)[0]).toContain("Pi");
+    // The Incident still starts at the Pi's own deadline (shown in the User's time zone, UTC+1).
+    expect((await ctx.browser.get(pi.page)).body).toContain(
+      "2026-01-01 01:01:30",
+    );
+  });
+
+  it("alerts at once for a Child whose Parent was heard from since", async () => {
+    const ctx = await loggedIn();
+    const router = await createMonitor(ctx.browser, "Router", "", 300);
+    const pi = await createMonitor(ctx.browser, "Pi", router.id);
+    await ctx.app.inject({ method: "GET", url: pi.hb });
+    ctx.clock.advance(1 * SEC);
+    await ctx.app.inject({ method: "GET", url: router.hb });
+    ctx.clock.advance(90 * SEC);
+    await ctx.app.tick();
+    expect(await stateOf(ctx.browser, pi.page)).toBe("Down");
     expect(alerts(ctx)).toHaveLength(1);
   });
 

@@ -12,7 +12,12 @@ import {
 import { reminderAfter } from "./reminders.js";
 import type { LogPruner } from "./log-pruner.js";
 import type { KeyedLock } from "./keyed-lock.js";
-import { nextDueAt, runDeadline, transition } from "./monitor-state.js";
+import {
+  nextDueAt,
+  runDeadline,
+  transition,
+  type ParentStatus,
+} from "./monitor-state.js";
 import { monitors, type MonitorDoc } from "./monitors.js";
 
 /**
@@ -108,20 +113,26 @@ async function sendDueReminders(
   }
 }
 
-/** Parent states that make a silent Child Unreachable. A New or Paused Parent doesn't count: it says nothing. */
-const PARENT_DOWN_STATES = new Set(["down", "unreachable"]);
-
-/** Whether the Monitor's Parent counts and is Down or Unreachable. */
-async function isParentDown(
+/**
+ * What the Monitor's Parent says, or undefined without one that counts (a New or Paused Parent says nothing). Silent:
+ * Up but no Heartbeat since the Monitor's last one.
+ */
+async function parentStatus(
   db: Db,
-  monitor: Pick<MonitorDoc, "ownerId" | "parentId">,
-): Promise<boolean> {
-  if (!monitor.parentId) return false;
+  monitor: Pick<MonitorDoc, "ownerId" | "parentId" | "lastHeartbeatAt">,
+): Promise<ParentStatus | undefined> {
+  if (!monitor.parentId) return undefined;
   const parent = await monitors(db).findOne(
     { _id: monitor.parentId, ownerId: monitor.ownerId },
-    { projection: { state: 1 } },
+    { projection: { state: 1, lastHeartbeatAt: 1 } },
   );
-  return parent !== null && PARENT_DOWN_STATES.has(parent.state);
+  if (!parent) return undefined;
+  if (parent.state === "down" || parent.state === "unreachable") return "down";
+  if (parent.state !== "up") return undefined;
+  const heardSince =
+    (parent.lastHeartbeatAt?.getTime() ?? 0) >
+    (monitor.lastHeartbeatAt?.getTime() ?? 0);
+  return heardSince ? "alive" : "silent";
 }
 
 /**
@@ -153,7 +164,8 @@ export function parentsFirst<
  * Moves Up Monitors past their deadline, or with a Run past their Max run time, to Down. `startedAt` is when this
  * nodbeat process started: no Monitor goes Down before a full Interval (or its next scheduled time) + Grace period
  * after it, or before startedAt + Max run time. A Monitor whose Parent is Down or Unreachable goes Unreachable
- * instead, and back to a fresh deadline once the Parent isn't.
+ * instead, and back to a fresh deadline once the Parent isn't. One whose Parent is silent too is held (stays Up) until
+ * the Parent goes Down or is heard from.
  */
 export function createDownChecker(deps: {
   db: Db;
@@ -199,10 +211,10 @@ export function createDownChecker(deps: {
         // Re-read under the lock: a Heartbeat may have arrived since the query above.
         const monitor = await monitors(db).findOne({ _id });
         if (!monitor) return;
-        const parentDown = await isParentDown(db, monitor);
+        const parent = await parentStatus(db, monitor);
         const { fields, effects } = transition(
           monitor,
-          { kind: "deadline-check", startedAt, parentDown },
+          { kind: "deadline-check", startedAt, ...(parent && { parent }) },
           now,
         );
         const parentUpAtMoved =
