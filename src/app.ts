@@ -17,6 +17,7 @@ import type { Clock } from "./clock.js";
 import type { Config } from "./config.js";
 import { registerTermsAcceptance } from "./accept-terms.js";
 import { registerAdmin } from "./admin.js";
+import { registerAdminPlans } from "./admin-plans.js";
 import {
   ensureAlertChannelIndexes,
   migrateLinkedChats,
@@ -224,7 +225,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
     publicBaseUrl: config.publicBaseUrl,
     plans,
   });
-  registerAdmin(app, { db, clock });
+  registerAdmin(app, { db, clock, plans });
+  registerAdminPlans(app, { db, clock, auth, plans });
   registerInvites(app, { db, clock, config, auth, legal });
   registerTelegramBot(app, {
     db,

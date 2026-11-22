@@ -56,3 +56,12 @@ export function formatDueTime(date: Date, now: Date, timeZone: string): string {
   const hhmm = time!.slice(0, 5);
   return day === today ? hhmm : `${day} ${hhmm}`;
 }
+
+/** The moment `day` (`YYYY-MM-DD`) starts in the IANA time zone. */
+export function startOfDayIn(day: string, timeZone: string): Date {
+  const utc = Date.parse(`${day}T00:00:00Z`);
+  const wall = Date.parse(
+    `${formatDateTime(new Date(utc), timeZone).replace(" ", "T")}Z`,
+  );
+  return new Date(utc - (wall - utc));
+}

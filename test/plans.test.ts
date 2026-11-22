@@ -189,3 +189,94 @@ describe("Plans launch", () => {
     );
   });
 });
+
+describe("Admin gives and ends Pro", () => {
+  async function withAdmin(plansEnabled = true) {
+    const ctx = await buildTestApp({ plansEnabled });
+    await createUser(ctx.db, {
+      email: "admin@example.com",
+      password: PASSWORD,
+      admin: true,
+    });
+    await createUser(ctx.db, {
+      email: EMAIL,
+      password: PASSWORD,
+      timeZone: "UTC",
+    });
+    const admin = await login(ctx.app, "admin@example.com", PASSWORD);
+    const browser = await login(ctx.app, EMAIL, PASSWORD);
+    const user = await ctx.db.collection("users").findOne({ email: EMAIL });
+    return { ...ctx, admin, browser, userId: String(user!._id) };
+  }
+
+  it("counts Users per Plan and gives Pro until a date, then ends it", async () => {
+    const ctx = await withAdmin();
+    const page = (await ctx.admin.get("/admin")).body;
+    expect(page).toContain("Users by Plan");
+    expect(page).toMatch(/<th scope="col">Plan<\/th>/);
+    expect(page).toContain(`href="/admin/users/${ctx.userId}/pro"`);
+    expect((await addWebhook(ctx.browser)).statusCode).toBe(400);
+
+    const give = `/admin/users/${ctx.userId}/pro`;
+    const form = await ctx.admin.get(give);
+    expect(form.body).toContain(`Give ${EMAIL} Pro`);
+    const past = await ctx.admin.submit(give, give, { until: "2025-12-31" });
+    expect(past.statusCode).toBe(400);
+    expect(past.body).toContain("Choose a date after today.");
+    const res = await ctx.admin.submit(give, give, { until: "2026-03-01" });
+    expect(res.statusCode).toBe(303);
+    const user = await ctx.db.collection("users").findOne({ email: EMAIL });
+    expect(user!.plan).toEqual({
+      proUntil: new Date("2026-03-01T00:00:00Z"),
+      source: "comp",
+      proEndedAt: null,
+    });
+    expect((await addWebhook(ctx.browser)).statusCode).toBe(303);
+    expect((await ctx.browser.get("/settings")).body).toMatch(
+      /<strong>Pro<\/strong>\s*until 2026-03-01/,
+    );
+    expect((await ctx.admin.get("/admin")).body).toContain(
+      `href="/admin/users/${ctx.userId}/end-pro"`,
+    );
+
+    const end = `/admin/users/${ctx.userId}/end-pro`;
+    expect((await ctx.admin.get(end)).body).toContain(`End Pro for ${EMAIL}?`);
+    expect((await ctx.admin.submit(end, end)).statusCode).toBe(303);
+    expect((await ctx.browser.get("/settings")).body).toMatch(
+      /<strong>Free<\/strong>/,
+    );
+    const hook = await ctx.browser.submit("/settings", "/settings/webhooks", {
+      name: "Second",
+      url: "https://hooks.example.com/second",
+      secret: "",
+    });
+    expect(hook.statusCode).toBe(400);
+  });
+
+  it("reads the date in the User's time zone", async () => {
+    const ctx = await withAdmin();
+    await ctx.db
+      .collection("users")
+      .updateOne({ email: EMAIL }, { $set: { timeZone: "Europe/Warsaw" } });
+    const give = `/admin/users/${ctx.userId}/pro`;
+    await ctx.admin.submit(give, give, { until: "2026-07-01" });
+    const user = await ctx.db.collection("users").findOne({ email: EMAIL });
+    expect(user!.plan.proUntil).toEqual(new Date("2026-06-30T22:00:00Z"));
+  });
+
+  it("is only for the Admin", async () => {
+    const ctx = await withAdmin();
+    const res = await ctx.browser.get(`/admin/users/${ctx.userId}/pro`);
+    expect(res.statusCode).not.toBe(200);
+  });
+
+  it("is hidden with Plans off", async () => {
+    const ctx = await withAdmin(false);
+    const page = (await ctx.admin.get("/admin")).body;
+    expect(page).not.toContain("Users by Plan");
+    expect(page).not.toMatch(/<th scope="col">Plan<\/th>/);
+    expect(
+      (await ctx.admin.get(`/admin/users/${ctx.userId}/pro`)).statusCode,
+    ).toBe(404);
+  });
+});

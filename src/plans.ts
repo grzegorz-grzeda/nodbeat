@@ -1,4 +1,4 @@
-import type { Db } from "mongodb";
+import type { Db, ObjectId } from "mongodb";
 import { DEFAULT_LIMITS, PLAN_LIMITS, type Limits } from "./limits.js";
 import type { UserDoc } from "./users.js";
 
@@ -76,4 +76,32 @@ export async function grantLaunchPro(db: Db, now: Date): Promise<void> {
       { "plan.proUntil": { $not: { $gt: now } } },
       { $set: { plan: { proUntil, source: "comp", proEndedAt: null } } },
     );
+}
+
+const users = (db: Db) => db.collection<UserDoc>("users");
+
+/** The Admin gives the User Pro (a comp) until `proUntil`, replacing any Pro end date they had. */
+export async function giveComp(
+  db: Db,
+  userId: ObjectId,
+  proUntil: Date,
+): Promise<boolean> {
+  const res = await users(db).updateOne(
+    { _id: userId },
+    { $set: { plan: { proUntil, source: "comp", proEndedAt: null } } },
+  );
+  return res.matchedCount === 1;
+}
+
+/** The Admin ends the User's Pro now; false when they weren't on Pro. */
+export async function endPro(
+  db: Db,
+  userId: ObjectId,
+  now: Date,
+): Promise<boolean> {
+  const res = await users(db).updateOne(
+    { _id: userId, "plan.proUntil": { $gt: now } },
+    { $set: { "plan.proUntil": now } },
+  );
+  return res.modifiedCount === 1;
 }

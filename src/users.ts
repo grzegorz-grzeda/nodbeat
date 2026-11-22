@@ -235,9 +235,9 @@ export async function emailsByUserId(
 /** Every User's id and email (the Admin page). */
 export function listUserEmails(
   db: Db,
-): Promise<Array<Pick<UserDoc, "_id" | "email">>> {
+): Promise<Array<Pick<UserDoc, "_id" | "email" | "plan">>> {
   return users(db)
-    .find({}, { projection: { email: 1 } })
+    .find({}, { projection: { email: 1, plan: 1 } })
     .sort({ createdAt: 1 })
     .toArray();
 }

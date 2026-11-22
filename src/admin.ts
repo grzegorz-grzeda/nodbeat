@@ -18,6 +18,7 @@ import {
   monitorsByOwner,
   summarizeMonitorSetup,
 } from "./monitors.js";
+import { PLAN_LABELS, type PlanName, type Plans } from "./plans.js";
 import { listUserEmails } from "./users.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -75,7 +76,10 @@ function shareTable(
 }
 
 interface UserActivity {
+  id: string;
   email: string;
+  /** Null with Plans off. */
+  plan: PlanName | null;
   monitors: number;
   linkedChats: number;
   heartbeats7d: number;
@@ -83,7 +87,12 @@ interface UserActivity {
 }
 
 /** One row per User, the most recent last Heartbeat first; Users without one last. */
-async function listUserActivity(db: Db, since: Date): Promise<UserActivity[]> {
+async function listUserActivity(
+  db: Db,
+  since: Date,
+  plans: Plans,
+  now: Date,
+): Promise<UserActivity[]> {
   const [users, owned, chats, heartbeats] = await Promise.all([
     listUserEmails(db),
     monitorsByOwner(db),
@@ -94,7 +103,9 @@ async function listUserActivity(db: Db, since: Date): Promise<UserActivity[]> {
     const own = owned.get(String(u._id));
     const ids = own?.monitorIds ?? [];
     return {
+      id: String(u._id),
       email: u.email,
+      plan: plans.planOf(u, now),
       monitors: ids.length,
       linkedChats: chats.get(String(u._id)) ?? 0,
       heartbeats7d: ids.reduce(
@@ -108,13 +119,31 @@ async function listUserActivity(db: Db, since: Date): Promise<UserActivity[]> {
   return rows.sort((a, b) => time(b) - time(a));
 }
 
-function userTable(rows: UserActivity[], timeZone: string): SafeHtml {
+/** The Plan cell: its name and the action that changes it. */
+function planCell(r: UserActivity): SafeHtml {
+  return html`<td>
+    ${PLAN_LABELS[r.plan!]}
+    ${
+      r.plan === "pro"
+        ? html`<a href="/admin/users/${r.id}/pro">Change</a>
+            <a href="/admin/users/${r.id}/end-pro">End Pro</a>`
+        : html`<a href="/admin/users/${r.id}/pro">Give Pro until…</a>`
+    }
+  </td>`;
+}
+
+function userTable(
+  rows: UserActivity[],
+  timeZone: string,
+  showPlans: boolean,
+): SafeHtml {
   return html`<h2>Users</h2>
     <div class="table-wrap">
       <table class="stats">
         <thead>
           <tr>
             <th scope="col">User</th>
+            ${showPlans && html`<th scope="col">Plan</th>`}
             <th scope="col">Monitors</th>
             <th scope="col">Linked chats</th>
             <th scope="col">Heartbeats (7 days)</th>
@@ -126,6 +155,7 @@ function userTable(rows: UserActivity[], timeZone: string): SafeHtml {
             (r) =>
               html`<tr>
                 <th scope="row">${r.email}</th>
+                ${showPlans && planCell(r)}
                 <td>${String(r.monitors)}</td>
                 <td>${String(r.linkedChats)}</td>
                 <td>${String(r.heartbeats7d)}</td>
@@ -149,9 +179,9 @@ function userTable(rows: UserActivity[], timeZone: string): SafeHtml {
  */
 export function registerAdmin(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock },
+  deps: { db: Db; clock: Clock; plans: Plans },
 ): void {
-  const { db, clock } = deps;
+  const { db, clock, plans } = deps;
 
   app.get("/admin", { preHandler: requireAdmin }, async (req, reply) => {
     const nowMs = clock.now().getTime();
@@ -166,7 +196,7 @@ export function registerAdmin(
       incidents30d,
       inviteRequests,
     ] = await Promise.all([
-      listUserActivity(db, daysAgo(7)),
+      listUserActivity(db, daysAgo(7), plans, new Date(nowMs)),
       countMonitorsByState(db),
       // Per-User limits are the same for everyone until Plans exist.
       summarizeMonitorSetup(db, instanceLimits(), new Date(nowMs)),
@@ -201,6 +231,16 @@ export function registerAdmin(
           ["Incidents (7 days)", incidents7d],
           ["Incidents (30 days)", incidents30d],
         ])}
+        ${
+          plans.enabled &&
+          statTable(
+            "Users by Plan",
+            (Object.keys(PLAN_LABELS) as PlanName[]).map((p) => [
+              PLAN_LABELS[p],
+              userActivity.filter((u) => u.plan === p).length,
+            ]),
+          )
+        }
         ${statTable(
           "Monitors by state",
           STATES.map((s) => [STATE_LABELS[s], byState[s]]),
@@ -233,7 +273,7 @@ export function registerAdmin(
           traffic.total,
           traffic.byClient.map((c) => [c.label, c.count]),
         )}
-        ${userTable(userActivity, req.user!.timeZone)}`,
+        ${userTable(userActivity, req.user!.timeZone, plans.enabled)}`,
     });
   });
 }
