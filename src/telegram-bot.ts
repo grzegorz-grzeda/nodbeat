@@ -7,7 +7,7 @@ import { formatAgo, formatDuration } from "./format.js";
 import { AlertChannelLimitError, listAlertChannels } from "./alert-channels.js";
 import { migrateChat } from "./alerts.js";
 import type { KeyedLock } from "./keyed-lock.js";
-import { limitsFor } from "./limits.js";
+import type { Plans } from "./plans.js";
 import {
   linkChat,
   linkedChatsOf,
@@ -116,9 +116,10 @@ export function registerTelegramBot(
     config: Config;
     /** Guards the per-User Alert channel limit. */
     channelLock: KeyedLock;
+    plans: Plans;
   },
 ): void {
-  const { db, clock, telegram, config, channelLock } = deps;
+  const { db, clock, telegram, config, channelLock, plans } = deps;
   const expectedSecret = Buffer.from(config.telegramWebhookSecret);
   const startLimiter = new SlidingWindowLimiter(
     clock,
@@ -159,7 +160,7 @@ export function registerTelegramBot(
           ownerId: owner._id,
           chatId: chat.id,
           title: chatTitle(chat),
-          limit: limitsFor(owner, now).maxAlertChannels,
+          limit: plans.limitsFor(owner, now).maxAlertChannels,
         },
         now,
       );

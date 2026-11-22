@@ -14,6 +14,8 @@ export interface Config {
   legalDir: string | undefined;
   /** Shows "Request an Invite" on the landing page (`INVITE_REQUESTS=true`); off by default. */
   inviteRequests: boolean;
+  /** Free and Pro Plans apply (`PLANS_ENABLED=true`); off by default, until billing (spec 0016) replaces the flag. */
+  plansEnabled: boolean;
 }
 
 export class ConfigError extends Error {
@@ -87,6 +89,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const legalDir = env.LEGAL_DIR?.trim() || undefined;
   const inviteRequests = env.INVITE_REQUESTS?.trim() === "true";
+  const plansEnabled = env.PLANS_ENABLED?.trim() === "true";
 
   if (problems.length > 0) throw new ConfigError(problems);
 
@@ -100,6 +103,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     trustedProxyIp,
     legalDir,
     inviteRequests,
+    plansEnabled,
   };
 }
 

@@ -2,6 +2,7 @@ import { hash, verify } from "@node-rs/argon2";
 import { MongoServerError, ObjectId, type Db } from "mongodb";
 import type { Clock } from "./clock.js";
 import { LEGAL_KINDS, type LegalKind, type LegalVersions } from "./legal.js";
+import type { UserPlan } from "./plans.js";
 
 export const DEFAULT_TIME_ZONE = "Europe/Warsaw";
 
@@ -24,6 +25,8 @@ export interface UserDoc {
    * CLI, before the Terms existed, or on an instance without them. Compare with `currentVersions` to find what's due.
    */
   accepted?: Acceptance;
+  /** Missing: Free (and on an instance with Plans off, no Plan at all). */
+  plan?: UserPlan;
 }
 
 /** Per document, since each is accepted on its own: one may be recorded without the other. */

@@ -5,7 +5,8 @@ import type { Clock } from "./clock.js";
 import { listHeartbeatsSince } from "./heartbeats.js";
 import { html, type SafeHtml } from "./html.js";
 import { listIncidents } from "./incidents.js";
-import { limitsFor, type Limits } from "./limits.js";
+import type { Limits } from "./limits.js";
+import type { Plans } from "./plans.js";
 import {
   heartbeatRetentionText,
   heartbeatsTable,
@@ -26,9 +27,9 @@ type LogRequest = FastifyRequest<{ Params: { id: string } }>;
  */
 export function registerMonitorLogs(
   app: FastifyInstance,
-  deps: { db: Db; clock: Clock },
+  deps: { db: Db; clock: Clock; plans: Plans },
 ): void {
-  const { db, clock } = deps;
+  const { db, clock, plans } = deps;
   const logPage = async (
     req: LogRequest,
     reply: FastifyReply,
@@ -44,7 +45,7 @@ export function registerMonitorLogs(
     },
   ) => {
     // Only the owner's own Monitors are shown, so the viewer is the owner.
-    const log = logFor(limitsFor(req.user!, clock.now()));
+    const log = logFor(plans.limitsFor(req.user!, clock.now()));
     const monitor = await findOwnMonitor(db, req.user!._id, req.params.id);
     if (!monitor) return sendMonitorNotFound(reply);
     const base = `/monitors/${String(monitor._id)}`;

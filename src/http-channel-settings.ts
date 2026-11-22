@@ -16,7 +16,7 @@ import type { Clock } from "./clock.js";
 import { setFlash } from "./flash.js";
 import { csrfField, html, type SafeHtml } from "./html.js";
 import type { KeyedLock } from "./keyed-lock.js";
-import { limitsFor } from "./limits.js";
+import type { Plans } from "./plans.js";
 import {
   checkOutboundUrl,
   MAX_OUTBOUND_URL_LENGTH,
@@ -197,6 +197,7 @@ export function registerHttpChannelSettings(
     /** Guards the per-User Alert channel limit, shared with linking a Telegram chat. */
     channelLock: KeyedLock;
     resolveHost: HostResolver;
+    plans: Plans;
     settingsPage: (
       req: FastifyRequest,
       reply: FastifyReply,
@@ -204,7 +205,8 @@ export function registerHttpChannelSettings(
     ) => Promise<unknown>;
   },
 ): void {
-  const { db, clock, auth, channelLock, resolveHost, settingsPage } = deps;
+  const { db, clock, auth, channelLock, resolveHost, plans, settingsPage } =
+    deps;
 
   /** The URL once safe to send to and fit for the kind, or the reason it isn't. */
   const checkUrl = async (
@@ -254,6 +256,12 @@ export function registerHttpChannelSettings(
             httpForm: { kind, error, name: rawName, url: rawUrl },
           });
         };
+        if (
+          kind === "webhook" &&
+          !plans.limitsFor(user, clock.now()).features.webhooks
+        ) {
+          return fail("Webhooks need Pro.");
+        }
         const checked = await checkUrl(kind, rawUrl);
         if ("error" in checked) return fail(checked.error);
         const name =
@@ -283,7 +291,7 @@ export function registerHttpChannelSettings(
             : { ...base, kind, token: value };
         try {
           await addAlertChannel(db, channelLock, channel, {
-            limit: limitsFor(user, clock.now()).maxAlertChannels,
+            limit: plans.limitsFor(user, clock.now()).maxAlertChannels,
           });
         } catch (err) {
           if (!(err instanceof AlertChannelLimitError)) throw err;

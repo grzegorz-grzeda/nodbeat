@@ -59,3 +59,15 @@ describe("loadConfig: LEGAL_DIR", () => {
     );
   });
 });
+
+describe("loadConfig: PLANS_ENABLED", () => {
+  it("is off unless exactly true", () => {
+    expect(loadConfig(validEnv).plansEnabled).toBe(false);
+    expect(loadConfig({ ...validEnv, PLANS_ENABLED: "yes" }).plansEnabled).toBe(
+      false,
+    );
+    expect(
+      loadConfig({ ...validEnv, PLANS_ENABLED: " true " }).plansEnabled,
+    ).toBe(true);
+  });
+});

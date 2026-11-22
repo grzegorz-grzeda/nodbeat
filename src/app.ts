@@ -42,6 +42,7 @@ import { ensureLinkCodeIndexes } from "./linked-chats.js";
 import { registerLayout } from "./layout.js";
 import { loadLegalDocs, registerLegalPages } from "./legal.js";
 import { createLogPruner } from "./log-pruner.js";
+import { createPlans, grantLaunchPro } from "./plans.js";
 import { KeyedLock } from "./keyed-lock.js";
 import { registerMonitorLogs } from "./monitor-logs.js";
 import { registerMonitorManagement } from "./monitor-management.js";
@@ -114,7 +115,8 @@ export async function createApp(deps: AppDeps): Promise<App> {
   const lock = new KeyedLock();
   // Keyed by owner: it guards the per-User Alert channel limit, whichever kind is added.
   const channelLock = new KeyedLock();
-  const pruner = createLogPruner({ db, clock });
+  const plans = createPlans(config.plansEnabled);
+  const pruner = createLogPruner({ db, clock, plans });
   const options: FastifyServerOptions = {
     logger: withRedactedUrls(deps.logger),
     // Only the edge Caddy (ADR 0004), at its fixed address, may set the client IP via X-Forwarded-For;
@@ -141,6 +143,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
   // Linked chats and queued Alerts from before Alert channels existed; idempotent.
   await migrateLinkedChats(db);
   await migrateAlertOutbox(db);
+  if (plans.enabled) await grantLaunchPro(db, clock.now());
 
   // Signs Flash cookies. A key derived for that purpose alone, so a signature never doubles as a CSRF token.
   await app.register(cookie, {
@@ -182,15 +185,16 @@ export async function createApp(deps: AppDeps): Promise<App> {
     startedAt,
     inviteRequestForm,
   });
-  registerMonitors(app, { db, clock, config, auth, startedAt });
+  registerMonitors(app, { db, clock, config, auth, startedAt, plans });
   registerMonitorManagement(app, {
     db,
     clock,
     auth,
     lock,
     publicBaseUrl: config.publicBaseUrl,
+    plans,
   });
-  registerMonitorLogs(app, { db, clock });
+  registerMonitorLogs(app, { db, clock, plans });
   await registerHeartbeatIntake(app, {
     db,
     clock,
@@ -218,6 +222,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     channelLock,
     resolveHost: deps.resolveHost,
     publicBaseUrl: config.publicBaseUrl,
+    plans,
   });
   registerAdmin(app, { db, clock });
   registerInvites(app, { db, clock, config, auth, legal });
@@ -227,6 +232,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     telegram: deps.telegram,
     config,
     channelLock,
+    plans,
   });
   registerOpenApi(app, {
     build: deps.build,

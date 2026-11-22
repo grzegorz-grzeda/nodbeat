@@ -74,17 +74,18 @@ chmod 600 .env
 
 Fill it in:
 
-| Variable                  | Value                                                                            |
-| ------------------------- | -------------------------------------------------------------------------------- |
-| `MONGODB_URI`             | the string from step 1                                                           |
-| `PUBLIC_BASE_URL`         | `https://nodbeat.g2labs.pl`                                                      |
-| `SESSION_SECRET`          | `openssl rand -base64 48`                                                        |
-| `TELEGRAM_BOT_TOKEN`      | from step 2                                                                      |
-| `TELEGRAM_WEBHOOK_SECRET` | from step 2                                                                      |
-| `TRUSTED_PROXY_IP`        | the edge Caddy's fixed IP from step 4 (e.g. `172.30.0.10`)                       |
-| `SELF_HEARTBEAT_URL`      | from step 9 (leave empty for now; set it and restart then)                       |
-| `LEGAL_DIR`               | `/legal` once step 10's files exist (empty: no legal pages)                      |
-| `INVITE_REQUESTS`         | `true` to show "Request an Invite" on the landing page (empty: off; see step 10) |
+| Variable                  | Value                                                                                                                                                 |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MONGODB_URI`             | the string from step 1                                                                                                                                |
+| `PUBLIC_BASE_URL`         | `https://nodbeat.g2labs.pl`                                                                                                                           |
+| `SESSION_SECRET`          | `openssl rand -base64 48`                                                                                                                             |
+| `TELEGRAM_BOT_TOKEN`      | from step 2                                                                                                                                           |
+| `TELEGRAM_WEBHOOK_SECRET` | from step 2                                                                                                                                           |
+| `TRUSTED_PROXY_IP`        | the edge Caddy's fixed IP from step 4 (e.g. `172.30.0.10`)                                                                                            |
+| `SELF_HEARTBEAT_URL`      | from step 9 (leave empty for now; set it and restart then)                                                                                            |
+| `LEGAL_DIR`               | `/legal` once step 10's files exist (empty: no legal pages)                                                                                           |
+| `INVITE_REQUESTS`         | `true` to show "Request an Invite" on the landing page (empty: off; see step 10)                                                                      |
+| `PLANS_ENABLED`           | `true` to apply Free and Pro Plans (empty: off, everyone gets the same limits). On the first start with it, every existing User gets Pro for 6 months |
 
 ## 6. Start
 

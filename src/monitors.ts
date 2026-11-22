@@ -30,9 +30,9 @@ import {
   schedulePreview,
   validate,
 } from "./monitor-form.js";
+import type { Plans } from "./plans.js";
 import {
   defaultGraceSec,
-  limitsFor,
   MAX_HEARTBEAT_MESSAGE_LENGTH,
   type Limits,
 } from "./limits.js";
@@ -261,9 +261,10 @@ export function registerMonitors(
     auth: Auth;
     /** When this nodbeat process started, for nextDueAt()'s startup grace. */
     startedAt: Date;
+    plans: Plans;
   },
 ): void {
-  const { db, clock, config, auth, startedAt } = deps;
+  const { db, clock, config, auth, startedAt, plans } = deps;
   // Keyed by owner: it guards the per-User Monitor limit.
   const ownerLock = new KeyedLock();
 
@@ -277,7 +278,7 @@ export function registerMonitors(
       body: monitorFormBody({
         csrf: auth.csrfToken(req, reply),
         form: readForm({}, req.user!.timeZone),
-        limits: limitsFor(req.user!, clock.now()),
+        limits: plans.limitsFor(req.user!, clock.now()),
         channels: await listAlertChannels(db, req.user!._id),
         monitors: await listParentOptions(db, req.user!._id),
         now: clock.now(),
@@ -294,7 +295,7 @@ export function registerMonitors(
       const preview = schedulePreview(
         typeof cron === "string" ? cron : "",
         typeof timeZone === "string" ? timeZone : req.user!.timeZone,
-        limitsFor(req.user!, clock.now()),
+        plans.limitsFor(req.user!, clock.now()),
         clock.now(),
       );
       return reply.header("cache-control", "no-store").send(preview);
@@ -303,7 +304,7 @@ export function registerMonitors(
 
   app.post("/monitors", { preHandler: requireUser }, async (req, reply) => {
     const user = req.user!;
-    const limits = limitsFor(user, clock.now());
+    const limits = plans.limitsFor(user, clock.now());
     const form = readForm(req.body, user.timeZone);
     const channels = await listAlertChannels(db, user._id);
     const ownMonitors = await listParentOptions(db, user._id);
@@ -322,7 +323,11 @@ export function registerMonitors(
         (await monitors(db).countDocuments({ ownerId: user._id })) >=
           limits.maxMonitors
       ) {
-        errors.push(`You can have at most ${limits.maxMonitors} Monitors.`);
+        errors.push(
+          plans.planOf(user, clock.now()) === "free"
+            ? `You can have at most ${limits.maxMonitors} Monitors on Free. More need Pro.`
+            : `You can have at most ${limits.maxMonitors} Monitors.`,
+        );
       }
       if (errors.length > 0 || !("settings" in result)) return null;
       const doc: MonitorDoc = {

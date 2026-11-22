@@ -1,6 +1,10 @@
 import { formatDateTime, formatDuration } from "./format.js";
 import { csrfField, html, timeZoneOptions, type SafeHtml } from "./html.js";
-import { defaultGraceSec, type Limits } from "./limits.js";
+import {
+  defaultGraceSec,
+  SHORTEST_INTERVAL_SEC,
+  type Limits,
+} from "./limits.js";
 import {
   periodSec,
   type MonitorPeriod,
@@ -191,9 +195,16 @@ export function schedulePreview(
   };
 }
 
+/** What an edited Monitor has now: a setting the Plan no longer allows may stay as long as it isn't changed. */
+export interface CurrentSettings {
+  intervalSec: number | null;
+  reminderEverySec?: ReminderEverySec | null;
+}
+
 /**
  * Checks the form; chosen Alert channels must be among `ownChannels`, the owner's, and the Parent among `parents.own`,
- * the owner's Monitors, without closing a cycle through `parents.editing` (null for a new Monitor).
+ * the owner's Monitors, without closing a cycle through `parents.editing` (null for a new Monitor). `current` is the
+ * edited Monitor's settings (null for a new one).
  */
 export function validate(
   form: MonitorForm,
@@ -201,6 +212,7 @@ export function validate(
   ownChannels: ChannelOption[],
   parents: { own: ParentOption[]; editing: ObjectId | null },
   now: Date,
+  current: CurrentSettings | null = null,
 ): { settings: MonitorSettings } | { errors: string[] } {
   const errors: string[] = [];
   const name = form.name.trim();
@@ -223,9 +235,19 @@ export function validate(
     }
   } else {
     const intervalSec = toSeconds(form.interval, form.intervalUnit);
+    const kept = intervalSec !== null && intervalSec === current?.intervalSec;
     if (
+      intervalSec !== null &&
+      intervalSec >= SHORTEST_INTERVAL_SEC &&
+      intervalSec < limits.minIntervalSec &&
+      !kept
+    ) {
+      errors.push(
+        `Intervals shorter than ${formatDuration(limits.minIntervalSec)} need Pro.`,
+      );
+    } else if (
       intervalSec === null ||
-      intervalSec < limits.minIntervalSec ||
+      (intervalSec < limits.minIntervalSec && !kept) ||
       intervalSec > limits.maxIntervalSec
     ) {
       errors.push(
@@ -286,6 +308,13 @@ export function validate(
     const sec = Number(form.reminderEvery);
     if (isReminderCadence(sec)) reminderEverySec = sec;
     else errors.push("Reminders must be every 1 h, 6 h or 24 h, or never.");
+  }
+  if (
+    reminderEverySec !== null &&
+    !limits.features.reminders &&
+    reminderEverySec !== current?.reminderEverySec
+  ) {
+    errors.push("Reminders need Pro.");
   }
 
   const parent = checkParent(form.parentId, parents.own, parents.editing);

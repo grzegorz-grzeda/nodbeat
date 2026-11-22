@@ -162,6 +162,7 @@ export const testConfig: Config = {
   trustedProxyIp: "172.18.0.2",
   legalDir: undefined,
   inviteRequests: false,
+  plansEnabled: false,
 };
 
 /** The Content-Security-Policy sent on every response. */
@@ -208,6 +209,7 @@ export async function buildTestApp(
     logLevel?: "warn" | "info";
     legalDir?: string;
     inviteRequests?: boolean;
+    plansEnabled?: boolean;
   } = {},
 ): Promise<TestContext> {
   const client = new MongoClient(inject("mongoUri"));
@@ -221,6 +223,7 @@ export async function buildTestApp(
     ...testConfig,
     legalDir: options.legalDir,
     inviteRequests: options.inviteRequests ?? false,
+    plansEnabled: options.plansEnabled ?? false,
   };
   const app = await createApp({
     db,

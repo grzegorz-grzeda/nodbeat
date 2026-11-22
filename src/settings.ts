@@ -1,4 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { planSection } from "./plan-section.js";
+import type { Plans } from "./plans.js";
+import { monitors } from "./monitors.js";
 import type { Db } from "mongodb";
 import { requireUser, TOO_MANY_LOGINS, type Auth } from "./auth.js";
 import type { Clock } from "./clock.js";
@@ -73,10 +76,19 @@ export function registerSettings(
     channelLock: KeyedLock;
     resolveHost: HostResolver;
     publicBaseUrl: string;
+    plans: Plans;
   },
 ): void {
-  const { db, clock, auth, senders, channelLock, resolveHost, publicBaseUrl } =
-    deps;
+  const {
+    db,
+    clock,
+    auth,
+    senders,
+    channelLock,
+    resolveHost,
+    publicBaseUrl,
+    plans,
+  } = deps;
   const testAlertsPerUser = new SlidingWindowLimiter(
     clock,
     TEST_ALERT_MAX,
@@ -100,13 +112,27 @@ export function registerSettings(
   ) => {
     const user = req.user!;
     const csrf = auth.csrfToken(req, reply);
-    const [code, channels] = await Promise.all([
-      findActiveLinkCode(db, user._id, clock.now()),
+    const now = clock.now();
+    const [code, channels, monitorCount] = await Promise.all([
+      findActiveLinkCode(db, user._id, now),
       listAlertChannels(db, user._id),
+      plans.enabled
+        ? monitors(db).countDocuments({ ownerId: user._id })
+        : Promise.resolve(0),
     ]);
+    const plan = plans.planOf(user, now);
     return reply.page({
       title: "Settings",
       body: html`<h1>Settings</h1>
+        ${
+          plan &&
+          planSection({
+            plan,
+            user,
+            limits: plans.limitsFor(user, now),
+            usage: { monitors: monitorCount, alertChannels: channels.length },
+          })
+        }
         <h2>Time zone</h2>
         <form method="post" action="/settings/time-zone">
           ${csrfField(csrf)}
@@ -327,6 +353,7 @@ export function registerSettings(
     auth,
     channelLock,
     resolveHost,
+    plans,
     settingsPage,
   });
 

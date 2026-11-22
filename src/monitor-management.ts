@@ -8,7 +8,7 @@ import { sendConfirmPage } from "./confirm.js";
 import { html } from "./html.js";
 import { deleteIncidentsOf } from "./incidents.js";
 import { rescheduleReminder, type ReminderSettings } from "./reminders.js";
-import { limitsFor } from "./limits.js";
+import type { Plans } from "./plans.js";
 import { applyEffects } from "./effects.js";
 import { deleteAlertsOf, dropPendingReminders } from "./alerts.js";
 import { listAlertChannels } from "./alert-channels.js";
@@ -43,9 +43,10 @@ export function registerMonitorManagement(
     auth: Auth;
     lock: KeyedLock;
     publicBaseUrl: string;
+    plans: Plans;
   },
 ): void {
-  const { db, clock, auth, lock, publicBaseUrl } = deps;
+  const { db, clock, auth, lock, publicBaseUrl, plans } = deps;
 
   /**
    * Runs an event through the state machine under the Monitor's lock, also saving `extra` fields; then, still under the
@@ -103,7 +104,7 @@ export function registerMonitorManagement(
       scripts: [MONITOR_FORM_SCRIPT],
       body: monitorFormBody({
         csrf,
-        limits: limitsFor(req.user!, clock.now()),
+        limits: plans.limitsFor(req.user!, clock.now()),
         channels: await listAlertChannels(db, req.user!._id),
         monitors: await listParentOptions(db, req.user!._id),
         now: clock.now(),
@@ -128,13 +129,14 @@ export function registerMonitorManagement(
       const form = readForm(req.body, req.user!.timeZone);
       const result = validate(
         form,
-        limitsFor(req.user!, clock.now()),
+        plans.limitsFor(req.user!, clock.now()),
         await listAlertChannels(db, req.user!._id),
         {
           own: await listParentOptions(db, req.user!._id),
           editing: monitor._id,
         },
         clock.now(),
+        monitor,
       );
       if ("errors" in result) {
         reply.code(400);

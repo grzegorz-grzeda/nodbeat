@@ -1,12 +1,10 @@
-import type { UserDoc } from "./users.js";
-
 /** Features a Plan may leave out. */
 export interface PlanFeatures {
   webhooks: boolean;
   reminders: boolean;
 }
 
-/** Per-owner limits. The same for everyone until Plans feed them (spec 0015). */
+/** Per-owner limits: from the owner's Plan, or DEFAULT_LIMITS with Plans off. Looked up through `Plans.limitsFor`. */
 export interface Limits {
   maxMonitors: number;
   /** Alert channels of every kind together. */
@@ -42,7 +40,8 @@ export const MAX_EARLY_HEARTBEAT_SEC = 60 * 60;
 
 const DAY_SEC = 24 * 60 * 60;
 
-const DEFAULT_LIMITS: Limits = {
+/** Limits with Plans off (self-hosted, no billing): what every User had before Plans. */
+export const DEFAULT_LIMITS: Limits = {
   maxMonitors: 50,
   maxAlertChannels: 10,
   minIntervalSec: 30,
@@ -58,15 +57,23 @@ const DEFAULT_LIMITS: Limits = {
   features: { webhooks: true, reminders: true },
 };
 
-/**
- * The one lookup for what an owner may do: every limit check goes through it, keyed by the owner of the Monitors or
- * Alert channels involved. `now` decides the owner's effective Plan once Plans exist.
- */
-export function limitsFor(owner: UserDoc, now: Date): Limits {
-  void owner; // Same for everyone until Plans exist.
-  void now;
-  return DEFAULT_LIMITS;
-}
+/** The shortest Interval anyone may have (Pro's); a Free User asking for one below their own gets "needs Pro". */
+export const SHORTEST_INTERVAL_SEC = DEFAULT_LIMITS.minIntervalSec;
+
+/** Each Plan's limits (spec 0015). Log caps follow the Plan in issue 0062. */
+export const PLAN_LIMITS = {
+  free: {
+    ...DEFAULT_LIMITS,
+    maxMonitors: 10,
+    minIntervalSec: 60,
+    features: { webhooks: false, reminders: false },
+  },
+  pro: {
+    ...DEFAULT_LIMITS,
+    maxMonitors: 100,
+    minIntervalSec: SHORTEST_INTERVAL_SEC,
+  },
+} as const satisfies Record<string, Limits>;
 
 /** Limits that apply instance-wide (e.g. the Heartbeat TTL index, which doesn't vary per owner yet). */
 export function instanceLimits(): Limits {
