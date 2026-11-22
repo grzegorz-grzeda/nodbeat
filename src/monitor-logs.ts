@@ -5,7 +5,7 @@ import type { Clock } from "./clock.js";
 import { listHeartbeatsSince } from "./heartbeats.js";
 import { html, type SafeHtml } from "./html.js";
 import { listIncidents } from "./incidents.js";
-import { instanceLimits } from "./limits.js";
+import { limitsFor, type Limits } from "./limits.js";
 import {
   heartbeatRetentionText,
   heartbeatsTable,
@@ -21,20 +21,18 @@ import {
 type LogRequest = FastifyRequest<{ Params: { id: string } }>;
 
 /**
- * The full Incident and Heartbeat logs of a Monitor, newest first. A Monitor keeps at most `maxLogRowsPerMonitor` of
- * each (see `src/log-pruner.ts`), so one page holds everything.
+ * The full Incident and Heartbeat logs of a Monitor, newest first. A Monitor keeps at most its owner's
+ * `maxIncidentsPerMonitor` and `maxHeartbeatsPerMonitor` (see `src/log-pruner.ts`), so one page holds everything.
  */
 export function registerMonitorLogs(
   app: FastifyInstance,
   deps: { db: Db; clock: Clock },
 ): void {
   const { db, clock } = deps;
-  const rows = instanceLimits().maxLogRowsPerMonitor;
-
   const logPage = async (
     req: LogRequest,
     reply: FastifyReply,
-    log: {
+    logFor: (limits: Limits) => {
       heading: string;
       /** The table, or null when the log is empty. */
       table: (
@@ -45,6 +43,8 @@ export function registerMonitorLogs(
       empty: string;
     },
   ) => {
+    // Only the owner's own Monitors are shown, so the viewer is the owner.
+    const log = logFor(limitsFor(req.user!, clock.now()));
     const monitor = await findOwnMonitor(db, req.user!._id, req.params.id);
     if (!monitor) return sendMonitorNotFound(reply);
     const base = `/monitors/${String(monitor._id)}`;
@@ -61,21 +61,21 @@ export function registerMonitorLogs(
     "/monitors/:id/incidents",
     { preHandler: requireUser },
     (req, reply) =>
-      logPage(req, reply, {
+      logPage(req, reply, ({ maxIncidentsPerMonitor: rows }) => ({
         heading: `Incidents (newest ${rows})`,
         table: async (monitor, now, timeZone) => {
           const list = await listIncidents(db, monitor._id, rows);
           return list.length ? incidentsTable(list, now, timeZone) : null;
         },
         empty: "No Incidents yet.",
-      }),
+      })),
   );
 
   app.get<{ Params: { id: string } }>(
     "/monitors/:id/heartbeats",
     { preHandler: requireUser },
     (req, reply) =>
-      logPage(req, reply, {
+      logPage(req, reply, ({ maxHeartbeatsPerMonitor: rows }) => ({
         heading: `Heartbeats (newest ${rows}, last ${heartbeatRetentionText()})`,
         table: async (monitor, now, timeZone) => {
           const list = await listHeartbeatsSince(
@@ -87,6 +87,6 @@ export function registerMonitorLogs(
           return list.length ? heartbeatsTable(list, timeZone) : null;
         },
         empty: `No Heartbeats in the last ${heartbeatRetentionText()}.`,
-      }),
+      })),
   );
 }

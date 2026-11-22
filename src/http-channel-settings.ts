@@ -283,7 +283,7 @@ export function registerHttpChannelSettings(
             : { ...base, kind, token: value };
         try {
           await addAlertChannel(db, channelLock, channel, {
-            limit: limitsFor(user).maxAlertChannels,
+            limit: limitsFor(user, clock.now()).maxAlertChannels,
           });
         } catch (err) {
           if (!(err instanceof AlertChannelLimitError)) throw err;

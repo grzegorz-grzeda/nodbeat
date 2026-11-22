@@ -277,7 +277,7 @@ export function registerMonitors(
       body: monitorFormBody({
         csrf: auth.csrfToken(req, reply),
         form: readForm({}, req.user!.timeZone),
-        limits: limitsFor(req.user!),
+        limits: limitsFor(req.user!, clock.now()),
         channels: await listAlertChannels(db, req.user!._id),
         monitors: await listParentOptions(db, req.user!._id),
         now: clock.now(),
@@ -294,7 +294,7 @@ export function registerMonitors(
       const preview = schedulePreview(
         typeof cron === "string" ? cron : "",
         typeof timeZone === "string" ? timeZone : req.user!.timeZone,
-        limitsFor(req.user!),
+        limitsFor(req.user!, clock.now()),
         clock.now(),
       );
       return reply.header("cache-control", "no-store").send(preview);
@@ -303,7 +303,7 @@ export function registerMonitors(
 
   app.post("/monitors", { preHandler: requireUser }, async (req, reply) => {
     const user = req.user!;
-    const limits = limitsFor(user);
+    const limits = limitsFor(user, clock.now());
     const form = readForm(req.body, user.timeZone);
     const channels = await listAlertChannels(db, user._id);
     const ownMonitors = await listParentOptions(db, user._id);

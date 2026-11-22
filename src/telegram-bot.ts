@@ -159,7 +159,7 @@ export function registerTelegramBot(
           ownerId: owner._id,
           chatId: chat.id,
           title: chatTitle(chat),
-          limit: limitsFor(owner).maxAlertChannels,
+          limit: limitsFor(owner, now).maxAlertChannels,
         },
         now,
       );

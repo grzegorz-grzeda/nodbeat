@@ -103,7 +103,7 @@ export function registerMonitorManagement(
       scripts: [MONITOR_FORM_SCRIPT],
       body: monitorFormBody({
         csrf,
-        limits: limitsFor(req.user!),
+        limits: limitsFor(req.user!, clock.now()),
         channels: await listAlertChannels(db, req.user!._id),
         monitors: await listParentOptions(db, req.user!._id),
         now: clock.now(),
@@ -128,7 +128,7 @@ export function registerMonitorManagement(
       const form = readForm(req.body, req.user!.timeZone);
       const result = validate(
         form,
-        limitsFor(req.user!),
+        limitsFor(req.user!, clock.now()),
         await listAlertChannels(db, req.user!._id),
         {
           own: await listParentOptions(db, req.user!._id),

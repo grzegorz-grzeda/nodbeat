@@ -1,6 +1,12 @@
 import type { UserDoc } from "./users.js";
 
-/** Per-User limits. Constants for now; Plans will feed them later. */
+/** Features a Plan may leave out. */
+export interface PlanFeatures {
+  webhooks: boolean;
+  reminders: boolean;
+}
+
+/** Per-owner limits. The same for everyone until Plans feed them (spec 0015). */
 export interface Limits {
   maxMonitors: number;
   /** Alert channels of every kind together. */
@@ -15,8 +21,11 @@ export interface Limits {
   minMaxRunTimeSec: number;
   maxMaxRunTimeSec: number;
   heartbeatRetentionSec: number;
-  /** Heartbeats and Incidents kept per Monitor; older ones are dropped. */
-  maxLogRowsPerMonitor: number;
+  /** Heartbeats kept per Monitor; older ones are dropped. */
+  maxHeartbeatsPerMonitor: number;
+  /** Incidents kept per Monitor; older ones are dropped once 7-day Uptime no longer needs them. */
+  maxIncidentsPerMonitor: number;
+  features: PlanFeatures;
 }
 
 /** Longest Heartbeat message kept, in characters. Instance-wide. */
@@ -44,15 +53,22 @@ const DEFAULT_LIMITS: Limits = {
   minMaxRunTimeSec: 60,
   maxMaxRunTimeSec: DAY_SEC,
   heartbeatRetentionSec: 7 * DAY_SEC,
-  maxLogRowsPerMonitor: 100,
+  maxHeartbeatsPerMonitor: 100,
+  maxIncidentsPerMonitor: 100,
+  features: { webhooks: true, reminders: true },
 };
 
-export function limitsFor(user: UserDoc): Limits {
-  void user; // Same for everyone until Plans exist.
+/**
+ * The one lookup for what an owner may do: every limit check goes through it, keyed by the owner of the Monitors or
+ * Alert channels involved. `now` decides the owner's effective Plan once Plans exist.
+ */
+export function limitsFor(owner: UserDoc, now: Date): Limits {
+  void owner; // Same for everyone until Plans exist.
+  void now;
   return DEFAULT_LIMITS;
 }
 
-/** Limits that apply instance-wide (e.g. the Heartbeat TTL index and log pruning, which don't vary per User yet). */
+/** Limits that apply instance-wide (e.g. the Heartbeat TTL index, which doesn't vary per owner yet). */
 export function instanceLimits(): Limits {
   return DEFAULT_LIMITS;
 }
