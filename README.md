@@ -43,7 +43,7 @@ An optional message (up to 200 characters) comes from, in this order: the `msg` 
 | `413`  | body over 8 KiB                                                                                                                         |
 | `429`  | more than one Heartbeat per second for this Monitor, or this IP sent more than 30 requests to unknown Heartbeat URLs in the last minute |
 
-All answers are plain text. Each Monitor keeps its 100 newest Heartbeats from the last 7 days, and its 100 newest Incidents (older ones are kept only while 7-day Uptime still needs them).
+All answers are plain text. Each Monitor keeps its 100 newest Heartbeats from the last 7 days, and its 100 newest Incidents (older ones are kept only while 7-day Uptime still needs them). With Plans on, Free keeps 50 Heartbeats (7 days) and 50 Incidents, Pro 1000 Heartbeats (90 days) and 500 Incidents.
 
 A cron job that reports only on success:
 

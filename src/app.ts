@@ -202,6 +202,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     lock,
     pruner,
     publicBaseUrl: config.publicBaseUrl,
+    plans,
   });
   const senders: AlertSenders = {
     telegram: createTelegramSender({

@@ -119,7 +119,7 @@ Log in at `https://nodbeat.g2labs.pl`.
 
 ## 8. Nightly backup
 
-M0 has no automated backups. `scripts/backup.sh` runs `mongodump` without the raw `heartbeats` collection (they expire after 7 days anyway), encrypts the gzipped archive with [`age`](https://age-encryption.org) and streams it to Google Drive with `rclone` as `nodbeat-<UTC time>.archive.gz.age`, removing its own archives older than 30 days. No plaintext archive touches the VPS disk, and Google Drive only ever holds ciphertext. The VPS holds only the public key, so it can write backups but not read them.
+M0 has no automated backups. `scripts/backup.sh` runs `mongodump` without the raw `heartbeats` collection (they expire after 7 days anyway, 90 on Pro), encrypts the gzipped archive with [`age`](https://age-encryption.org) and streams it to Google Drive with `rclone` as `nodbeat-<UTC time>.archive.gz.age`, removing its own archives older than 30 days. No plaintext archive touches the VPS disk, and Google Drive only ever holds ciphertext. The VPS holds only the public key, so it can write backups but not read them.
 
 **Key pair, off the VPS.** On your own machine (not the VPS), install `age` and generate the key:
 

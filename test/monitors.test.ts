@@ -1,3 +1,4 @@
+import { ensureHeartbeatIndexes } from "../src/heartbeats.js";
 import { describe, expect, it } from "vitest";
 import {
   buildTestApp,
@@ -473,17 +474,39 @@ describe("Heartbeat intake", () => {
     }
   });
 
-  it("keeps raw Heartbeats for 7 days via a TTL index", async () => {
+  it("keeps raw Heartbeats until their own expiresAt via a TTL index", async () => {
     const { db } = await buildTestApp();
 
     const indexes = await db.collection("heartbeats").indexes();
 
     expect(indexes).toContainEqual(
-      expect.objectContaining({
-        key: { receivedAt: 1 },
-        expireAfterSeconds: 7 * 24 * 60 * 60,
-      }),
+      expect.objectContaining({ key: { expiresAt: 1 }, expireAfterSeconds: 0 }),
     );
+    expect(
+      indexes.find((i) => i.name === "receivedAt_1")?.expireAfterSeconds,
+    ).toBeUndefined();
+  });
+
+  it("moves Heartbeats from the old 7-day receivedAt TTL to expiresAt", async () => {
+    const { db } = await buildTestApp();
+    const heartbeats = db.collection("heartbeats");
+    await heartbeats.dropIndex("receivedAt_1");
+    await heartbeats.createIndex(
+      { receivedAt: 1 },
+      { expireAfterSeconds: 7 * 24 * 60 * 60 },
+    );
+    const receivedAt = new Date("2026-01-01T00:00:00Z");
+    await heartbeats.insertOne({ receivedAt, message: null });
+
+    await ensureHeartbeatIndexes(db);
+    await ensureHeartbeatIndexes(db);
+
+    const old = await heartbeats.findOne({ receivedAt });
+    expect(old!.expiresAt).toEqual(new Date("2026-01-08T00:00:00Z"));
+    const indexes = await heartbeats.indexes();
+    expect(
+      indexes.find((i) => i.name === "receivedAt_1")?.expireAfterSeconds,
+    ).toBeUndefined();
   });
 });
 

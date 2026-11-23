@@ -378,6 +378,8 @@ export function registerMonitors(
       if (!monitor) return sendMonitorNotFound(reply);
       const url = heartbeatUrl(monitor);
       const now = clock.now();
+      // Only the owner's own Monitors are shown, so the viewer is the owner.
+      const limits = plans.limitsFor(req.user!, now);
       // One extra row tells whether there is more than fits, i.e. whether to link the full log.
       const [incidentList, heartbeatList, ownerChannels, parent, children] =
         await Promise.all([
@@ -385,7 +387,7 @@ export function registerMonitors(
           listHeartbeatsSince(
             db,
             monitor._id,
-            heartbeatWindowStart(now),
+            heartbeatWindowStart(now, limits),
             MONITOR_PAGE_LOG_ROWS + 1,
           ),
           listAlertChannels(db, monitor.ownerId),
@@ -581,7 +583,7 @@ void sendHeartbeat(const String&amp; message) {
             </section>
             <section class="monitor-logs">
               ${incidentsSection(monitor, incidentList, now, timeZone)}
-              ${heartbeatsSection(monitor, heartbeatList, timeZone)}
+              ${heartbeatsSection(monitor, heartbeatList, timeZone, limits)}
             </section>
           </div>`,
       });
@@ -633,8 +635,9 @@ function heartbeatsSection(
   monitor: MonitorDoc,
   list: HeartbeatDoc[],
   timeZone: string,
+  limits: Limits,
 ): SafeHtml {
-  const days = heartbeatRetentionText();
+  const days = heartbeatRetentionText(limits);
   const heading = html`<h2>Heartbeats (last ${days})</h2>`;
   if (list.length === 0) {
     return html`${heading}

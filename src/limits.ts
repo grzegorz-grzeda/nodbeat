@@ -62,22 +62,27 @@ export const DEFAULT_LIMITS: Limits = {
 /** The shortest Interval anyone may have (Pro's); a Free User asking for one below their own gets "needs Pro". */
 export const SHORTEST_INTERVAL_SEC = DEFAULT_LIMITS.minIntervalSec;
 
-/** Each Plan's limits (spec 0015). Log caps follow the Plan in issue 0062. */
+/** Each Plan's limits (spec 0015). */
 export const PLAN_LIMITS = {
   free: {
     ...DEFAULT_LIMITS,
     maxMonitors: 10,
     minIntervalSec: 60,
+    maxHeartbeatsPerMonitor: 50,
+    maxIncidentsPerMonitor: 50,
     features: { webhooks: false, reminders: false, parents: false },
   },
   pro: {
     ...DEFAULT_LIMITS,
     maxMonitors: 100,
     minIntervalSec: SHORTEST_INTERVAL_SEC,
+    heartbeatRetentionSec: 90 * DAY_SEC,
+    maxHeartbeatsPerMonitor: 1000,
+    maxIncidentsPerMonitor: 500,
   },
 } as const satisfies Record<string, Limits>;
 
-/** Limits that apply instance-wide (e.g. the Heartbeat TTL index, which doesn't vary per owner yet). */
+/** The limits with Plans off, and for what stays instance-wide (e.g. the Admin page, Heartbeats stored before `expiresAt`). */
 export function instanceLimits(): Limits {
   return DEFAULT_LIMITS;
 }

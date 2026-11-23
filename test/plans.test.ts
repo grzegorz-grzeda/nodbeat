@@ -75,6 +75,7 @@ describe("Free Plan", () => {
     expect(body).toContain("Shortest Interval: 1 min");
     expect(body).toMatch(/Webhooks: needs Pro/);
     expect(body).toMatch(/Depends on: needs Pro/);
+    expect(body).toMatch(/50 Heartbeats \(up to\s+7 d\),\s+50 Incidents/);
   });
 
   it("refuses an 11th Monitor with a Needs Pro message", async () => {
@@ -279,5 +280,66 @@ describe("Admin gives and ends Pro", () => {
     expect(
       (await ctx.admin.get(`/admin/users/${ctx.userId}/pro`)).statusCode,
     ).toBe(404);
+  });
+});
+
+describe("Logs by Plan", () => {
+  const sendHeartbeats = async (ctx: TestContext, hb: string, n: number) => {
+    for (let i = 1; i <= n; i++) {
+      await ctx.app.inject({ method: "GET", url: `${hb}?msg=hb-${i}` });
+      ctx.clock.advance(2000);
+    }
+  };
+  const heartbeatUrl = async (browser: Browser, page: string) =>
+    /https:\/\/nodbeat\.test(\/hb\/[A-Za-z0-9_-]+)/.exec(
+      (await browser.get(page)).body,
+    )![1]!;
+  const kept = (ctx: TestContext) =>
+    ctx.db.collection("heartbeats").countDocuments();
+
+  it("trims a Free Monitor to 50 Heartbeats kept 7 days", async () => {
+    const ctx = await freeUser();
+    const page = (await createMonitor(ctx.browser)).headers.location as string;
+    const hb = await heartbeatUrl(ctx.browser, page);
+    await sendHeartbeats(ctx, hb, 60);
+    await ctx.app.tick();
+    expect(await kept(ctx)).toBe(50);
+    const log = (await ctx.browser.get(`${page}/heartbeats`)).body;
+    expect(log).toContain("Heartbeats (newest 50, last 7 d)");
+    const one = await ctx.db.collection("heartbeats").findOne({});
+    expect(one!.expiresAt.getTime() - one!.receivedAt.getTime()).toBe(7 * DAY);
+  });
+
+  it("keeps more on Pro: 1000 Heartbeats for 90 days", async () => {
+    const ctx = await freeUser();
+    await setPlan(ctx, new Date(ctx.clock.now().getTime() + 365 * DAY));
+    const page = (await createMonitor(ctx.browser)).headers.location as string;
+    const hb = await heartbeatUrl(ctx.browser, page);
+    await sendHeartbeats(ctx, hb, 120);
+    await ctx.app.tick();
+    expect(await kept(ctx)).toBe(120);
+    const one = await ctx.db.collection("heartbeats").findOne({});
+    expect(one!.expiresAt.getTime() - one!.receivedAt.getTime()).toBe(90 * DAY);
+    const log = (await ctx.browser.get(`${page}/heartbeats`)).body;
+    expect(log).toContain("Heartbeats (newest 1000, last 90 d)");
+  });
+
+  it("keeps Free Incidents past 50 while 7-day Uptime needs them", async () => {
+    const ctx = await freeUser();
+    const page = (await createMonitor(ctx.browser)).headers.location as string;
+    const hb = await heartbeatUrl(ctx.browser, page);
+    for (let i = 0; i < 55; i++) {
+      await ctx.app.inject({ method: "GET", url: hb });
+      ctx.clock.advance(91 * 1000);
+      await ctx.app.tick();
+    }
+    await ctx.app.inject({ method: "GET", url: hb });
+    await ctx.app.tick();
+    const incidents = ctx.db.collection("incidents");
+    expect(await incidents.countDocuments()).toBe(55);
+    ctx.clock.advance(8 * DAY);
+    await ctx.app.inject({ method: "GET", url: hb });
+    await ctx.app.tick();
+    expect(await incidents.countDocuments()).toBe(50);
   });
 });

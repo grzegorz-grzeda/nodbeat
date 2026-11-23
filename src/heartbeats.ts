@@ -16,7 +16,9 @@ import { transition, type MonitorEvent } from "./monitor-state.js";
 import type { LogPruner } from "./log-pruner.js";
 import type { KeyedLock } from "./keyed-lock.js";
 import { monitors } from "./monitors.js";
+import type { Plans } from "./plans.js";
 import { SlidingWindowLimiter } from "./rate-limit.js";
+import { findUserById } from "./users.js";
 
 const UNKNOWN_TOKENS_PER_IP = 30;
 const UNKNOWN_TOKEN_WINDOW_MS = 60 * 1000;
@@ -39,6 +41,8 @@ export interface HeartbeatDoc {
   sourceIp: string;
   /** The `User-Agent` header, trimmed to 200 characters. Missing on Heartbeats stored before it was recorded. */
   userAgent?: string | null;
+  /** When the TTL index removes it: `receivedAt` plus the owner's Heartbeat retention at intake. */
+  expiresAt?: Date;
 }
 
 /** The state machine event each signal is, carrying its message. */
@@ -95,12 +99,33 @@ function readUserAgent(req: FastifyRequest): string | null {
 
 const heartbeats = (db: Db) => db.collection<HeartbeatDoc>("heartbeats");
 
+/**
+ * Heartbeats expire on their own `expiresAt` (per owner's Plan). Before that they all expired 7 days after
+ * `receivedAt`: that TTL index becomes a plain one (Admin counts use it), and Heartbeats stored before get the same
+ * `expiresAt` they would have had. Idempotent.
+ */
 export async function ensureHeartbeatIndexes(db: Db): Promise<void> {
+  const existing = await heartbeats(db)
+    .listIndexes()
+    .toArray()
+    .catch(() => []);
+  const oldTtl = existing.find(
+    (i: { name?: string; expireAfterSeconds?: number }) =>
+      i.name === "receivedAt_1" && i.expireAfterSeconds !== undefined,
+  );
+  if (oldTtl) await heartbeats(db).dropIndex("receivedAt_1");
+  await heartbeats(db).updateMany({ expiresAt: { $exists: false } }, [
+    {
+      $set: {
+        expiresAt: {
+          $add: ["$receivedAt", instanceLimits().heartbeatRetentionSec * 1000],
+        },
+      },
+    },
+  ]);
   await Promise.all([
-    heartbeats(db).createIndex(
-      { receivedAt: 1 },
-      { expireAfterSeconds: instanceLimits().heartbeatRetentionSec },
-    ),
+    heartbeats(db).createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
+    heartbeats(db).createIndex({ receivedAt: 1 }),
     heartbeats(db).createIndex({ monitorId: 1, receivedAt: -1 }),
   ]);
 }
@@ -146,9 +171,17 @@ export async function registerHeartbeatIntake(
     lock: KeyedLock;
     pruner: LogPruner;
     publicBaseUrl: string;
+    plans: Plans;
   },
 ): Promise<void> {
-  const { db, clock, lock, pruner, publicBaseUrl } = deps;
+  const { db, clock, lock, pruner, publicBaseUrl, plans } = deps;
+
+  /** How long the owner's Plan keeps a Heartbeat, in ms. With Plans off, the same for everyone: no lookup. */
+  const retentionMs = async (ownerId: ObjectId, now: Date) => {
+    const owner = plans.enabled ? await findUserById(db, ownerId) : null;
+    const limits = owner ? plans.limitsFor(owner, now) : instanceLimits();
+    return limits.heartbeatRetentionSec * 1000;
+  };
   const perMonitor = new SlidingWindowLimiter(clock, 1, 1000);
   // Scanning for Heartbeat URLs: an IP over this many unknown tokens is refused before any database lookup.
   const unknownTokens = new SlidingWindowLimiter(
@@ -187,6 +220,7 @@ export async function registerHeartbeatIntake(
       });
       if (!current) return false;
       const now = clock.now();
+      const keepMs = await retentionMs(current.ownerId, now);
       const { fields, effects, endedRunDurationSec } = transition(
         current,
         SIGNAL_EVENTS[kind](message),
@@ -203,6 +237,7 @@ export async function registerHeartbeatIntake(
           method: req.method,
           sourceIp: req.ip,
           userAgent: readUserAgent(req),
+          expiresAt: new Date(now.getTime() + keepMs),
         }),
       ]);
       // The updated fields, so a Fail signal's Down Alert carries its own message.

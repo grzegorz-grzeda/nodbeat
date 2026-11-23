@@ -6,20 +6,23 @@ import {
 import type { HeartbeatDoc, SignalKind } from "./heartbeats.js";
 import { html, type SafeHtml } from "./html.js";
 import type { IncidentDoc } from "./incidents.js";
-import { instanceLimits } from "./limits.js";
+import type { Limits } from "./limits.js";
 
 /** Rows of each log shown on the Monitor page; the rest is on the log pages. */
 export const MONITOR_PAGE_LOG_ROWS = 20;
 
-/** The oldest Heartbeat still kept; older ones are gone (TTL index). */
-export function heartbeatWindowStart(now: Date): Date {
-  return new Date(
-    now.getTime() - instanceLimits().heartbeatRetentionSec * 1000,
-  );
+/** The oldest Heartbeat the owner's limits show; older ones are gone or going (TTL on `expiresAt`). */
+export function heartbeatWindowStart(
+  now: Date,
+  limits: Pick<Limits, "heartbeatRetentionSec">,
+): Date {
+  return new Date(now.getTime() - limits.heartbeatRetentionSec * 1000);
 }
 
-export function heartbeatRetentionText(): string {
-  return formatDuration(instanceLimits().heartbeatRetentionSec);
+export function heartbeatRetentionText(
+  limits: Pick<Limits, "heartbeatRetentionSec">,
+): string {
+  return formatDuration(limits.heartbeatRetentionSec);
 }
 
 export function incidentsTable(

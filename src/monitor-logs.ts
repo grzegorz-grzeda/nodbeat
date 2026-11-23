@@ -76,18 +76,18 @@ export function registerMonitorLogs(
     "/monitors/:id/heartbeats",
     { preHandler: requireUser },
     (req, reply) =>
-      logPage(req, reply, ({ maxHeartbeatsPerMonitor: rows }) => ({
-        heading: `Heartbeats (newest ${rows}, last ${heartbeatRetentionText()})`,
+      logPage(req, reply, (limits) => ({
+        heading: `Heartbeats (newest ${limits.maxHeartbeatsPerMonitor}, last ${heartbeatRetentionText(limits)})`,
         table: async (monitor, now, timeZone) => {
           const list = await listHeartbeatsSince(
             db,
             monitor._id,
-            heartbeatWindowStart(now),
-            rows,
+            heartbeatWindowStart(now, limits),
+            limits.maxHeartbeatsPerMonitor,
           );
           return list.length ? heartbeatsTable(list, timeZone) : null;
         },
-        empty: `No Heartbeats in the last ${heartbeatRetentionText()}.`,
+        empty: `No Heartbeats in the last ${heartbeatRetentionText(limits)}.`,
       })),
   );
 }

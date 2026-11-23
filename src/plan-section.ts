@@ -32,5 +32,10 @@ export function planSection(options: {
       <li>Webhooks: ${yesNo(limits.features.webhooks)}</li>
       <li>Reminders: ${yesNo(limits.features.reminders)}</li>
       <li>Depends on: ${yesNo(limits.features.parents)}</li>
+      <li>
+        Kept per Monitor: ${limits.maxHeartbeatsPerMonitor} Heartbeats (up to
+        ${formatDuration(limits.heartbeatRetentionSec)}),
+        ${limits.maxIncidentsPerMonitor} Incidents
+      </li>
     </ul>`;
 }
