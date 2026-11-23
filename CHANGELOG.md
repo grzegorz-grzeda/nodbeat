@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- With Plans on, when a User's Pro ends they get an account notice on all their Alert channels ("Your nodbeat Pro has ended": Webhooks, Reminders and 30 s Intervals keep working for 14 more days) and a banner on every page until dismissed. A second notice goes out on day 12 and shows the banner again. Each notice is sent once and retried like any Alert. Webhooks get it as the new `kind` `notice`, about no Monitor. Monitors over the Free limit keep going Down and alerting.
+
 ### Changed
 
 - With Plans on, logs are kept by Plan: Free keeps 50 Heartbeats (up to 7 days) and 50 Incidents per Monitor, Pro 1000 Heartbeats (up to 90 days) and 500 Incidents. Incidents 7-day Uptime still needs are kept either way, so trimming never changes Uptime. Settings' Plan section lists it. Each Heartbeat now expires on its own `expiresAt` (set at intake from the owner's Plan) instead of 7 days after it arrived; on start, the old TTL index is replaced and existing Heartbeats get the expiry they would have had. With Plans off, nothing changes.

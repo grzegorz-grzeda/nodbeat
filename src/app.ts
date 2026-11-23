@@ -44,6 +44,11 @@ import { registerLayout } from "./layout.js";
 import { loadLegalDocs, registerLegalPages } from "./legal.js";
 import { createLogPruner } from "./log-pruner.js";
 import { createPlans, grantLaunchPro } from "./plans.js";
+import {
+  createPlanNotices,
+  proEndedBanner,
+  registerPlanNotices,
+} from "./plan-notices.js";
 import { KeyedLock } from "./keyed-lock.js";
 import { registerMonitorLogs } from "./monitor-logs.js";
 import { registerMonitorManagement } from "./monitor-management.js";
@@ -164,7 +169,9 @@ export async function createApp(deps: AppDeps): Promise<App> {
     build: deps.build,
     operator: legal?.operator,
     gate,
+    banner: (user) => proEndedBanner(user, plans, clock.now()),
   });
+  registerPlanNotices(app, { db });
   registerLegalPages(app, { legal });
   registerErrorPages(app);
   const inviteRequestForm = registerInviteRequests(app, {
@@ -269,8 +276,15 @@ export async function createApp(deps: AppDeps): Promise<App> {
     senders,
     log: app.log,
   });
+  const sendPlanNotices = createPlanNotices({
+    db,
+    clock,
+    plans,
+    publicBaseUrl: config.publicBaseUrl,
+  });
   const tick = async (): Promise<void> => {
     await checkDeadlines();
+    await sendPlanNotices();
     await dispatchAlerts();
     await pruner.prune();
   };

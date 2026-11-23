@@ -89,8 +89,11 @@ interface LegacyAlertDoc extends Omit<AlertDoc, "channelIds" | "retries"> {
 export type IncidentAlertKind = "down" | "up" | "reminder";
 /** What a Monitor's Alert says happened: an Incident's news, or a Change Alert (its Heartbeat message changed). */
 export type AlertKind = IncidentAlertKind | "change";
-/** Any Alert sent: a Monitor's, or a test Alert (sent from Settings, never queued). */
-export type SentAlertKind = AlertKind | "test";
+/**
+ * Any Alert sent: a Monitor's, a test Alert (sent from Settings, never queued) or an account notice (about the User's
+ * account, e.g. Pro ended; queued and retried, about no Monitor).
+ */
+export type SentAlertKind = AlertKind | "test" | "notice";
 
 /** How a kind of Alert behaves, on every Alert channel. */
 interface AlertKindTraits {
@@ -137,6 +140,13 @@ export const ALERT_KINDS: Record<SentAlertKind, AlertKindTraits> = {
     emoji: "🔔",
     ntfyPriority: "3",
     ntfyTag: "bell",
+  },
+  notice: {
+    aboutDown: false,
+    loud: true,
+    emoji: "📣",
+    ntfyPriority: "3",
+    ntfyTag: "loudspeaker",
   },
 };
 
@@ -369,6 +379,55 @@ async function addToOutbox(
       disableNotification: !ALERT_KINDS[kind].loud,
     },
     details,
+    channelIds: channels.map((c) => c._id),
+    createdAt: now,
+    retries: {},
+  });
+  return true;
+}
+
+/** What an account notice says: a title, plain-text lines, and the page it links to (e.g. Settings). */
+export interface Notice {
+  title: string;
+  lines: string[];
+  url: string;
+  linkText: string;
+}
+
+/**
+ * Puts an account notice in the outbox, addressed to all the User's Alert channels; none → nothing. Shaped like a
+ * test Alert (about no Monitor: a made-up `monitorId`), but retried like any queued Alert.
+ */
+export async function enqueueNotice(
+  db: Db,
+  ownerId: ObjectId,
+  notice: Notice,
+  now: Date,
+): Promise<boolean> {
+  const channels = await listAlertChannels(db, ownerId);
+  if (channels.length === 0) return false;
+  const { emoji } = ALERT_KINDS.notice;
+  const summary = notice.lines.join("\n");
+  await outbox(db).insertOne({
+    _id: new ObjectId(),
+    monitorId: new ObjectId(),
+    ownerId,
+    kind: "notice",
+    incidentId: null,
+    text: [
+      `${emoji} <b>${escapeTelegramHtml(notice.title)}</b>`,
+      ...notice.lines.map(escapeTelegramHtml),
+      `<a href="${escapeTelegramHtml(notice.url)}">${escapeTelegramHtml(notice.linkText)}</a>`,
+    ].join("\n"),
+    options: { parseMode: "HTML", disableNotification: false },
+    details: {
+      monitorName: notice.title,
+      monitorUrl: notice.url,
+      at: now,
+      message: `${notice.title}: ${summary}`,
+      title: notice.title,
+      summary,
+    },
     channelIds: channels.map((c) => c._id),
     createdAt: now,
     retries: {},

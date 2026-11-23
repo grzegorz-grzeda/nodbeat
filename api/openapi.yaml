@@ -435,8 +435,8 @@ components:
               description: The Monitor page in nodbeat.
         kind:
           type: string
-          enum: [down, reminder, up, change, test]
-          description: "`change`: a Change Alert; the Monitor's Heartbeat message differs from the one before it, sent when the Monitor asks for Change Alerts. `down`: the Monitor went Down (missed its deadline, sent a Fail signal or ran longer than its Max run time). `reminder`: it is still Down; sent every 1, 6 or 24 h while Down when the Monitor asks for Reminders. `up`: it is Up again. `test`: a test Alert sent from Settings; it is about no Monitor (`monitor.id` and `incidentId` are made up, `monitor.url` is the Settings page)."
+          enum: [down, reminder, up, change, test, notice]
+          description: "`change`: a Change Alert; the Monitor's Heartbeat message differs from the one before it, sent when the Monitor asks for Change Alerts. `down`: the Monitor went Down (missed its deadline, sent a Fail signal or ran longer than its Max run time). `reminder`: it is still Down; sent every 1, 6 or 24 h while Down when the Monitor asks for Reminders. `up`: it is Up again. `test`: a test Alert sent from Settings; it is about no Monitor (`monitor.id` and `incidentId` are made up, `monitor.url` is the Settings page). `notice`: an account notice (e.g. your Pro ended), sent to all your Alert channels and retried like other Alerts; about no Monitor like `test` (`monitor.name` is the notice's title, `monitor.url` the page it points to, `message` its text)."
         at:
           type: string
           format: date-time

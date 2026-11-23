@@ -403,6 +403,23 @@ fieldset.timing .timing-detail {
   font-weight: 500;
 }
 
+/* Account banner (e.g. Pro ended): above every page until dismissed. */
+.banner {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  color: var(--down-fg);
+  background: var(--down-bg);
+  border-radius: var(--radius);
+}
+
+.banner p {
+  margin: 0;
+}
+
 /* Copy buttons sit next to the text they copy. */
 .copy-row {
   display: flex;

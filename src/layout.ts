@@ -12,7 +12,13 @@ import {
   type Operator,
 } from "./legal.js";
 import { STATE_LABELS, type MonitorState } from "./monitor-state.js";
-import { DEFAULT_THEME, THEMES, themeOf, type Theme } from "./users.js";
+import {
+  DEFAULT_THEME,
+  THEMES,
+  themeOf,
+  type Theme,
+  type UserDoc,
+} from "./users.js";
 
 const REPO_URL = "https://github.com/grzegorz-grzeda/nodbeat";
 /** Asset URLs carry `?v=<commit>`, so a new release busts the cache. */
@@ -119,6 +125,8 @@ interface NavUser {
   back: string;
   /** Shows the Admin link. */
   isAdmin: boolean;
+  /** An account banner shown above every page until dismissed (e.g. Pro ended); null for none. */
+  banner?: string | null;
 }
 
 function nav({ email, csrf, theme, back, isAdmin }: NavUser): SafeHtml {
@@ -170,6 +178,17 @@ export function renderPage(
         </header>
         <main>
           ${
+            user?.banner &&
+            html`<div class="banner" role="status">
+              <p>${user.banner}</p>
+              <form method="post" action="/plan/banner/dismiss">
+                ${csrfField(user.csrf)}
+                <input type="hidden" name="back" value="${user.back}" />
+                <button type="submit" class="button-link">Dismiss</button>
+              </form>
+            </div>`
+          }
+          ${
             options.flash
               ? html`<p class="flash" role="status">${options.flash}</p>`
               : ""
@@ -205,9 +224,11 @@ export function registerLayout(
     build: BuildInfo;
     operator: Operator | undefined;
     gate: PageGate | undefined;
+    /** The logged-in User's account banner, if any. */
+    banner?: (user: UserDoc) => string | null;
   },
 ): void {
-  const { auth, build, operator, gate } = deps;
+  const { auth, build, operator, gate, banner } = deps;
   const assets = loadAssets();
   const cacheControl = assetCacheControl(build);
 
@@ -232,6 +253,7 @@ export function registerLayout(
           // A page rendered for a POST (e.g. a form error) has no URL to come back to.
           back: req.method === "GET" ? req.url : "/",
           isAdmin: req.user.isAdmin,
+          banner: banner?.(req.user) ?? null,
         }
       : undefined;
     return this.type("text/html; charset=utf-8").send(

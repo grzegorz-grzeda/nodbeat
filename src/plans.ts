@@ -17,6 +17,10 @@ export interface UserPlan {
   source: "comp" | "stripe" | null;
   /** When the last Pro ended, for the downgrade steps (issue 0063); null while Pro or never Pro. */
   proEndedAt: Date | null;
+  /** "Pro ended" notices sent since `proEndedAt` (0–2, issue 0063). Missing: none. */
+  endNotices?: number;
+  /** The User dismissed the Pro-ended banner; a new notice shows it again. */
+  bannerDismissed?: boolean;
 }
 
 /** The User's Plan at `now`: Pro while `proUntil` is ahead, else Free. */
