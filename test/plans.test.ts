@@ -74,6 +74,7 @@ describe("Free Plan", () => {
     expect(body).toContain("1 of 10 Monitors");
     expect(body).toContain("Shortest Interval: 1 min");
     expect(body).toMatch(/Webhooks: needs Pro/);
+    expect(body).toMatch(/Depends on: needs Pro/);
   });
 
   it("refuses an 11th Monitor with a Needs Pro message", async () => {

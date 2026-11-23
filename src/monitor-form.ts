@@ -199,6 +199,7 @@ export function schedulePreview(
 export interface CurrentSettings {
   intervalSec: number | null;
   reminderEverySec?: ReminderEverySec | null;
+  parentId?: ObjectId | null;
 }
 
 /**
@@ -319,6 +320,13 @@ export function validate(
 
   const parent = checkParent(form.parentId, parents.own, parents.editing);
   if ("error" in parent) errors.push(parent.error);
+  else if (
+    parent.parentId &&
+    !limits.features.parents &&
+    !(current?.parentId && parent.parentId.equals(current.parentId))
+  ) {
+    errors.push("Depends on needs Pro.");
+  }
 
   if (
     errors.length > 0 ||
@@ -571,7 +579,11 @@ ${form.notes}</textarea>
       >
       <label
         >Depends on (the Monitor this one needs to reach nodbeat, e.g. the
-        router it sits behind)
+        router it sits
+        behind)${
+          !limits.features.parents &&
+          html`<small class="warning">Depends on needs Pro</small>`
+        }
         <select name="parentId">
           <option value="" ${form.parentId === "" ? html`selected` : ""}>
             Nothing

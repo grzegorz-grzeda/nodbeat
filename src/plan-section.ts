@@ -31,5 +31,6 @@ export function planSection(options: {
       <li>Shortest Interval: ${formatDuration(limits.minIntervalSec)}</li>
       <li>Webhooks: ${yesNo(limits.features.webhooks)}</li>
       <li>Reminders: ${yesNo(limits.features.reminders)}</li>
+      <li>Depends on: ${yesNo(limits.features.parents)}</li>
     </ul>`;
 }

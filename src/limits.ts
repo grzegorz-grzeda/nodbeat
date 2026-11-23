@@ -2,6 +2,8 @@
 export interface PlanFeatures {
   webhooks: boolean;
   reminders: boolean;
+  /** Setting a Parent, and a kept one counting (spec 0022). */
+  parents: boolean;
 }
 
 /** Per-owner limits: from the owner's Plan, or DEFAULT_LIMITS with Plans off. Looked up through `Plans.limitsFor`. */
@@ -54,7 +56,7 @@ export const DEFAULT_LIMITS: Limits = {
   heartbeatRetentionSec: 7 * DAY_SEC,
   maxHeartbeatsPerMonitor: 100,
   maxIncidentsPerMonitor: 100,
-  features: { webhooks: true, reminders: true },
+  features: { webhooks: true, reminders: true, parents: true },
 };
 
 /** The shortest Interval anyone may have (Pro's); a Free User asking for one below their own gets "needs Pro". */
@@ -66,7 +68,7 @@ export const PLAN_LIMITS = {
     ...DEFAULT_LIMITS,
     maxMonitors: 10,
     minIntervalSec: 60,
-    features: { webhooks: false, reminders: false },
+    features: { webhooks: false, reminders: false, parents: false },
   },
   pro: {
     ...DEFAULT_LIMITS,

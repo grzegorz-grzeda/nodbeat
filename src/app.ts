@@ -260,6 +260,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     lock,
     pruner,
     publicBaseUrl: config.publicBaseUrl,
+    plans,
   });
   const dispatchAlerts = createAlertDispatcher({
     db,

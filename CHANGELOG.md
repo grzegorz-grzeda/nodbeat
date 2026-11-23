@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Free and Pro Plans, behind the new optional `PLANS_ENABLED=true` (off by default: everyone keeps today's limits and no Plan shows). Free: 10 Monitors, Intervals of 1 min or longer, Linked chats and ntfy topics, no Reminders. Pro: 100 Monitors, Intervals down to 30 s, Webhooks and Reminders. A Free User asking for more gets "… need Pro". An edit that doesn't change a Monitor's Interval or Reminders is always accepted, so a Monitor set up on Pro stays editable. Settings shows the Plan (Pro with its end date), its limits and usage ("7 of 10 Monitors"). On the first start with Plans on, every existing User gets Pro for 6 months, once; Users created later start on Free. There is no way yet to buy Pro.
 - With Plans on, the Admin page counts Users per Plan, and its Users table has a Plan column with "Give Pro until…" (a date, read in the User's time zone; Pro stops when that day starts), "Change" and "End Pro" (with a confirmation page).
+- With Plans on, "Depends on" (Parents) is Pro-only. A Free User choosing a Parent gets "Depends on needs Pro."; a Parent set on Pro is kept through edits that don't change it but counts as none until Pro is back (the Monitor page says "ignored"), so its Child alerts on its own and an Unreachable Child gets a fresh deadline. Settings' Plan section lists it.
 
 ## [0.30.0] - 2026-11-22
 

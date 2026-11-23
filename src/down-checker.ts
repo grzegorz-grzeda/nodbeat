@@ -1,4 +1,6 @@
 import type { Db, Filter, ObjectId } from "mongodb";
+import type { Plans } from "./plans.js";
+import { findUserById } from "./users.js";
 import type { Clock } from "./clock.js";
 import { enqueueAlert } from "./alerts.js";
 import { applyEffects, sendDeferredDownAlert } from "./effects.js";
@@ -120,8 +122,17 @@ async function sendDueReminders(
 async function parentStatus(
   db: Db,
   monitor: Pick<MonitorDoc, "ownerId" | "parentId" | "lastHeartbeatAt">,
+  plans: Plans,
+  now: Date,
 ): Promise<ParentStatus | undefined> {
   if (!monitor.parentId) return undefined;
+  // Off the Plan (Pro ended): the Parent is kept but counts as none, so an Unreachable Child gets a fresh deadline.
+  if (plans.enabled) {
+    const owner = await findUserById(db, monitor.ownerId);
+    if (!owner || !plans.limitsFor(owner, now).features.parents) {
+      return undefined;
+    }
+  }
   const parent = await monitors(db).findOne(
     { _id: monitor.parentId, ownerId: monitor.ownerId },
     { projection: { state: 1, lastHeartbeatAt: 1 } },
@@ -174,8 +185,9 @@ export function createDownChecker(deps: {
   lock: KeyedLock;
   pruner: LogPruner;
   publicBaseUrl: string;
+  plans: Plans;
 }): () => Promise<void> {
-  const { db, clock, startedAt, lock, pruner, publicBaseUrl } = deps;
+  const { db, clock, startedAt, lock, pruner, publicBaseUrl, plans } = deps;
   return async () => {
     const now = clock.now();
     const candidates = await monitors(db)
@@ -213,7 +225,7 @@ export function createDownChecker(deps: {
         // Re-read under the lock: a Heartbeat may have arrived since the query above.
         const monitor = await monitors(db).findOne({ _id });
         if (!monitor) return;
-        const parent = await parentStatus(db, monitor);
+        const parent = await parentStatus(db, monitor, plans, now);
         const { fields, effects } = transition(
           monitor,
           { kind: "deadline-check", startedAt, ...(parent && { parent }) },

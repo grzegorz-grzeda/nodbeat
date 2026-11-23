@@ -473,6 +473,12 @@ export function registerMonitors(
                 html`<li>
                   Depends on:
                   <a href="/monitors/${String(parent._id)}">${parent.name}</a>
+                  ${
+                    !plans.limitsFor(req.user!, now).features.parents &&
+                    html`<small class="warning"
+                      >ignored: Depends on needs Pro</small
+                    >`
+                  }
                 </li>`
               }
               ${
