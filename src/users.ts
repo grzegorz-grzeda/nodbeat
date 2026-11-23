@@ -27,6 +27,8 @@ export interface UserDoc {
   accepted?: Acceptance;
   /** Missing: Free (and on an instance with Plans off, no Plan at all). */
   plan?: UserPlan;
+  /** When the User last downloaded their data (spec 0018), for the once-an-hour limit. Missing: never. */
+  lastExportAt?: Date;
 }
 
 /** Per document, since each is accepted on its own: one may be recorded without the other. */

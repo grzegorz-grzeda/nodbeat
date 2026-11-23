@@ -55,7 +55,7 @@ A cron job that reports only on success:
 
 One always-on Node 22 process (ADR 0002) built with TypeScript, Fastify and the MongoDB driver (no ORM). Pages are server-rendered HTML with a strict CSP; the only client scripts are small files under `assets/`.
 
-- **Web UI**: login, Dashboard, Monitors, Settings. Sessions in Mongo (30-day sliding expiry), CSRF-protected forms, argon2id password hashes. Failed logins are limited to 5 per 15 min per IP and 10 per hour per email. Settings has password change (logs out every other session) and **Log out everywhere**.
+- **Web UI**: login, Dashboard, Monitors, Settings. Sessions in Mongo (30-day sliding expiry), CSRF-protected forms, argon2id password hashes. Failed logins are limited to 5 per 15 min per IP and 10 per hour per email. Settings has password change (logs out every other session) and **Log out everywhere** and **Download my data** (a JSON file of the account, Monitors, Incidents, Heartbeats and Alert channels, secrets left out; once an hour).
 - **Heartbeat intake** (`src/heartbeats.ts`): one Monitor update plus one Heartbeat insert per request.
 - **Monitor state machine** (`src/monitor-state.ts`): one pure `transition(monitor, event, now)` decides every state change and returns effects (open/close Incident, start/end New or pause periods, enqueue Alert).
 - **Down checker** and **Alert dispatcher**: run on `app.tick()`, every 10 s. Alerts go through a persistent outbox in Mongo.

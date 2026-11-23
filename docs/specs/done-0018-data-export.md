@@ -1,6 +1,6 @@
 # Spec 0018: Download my data
 
-Status: ready-for-agent
+Status: done
 
 Blocked by: none
 

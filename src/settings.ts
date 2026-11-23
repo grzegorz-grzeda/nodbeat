@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { claimExport, exportStream } from "./data-export.js";
 import { planSection } from "./plan-section.js";
 import type { Plans } from "./plans.js";
 import { monitors } from "./monitors.js";
@@ -112,6 +113,7 @@ export function registerSettings(
       passwordError?: string;
       linkCodeError?: string;
       channelError?: string;
+      exportError?: string;
       httpForm?: RefusedHttpForm;
     } = {},
   ) => {
@@ -261,7 +263,21 @@ export function registerSettings(
           ${csrfField(csrf)}
           <button type="submit" class="secondary">Log out everywhere</button>
         </form>
-        <p>Ends every session, on every device, this one included.</p>`,
+        <p>Ends every session, on every device, this one included.</p>
+        <h2 id="data">Your data</h2>
+        ${
+          options.exportError
+            ? html`<p class="error" role="alert">${options.exportError}</p>`
+            : ""
+        }
+        <form method="post" action="/settings/export">
+          ${csrfField(csrf)}
+          <button type="submit" class="secondary">Download my data</button>
+        </form>
+        <p>
+          One JSON file with your account, Monitors, Incidents, Heartbeats and
+          Alert channels. Secrets are left out. Once an hour.
+        </p>`,
     });
   };
 
@@ -300,6 +316,32 @@ export function registerSettings(
       await auth.endOtherSessions(req, user._id);
       setFlash(reply, "Password changed.");
       return reply.redirect("/settings", 303);
+    },
+  );
+
+  app.post(
+    "/settings/export",
+    { preHandler: requireUser },
+    async (req, reply) => {
+      const user = req.user!;
+      const now = clock.now();
+      const claim = await claimExport(db, user._id, now);
+      if (!claim.ok) {
+        reply.code(429);
+        const at = formatDateTime(claim.nextAt, user.timeZone);
+        return settingsPage(req, reply, {
+          exportError: `You can download your data again at ${at}.`,
+        });
+      }
+      const day = formatDateTime(now, user.timeZone).slice(0, 10);
+      return reply
+        .header("content-type", "application/json; charset=utf-8")
+        .header(
+          "content-disposition",
+          `attachment; filename="nodbeat-export-${day}.json"`,
+        )
+        .header("cache-control", "no-store")
+        .send(exportStream(db, user, now, publicBaseUrl));
     },
   );
 

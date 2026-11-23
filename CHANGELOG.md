@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Download my data** in Settings: one JSON file (`nodbeat-export-<date>.json`) with the account (time zone, theme, accepted Terms, Plan), every Monitor with its settings, Heartbeat URL, Incidents and kept Heartbeats, and the Alert channels. Password hash, sessions and channel secrets are left out (`secretSet: true` instead). Built on request and streamed; once per User per hour, a second try gets `429` and says when it works again.
+
 ## [0.32.0] - 2026-11-23
 
 ### Added
