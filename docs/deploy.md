@@ -108,6 +108,22 @@ Then add the daily update (`crontab -e`). Cron uses the VPS's time zone:
 
 `scripts/update.sh` pulls `:latest`, recreates the container only if the image changed and removes the image it replaced. Run it by hand to take a release live straight away.
 
+### Request logs: at most 14 days
+
+nodbeat's request logs hold visitor IPs, and the Privacy policy promises they are kept at most 14 days. Docker's `json-file` and `local` drivers only rotate by size, so `compose.yaml` sends the logs to journald (`docker compose logs` still works). journald keeps everything for a month by default, so limit it once on the VPS:
+
+```sh
+sudo mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nMaxRetentionSec=14day\nMaxFileSec=1day\n' | sudo tee /etc/systemd/journald.conf.d/retention.conf
+sudo systemctl restart systemd-journald
+```
+
+`MaxFileSec=1day` starts a new journal file every day; without it, `MaxRetentionSec` can only drop a file once all of it is older than 14 days, which can take weeks. The limit covers the whole host journal, which is what the promise needs anyway.
+
+To check it: `systemd-analyze cat-config systemd/journald.conf | grep -E 'MaxRetentionSec|MaxFileSec'` shows both lines, `docker inspect -f '{{.HostConfig.LogConfig.Type}}' $(docker compose ps -q nodbeat)` prints `journald`, and `journalctl CONTAINER_TAG=nodbeat -o short-iso | head -1` never shows an entry older than 14 days (give it a day after the first setup). The first switch from `json-file` needs `docker compose up -d` to recreate the container; the old json-file logs are removed with it.
+
+**The edge Caddy logs visitor IPs too.** Give it the same limit in the edge repo: the same `logging: driver: journald` in its `compose.yaml`, and, if Caddy also writes access log files, `roll_keep_for 336h` in its `log` block.
+
 ## 7. Admin User
 
 There is no registration. Create the Admin from the CLI; the password is read from stdin and never lands in shell history:

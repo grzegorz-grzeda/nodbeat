@@ -12,12 +12,12 @@ services:
       - "3000"
     networks:
       - edge
-    # Docker keeps container logs forever by default.
+    # Request logs hold visitor IPs: kept at most 14 days, as the Privacy policy says (spec 0019). json-file and local
+    # only rotate by size, so logs go to journald, which the host drops after 14 days (docs/deploy.md, step 6).
     logging:
-      driver: json-file
+      driver: journald
       options:
-        max-size: "10m"
-        max-file: "3"
+        tag: nodbeat
 
 networks:
   edge:

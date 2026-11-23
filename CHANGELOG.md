@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- `compose.yaml` sends logs to journald instead of size-rotated `json-file`, and `docs/deploy.md` sets journald to keep at most 14 days (`MaxRetentionSec=14day`, `MaxFileSec=1day`), so request logs with visitor IPs live no longer than the Privacy policy says. The edge Caddy needs the same limit in the edge repo. Recreate the container (`docker compose up -d`) after pulling the new `compose.yaml`.
+
 ### Added
 
 - `/.well-known/security.txt` (RFC 9116) when the new optional `SECURITY_CONTACT` (a `mailto:` or https URL) is set: Contact, Expires one year after the image was built (renewed by each release), `Preferred-Languages: en, pl` and a Policy link to the new `SECURITY.md`. Unset: `404`, so a self-hosted instance publishes no one else's address. `SECURITY.md` asks for reports through GitHub private vulnerability reporting, supports the latest release and promises a first answer within 7 days.
