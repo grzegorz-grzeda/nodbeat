@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ### Added
 
 - With Plans on, when a User's Pro ends they get an account notice on all their Alert channels ("Your nodbeat Pro has ended": Webhooks, Reminders and 30 s Intervals keep working for 14 more days) and a banner on every page until dismissed. A second notice goes out on day 12 and shows the banner again. Each notice is sent once and retried like any Alert. Webhooks get it as the new `kind` `notice`, about no Monitor. Monitors over the Free limit keep going Down and alerting.
+- 14 days after Pro ended, Pro-only features go dormant, once, with nothing deleted: Webhooks show "Needs Pro" in Settings and get no Alerts (nor test Alerts), Reminders are turned off, and Intervals under 1 min become 1 min (as an edit would, so deadlines count from then). Getting Pro again wakes the Webhooks; Reminders and Intervals stay as they are.
 
 ### Changed
 

@@ -26,6 +26,8 @@ export interface WebhookChannelDoc extends AlertChannelBase {
   url: string;
   /** Stored as given (it signs every request); never shown again after saving. */
   secret: string | null;
+  /** Dormant since its owner's Pro features stopped (issue 0064): kept, but not sent to until Pro is back. */
+  needsPro?: boolean;
 }
 
 /** An ntfy topic: Alerts are POSTed to the topic `url`, with `Authorization: Bearer <token>` when one is set. */

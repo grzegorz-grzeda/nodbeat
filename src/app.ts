@@ -280,6 +280,7 @@ export async function createApp(deps: AppDeps): Promise<App> {
     db,
     clock,
     plans,
+    lock,
     publicBaseUrl: config.publicBaseUrl,
   });
   const tick = async (): Promise<void> => {

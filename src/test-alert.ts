@@ -54,6 +54,9 @@ export async function testAlertChannel(
   publicBaseUrl: string,
 ): Promise<TestAlertResult> {
   const id = String(channel._id);
+  if (channel.kind === "webhook" && channel.needsPro) {
+    return { ok: false, error: "Webhooks need Pro." };
+  }
   const attempt: DeliveryAttempt = { delivered: new Set(), failed: new Map() };
   try {
     await sendTo(

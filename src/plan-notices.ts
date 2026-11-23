@@ -4,6 +4,8 @@ import { enqueueNotice } from "./alerts.js";
 import { requireUser } from "./auth.js";
 import type { Clock } from "./clock.js";
 import { formatDateTime } from "./format.js";
+import type { KeyedLock } from "./keyed-lock.js";
+import { makeProFeaturesDormant } from "./plan-dormant.js";
 import type { Plans } from "./plans.js";
 import type { UserDoc } from "./users.js";
 
@@ -51,16 +53,17 @@ function sendNotice(
 }
 
 /**
- * On each tick: a User whose Pro ended gets `proEndedAt` and the first "Pro ended" notice; 12 days later the second.
- * Each is claimed by an update before it's sent, so it goes out once. Nothing with Plans off.
+ * On each tick: a User whose Pro ended gets `proEndedAt` and the first "Pro ended" notice; 12 days later the second;
+ * 14 days later Pro-only features go dormant. Each is claimed by an update before it's sent, so it goes out once. Nothing with Plans off.
  */
 export function createPlanNotices(deps: {
   db: Db;
   clock: Clock;
   plans: Plans;
+  lock: KeyedLock;
   publicBaseUrl: string;
 }): () => Promise<void> {
-  const { db, clock, plans, publicBaseUrl } = deps;
+  const { db, clock, plans, lock, publicBaseUrl } = deps;
   return async () => {
     if (!plans.enabled) return;
     const now = clock.now();
@@ -110,6 +113,25 @@ export function createPlanNotices(deps: {
           now,
           publicBaseUrl,
         );
+      }
+    }
+
+    // Day 14: Pro-only features go dormant, once.
+    const stopDue = new Date(now.getTime() - PRO_GRACE_DAYS * DAY_MS);
+    const dormant = await users(db)
+      .find({
+        "plan.proEndedAt": { $lte: stopDue },
+        "plan.dormantAt": { $exists: false },
+        "plan.proUntil": { $lte: now },
+      })
+      .toArray();
+    for (const user of dormant) {
+      const claimed = await users(db).updateOne(
+        { _id: user._id, "plan.dormantAt": { $exists: false } },
+        { $set: { "plan.dormantAt": now } },
+      );
+      if (claimed.modifiedCount === 1) {
+        await makeProFeaturesDormant(db, lock, user._id, now, publicBaseUrl);
       }
     }
   };

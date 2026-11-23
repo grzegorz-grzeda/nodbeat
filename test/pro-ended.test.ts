@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { giveComp } from "../src/plans.js";
 import {
   buildTestApp,
   createUser,
@@ -175,5 +176,78 @@ describe("Pro ended", () => {
     await ctx.app.tick();
     expect(ctx.telegram.sent).toHaveLength(0);
     expect((await browser.get("/")).body).not.toContain('class="banner"');
+  });
+
+  it("puts Pro-only features to sleep on day 14, and Pro again wakes Webhooks", async () => {
+    const ctx = await proUser();
+    const created = await ctx.browser.submit("/monitors/new", "/monitors", {
+      name: "Fast",
+      interval: "30",
+      intervalUnit: "s",
+      grace: "10",
+      graceUnit: "s",
+      reminderEvery: "3600",
+    });
+    expect(created.statusCode).toBe(303);
+    const page = created.headers.location as string;
+    const hb = /https:\/\/nodbeat\.test(\/hb\/[A-Za-z0-9_-]+)/.exec(
+      (await ctx.browser.get(page)).body,
+    )![1]!;
+    const monitor = () =>
+      ctx.db.collection("monitors").findOne({ name: "Fast" });
+
+    ctx.clock.advance(DAY);
+    await ctx.app.tick();
+    ctx.clock.advance(13 * DAY);
+    await ctx.app.tick();
+    expect((await monitor())!.intervalSec).toBe(30);
+    expect((await ctx.browser.get("/settings")).body).not.toContain(
+      "Needs Pro</span>",
+    );
+
+    ctx.clock.advance(DAY);
+    await ctx.app.tick();
+    expect((await monitor())!.intervalSec).toBe(60);
+    expect((await monitor())!.reminderEverySec).toBeNull();
+    expect((await ctx.browser.get("/settings")).body).toContain(
+      "Needs Pro</span>",
+    );
+    const user = await ctx.db.collection("users").findOne({ email: EMAIL });
+    expect(user!.plan.dormantAt).toEqual(ctx.clock.now());
+
+    // A Down Alert goes to the Linked chat only: the Webhook sleeps, and the Alert isn't kept for it.
+    await ctx.app.inject({ method: "GET", url: hb });
+    clear(ctx);
+    ctx.clock.advance(91 * SEC);
+    await ctx.app.tick();
+    expect(telegramTexts(ctx)).toEqual([
+      expect.stringContaining("Fast is Down"),
+    ]);
+    expect(ctx.http.requests).toHaveLength(0);
+    expect(await ctx.db.collection("alertOutbox").countDocuments()).toBe(0);
+
+    // Runs once.
+    ctx.clock.advance(DAY);
+    await ctx.app.tick();
+    expect(
+      (await ctx.db.collection("users").findOne({ email: EMAIL }))!.plan
+        .dormantAt,
+    ).toEqual(user!.plan.dormantAt);
+
+    await giveComp(
+      ctx.db,
+      user!._id,
+      new Date(ctx.clock.now().getTime() + 30 * DAY),
+    );
+    clear(ctx);
+    await ctx.app.inject({ method: "GET", url: hb });
+    ctx.clock.advance(91 * SEC);
+    await ctx.app.tick();
+    expect(webhookBodies(ctx).map((b) => b.kind)).toEqual(["up", "down"]);
+    expect((await ctx.browser.get("/settings")).body).not.toContain(
+      "Needs Pro</span>",
+    );
+    expect((await monitor())!.reminderEverySec).toBeNull();
+    expect((await monitor())!.intervalSec).toBe(60);
   });
 });

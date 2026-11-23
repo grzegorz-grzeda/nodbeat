@@ -646,7 +646,14 @@ export function createAlertDispatcher(deps: {
     const addressed = new Set(alert.channelIds.map(String));
     for (const id of due) {
       const channel = channels.get(id);
-      if (addressed.has(id) && channel && !attempt.delivered.has(id)) {
+      // A dormant Webhook (its owner's Pro ended) is done with: the Alert isn't kept for it.
+      const dormant = channel?.kind === "webhook" && channel.needsPro;
+      if (
+        addressed.has(id) &&
+        channel &&
+        !dormant &&
+        !attempt.delivered.has(id)
+      ) {
         await sendTo(senders, channel, alert, attempt);
       }
     }

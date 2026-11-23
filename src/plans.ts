@@ -1,4 +1,5 @@
 import type { Db, ObjectId } from "mongodb";
+import { wakeProFeatures } from "./plan-dormant.js";
 import { DEFAULT_LIMITS, PLAN_LIMITS, type Limits } from "./limits.js";
 import type { UserDoc } from "./users.js";
 
@@ -21,6 +22,8 @@ export interface UserPlan {
   endNotices?: number;
   /** The User dismissed the Pro-ended banner; a new notice shows it again. */
   bannerDismissed?: boolean;
+  /** When Pro-only features went dormant, 14 days after `proEndedAt` (issue 0064). Missing: not yet. */
+  dormantAt?: Date;
 }
 
 /** The User's Plan at `now`: Pro while `proUntil` is ahead, else Free. */
@@ -94,6 +97,7 @@ export async function giveComp(
     { _id: userId },
     { $set: { plan: { proUntil, source: "comp", proEndedAt: null } } },
   );
+  if (res.matchedCount === 1) await wakeProFeatures(db, userId);
   return res.matchedCount === 1;
 }
 

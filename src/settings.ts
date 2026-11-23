@@ -55,7 +55,12 @@ function channelDetails(channel: AlertChannelDoc, timeZone: string) {
           ${channel.lastError ?? "unknown error"}</small
         >`
     : "";
-  return html`${httpChannelSummary(channel)} ${failing}`;
+  const dormant =
+    channel.kind === "webhook" && channel.needsPro
+      ? html`<span class="badge badge-paused">Needs Pro</span>
+          <small>Not sent to until you have Pro again.</small>`
+      : "";
+  return html`${httpChannelSummary(channel)} ${dormant} ${failing}`;
 }
 
 /** Link codes a User may generate per hour. */
