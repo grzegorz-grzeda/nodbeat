@@ -86,6 +86,7 @@ Fill it in:
 | `LEGAL_DIR`               | `/legal` once step 10's files exist (empty: no legal pages)                                                                                           |
 | `INVITE_REQUESTS`         | `true` to show "Request an Invite" on the landing page (empty: off; see step 10)                                                                      |
 | `PLANS_ENABLED`           | `true` to apply Free and Pro Plans (empty: off, everyone gets the same limits). On the first start with it, every existing User gets Pro for 6 months |
+| `SECURITY_CONTACT`        | `mailto:security@g2labs.pl` (or an https URL): served in `/.well-known/security.txt`, valid a year from the image build. Empty: no security.txt       |
 
 ## 6. Start
 

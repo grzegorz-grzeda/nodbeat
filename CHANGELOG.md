@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
+- `/.well-known/security.txt` (RFC 9116) when the new optional `SECURITY_CONTACT` (a `mailto:` or https URL) is set: Contact, Expires one year after the image was built (renewed by each release), `Preferred-Languages: en, pl` and a Policy link to the new `SECURITY.md`. Unset: `404`, so a self-hosted instance publishes no one else's address. `SECURITY.md` asks for reports through GitHub private vulnerability reporting, supports the latest release and promises a first answer within 7 days.
 - **Download my data** in Settings: one JSON file (`nodbeat-export-<date>.json`) with the account (time zone, theme, accepted Terms, Plan), every Monitor with its settings, Heartbeat URL, Incidents and kept Heartbeats, and the Alert channels. Password hash, sessions and channel secrets are left out (`secretSet: true` instead). Built on request and streamed; once per User per hour, a second try gets `429` and says when it works again.
 
 ## [0.32.0] - 2026-11-23

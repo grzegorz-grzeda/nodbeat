@@ -69,6 +69,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      - id: built
+        name: Record build time
+        run: echo "at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -84,6 +87,7 @@ jobs:
           build-args: |
             APP_VERSION=${{ needs.version.outputs.version }}
             APP_COMMIT=${{ github.sha }}
+            APP_BUILT_AT=${{ steps.built.outputs.at }}
           labels: |
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.version=${{ needs.version.outputs.version }}

@@ -16,6 +16,8 @@ export interface Config {
   inviteRequests: boolean;
   /** Free and Pro Plans apply (`PLANS_ENABLED=true`); off by default, until billing (spec 0016) replaces the flag. */
   plansEnabled: boolean;
+  /** Where to report a vulnerability (`SECURITY_CONTACT`, a `mailto:` or https URL); no security.txt when unset. */
+  securityContact: string | undefined;
 }
 
 export class ConfigError extends Error {
@@ -91,6 +93,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const inviteRequests = env.INVITE_REQUESTS?.trim() === "true";
   const plansEnabled = env.PLANS_ENABLED?.trim() === "true";
 
+  const securityContact = env.SECURITY_CONTACT?.trim() || undefined;
+  if (securityContact && !isContactUri(securityContact)) {
+    problems.push("SECURITY_CONTACT must be a mailto: address or an https URL");
+  }
+
   if (problems.length > 0) throw new ConfigError(problems);
 
   return {
@@ -104,7 +111,18 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     legalDir,
     inviteRequests,
     plansEnabled,
+    securityContact,
   };
+}
+
+/** A `mailto:` with an address, or an https URL (RFC 9116 asks for https). */
+function isContactUri(value: string): boolean {
+  if (/^mailto:[^\s@]+@[^\s@]+$/.test(value)) return true;
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
 }
 
 /** The driver silently falls back to the "test" database when the URI has no path. */

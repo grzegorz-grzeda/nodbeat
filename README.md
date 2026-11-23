@@ -78,6 +78,7 @@ All configuration comes from environment variables (see [.env.example](.env.exam
 | `TELEGRAM_WEBHOOK_SECRET` | yes      | 1–256 characters of `A-Z a-z 0-9 _ -`                                                |
 | `TRUSTED_PROXY_IP`        | yes      | IPv4/IPv6 address of the edge Caddy; only it may set the client IP (X-Forwarded-For) |
 | `SELF_HEARTBEAT_URL`      | no       | External URL nodbeat sends its own Heartbeat to every minute (healthchecks.io)       |
+| `SECURITY_CONTACT`        | no       | `mailto:` or https URL served in `/.well-known/security.txt`; unset: none            |
 
 The server listens on port 3000. `GET /health` answers `{"status":"ok","version":...,"commit":...}`, or `503` when Mongo can't be pinged.
 

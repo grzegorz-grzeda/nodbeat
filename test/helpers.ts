@@ -163,6 +163,7 @@ export const testConfig: Config = {
   legalDir: undefined,
   inviteRequests: false,
   plansEnabled: false,
+  securityContact: undefined,
 };
 
 /** The Content-Security-Policy sent on every response. */
@@ -210,6 +211,7 @@ export async function buildTestApp(
     legalDir?: string;
     inviteRequests?: boolean;
     plansEnabled?: boolean;
+    securityContact?: string;
   } = {},
 ): Promise<TestContext> {
   const client = new MongoClient(inject("mongoUri"));
@@ -224,6 +226,7 @@ export async function buildTestApp(
     legalDir: options.legalDir,
     inviteRequests: options.inviteRequests ?? false,
     plansEnabled: options.plansEnabled ?? false,
+    securityContact: options.securityContact,
   };
   const app = await createApp({
     db,

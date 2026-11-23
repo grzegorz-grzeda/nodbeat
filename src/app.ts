@@ -55,6 +55,7 @@ import { registerMonitorManagement } from "./monitor-management.js";
 import { ensureMonitorIndexes, registerMonitors } from "./monitors.js";
 import { registerOpenApi } from "./openapi.js";
 import { registerSecurityHeaders } from "./security-headers.js";
+import { registerSecurityTxt } from "./security-txt.js";
 import { registerSettings } from "./settings.js";
 import { ensureStatePeriodIndexes } from "./state-periods.js";
 import type { TelegramClient } from "./telegram.js";
@@ -249,6 +250,10 @@ export async function createApp(deps: AppDeps): Promise<App> {
     publicBaseUrl: config.publicBaseUrl,
   });
   registerDocs(app, { build: deps.build });
+  registerSecurityTxt(app, {
+    contact: config.securityContact,
+    since: deps.build.builtAt ?? startedAt,
+  });
 
   app.get("/health", async (_req, reply) => {
     try {

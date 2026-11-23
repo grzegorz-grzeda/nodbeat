@@ -19,9 +19,11 @@ WORKDIR /app
 # Set by the release workflow; /health reports them. Unset → package.json version and "dev".
 ARG APP_VERSION=""
 ARG APP_COMMIT=""
+ARG APP_BUILT_AT=""
 ENV NODE_ENV=production \
     APP_VERSION=$APP_VERSION \
-    APP_COMMIT=$APP_COMMIT
+    APP_COMMIT=$APP_COMMIT \
+    APP_BUILT_AT=$APP_BUILT_AT
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY assets ./assets
