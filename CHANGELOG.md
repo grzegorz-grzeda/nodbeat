@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.31.0] - 2026-11-23
+
 ### Added
 
 - Free and Pro Plans, behind the new optional `PLANS_ENABLED=true` (off by default: everyone keeps today's limits and no Plan shows). Free: 10 Monitors, Intervals of 1 min or longer, Linked chats and ntfy topics, no Reminders. Pro: 100 Monitors, Intervals down to 30 s, Webhooks and Reminders. A Free User asking for more gets "… need Pro". An edit that doesn't change a Monitor's Interval or Reminders is always accepted, so a Monitor set up on Pro stays editable. Settings shows the Plan (Pro with its end date), its limits and usage ("7 of 10 Monitors"). On the first start with Plans on, every existing User gets Pro for 6 months, once; Users created later start on Free. There is no way yet to buy Pro.
@@ -278,7 +280,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.30.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.31.0...HEAD
+[0.31.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.28.0...v0.29.0
 [0.28.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.27.0...v0.28.0
