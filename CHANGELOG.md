@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.32.0] - 2026-11-23
+
 ### Added
 
 - With Plans on, when a User's Pro ends they get an account notice on all their Alert channels ("Your nodbeat Pro has ended": Webhooks, Reminders and 30 s Intervals keep working for 14 more days) and a banner on every page until dismissed. A second notice goes out on day 12 and shows the banner again. Each notice is sent once and retried like any Alert. Webhooks get it as the new `kind` `notice`, about no Monitor. Monitors over the Free limit keep going Down and alerting.
@@ -289,7 +291,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Walking skeleton: Fastify app, configuration checked from environment variables, `/health`, Dockerfile and Compose service on the `edge` network.
 
-[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.31.0...HEAD
+[Unreleased]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.32.0...HEAD
+[0.32.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.31.0...v0.32.0
 [0.31.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.30.0...v0.31.0
 [0.30.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.29.0...v0.30.0
 [0.29.0]: https://github.com/grzegorz-grzeda/nodbeat/compare/v0.28.0...v0.29.0
